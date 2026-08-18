@@ -8,20 +8,31 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
     _ssid = ssid;
     _pass = pass;
 
+    // Disconnect any lingering station & configure AP mode
+    WiFi.disconnect(true);
+    delay(50);
     WiFi.mode(WIFI_AP);
+    delay(50);
+
     IPAddress localIp(192, 168, 4, 1);
     IPAddress gateway(192, 168, 4, 1);
     IPAddress subnet(255, 255, 255, 0);
 
     WiFi.softAPConfig(localIp, gateway, subnet);
-    bool apOk = WiFi.softAP(_ssid, _pass);
+    // Start SoftAP on Channel 1, broadcast SSID (hidden=0), max 4 clients
+    bool apOk = WiFi.softAP(_ssid, _pass, 1, 0, 4);
 
     if (!apOk) {
-        Serial.println(F("[WIFI] Failed to start SoftAP!"));
-        return false;
+        Serial.println(F("[WIFI] Warning: SoftAP start failed, retrying without password..."));
+        apOk = WiFi.softAP(_ssid);
     }
 
-    Serial.printf("[WIFI] SoftAP \"%s\" active at IP: %s\n", _ssid, WiFi.softAPIP().toString().c_str());
+    WiFi.setTxPower(WIFI_POWER_19_5dBm); // Maximum RF transmit power
+
+    Serial.println(F("--------------------------------------------------"));
+    Serial.printf("[WIFI AP ACTIVE] SSID: \"%s\" | Password: \"%s\"\n", _ssid, _pass);
+    Serial.printf("[WIFI AP ACTIVE] IP Address: http://%s\n", WiFi.softAPIP().toString().c_str());
+    Serial.println(F("--------------------------------------------------"));
 
     // Register WebServer Routes
     _server.on("/", HTTP_GET, [this]() { handleRoot(); });
@@ -30,7 +41,7 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
     _server.onNotFound([this]() { handleOptions(); });
 
     _server.begin();
-    Serial.println(F("[HTTP] Audio Download Server listening on port 80."));
+    Serial.println(F("[HTTP] Server listening on port 80."));
     return true;
 }
 
@@ -39,7 +50,6 @@ void WifiServerManager::handleClient() {
 }
 
 void WifiServerManager::handleOptions() {
-    // Universal CORS Preflight handler
     _server.sendHeader("Access-Control-Allow-Origin", "*");
     _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     _server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
@@ -52,7 +62,7 @@ void WifiServerManager::handleRoot() {
                   "<body style='font-family:sans-serif;padding:30px;background:#111;color:#eee;'>"
                   "<h2>XIAO ESP32C3 Audio Server</h2>"
                   "<p>Status: <strong>Ready</strong></p>"
-                  "<p>Latest Recording: <a href='/audio.wav' style='color:#06b6d4;'>Download / Play audio.wav</a></p>"
+                  "<p>Latest Recording: <a href='/audio.wav' style='color:#06b6d4;'>Download audio.wav</a></p>"
                   "<p><a href='/status' style='color:#3b82f6;'>JSON Status</a></p>"
                   "</body></html>";
     _server.send(200, "text/html", html);
@@ -86,15 +96,13 @@ void WifiServerManager::handleAudioWav() {
     }
 
     uint32_t sampleRate = _recorder.getSampleRate();
-    uint16_t numChannels = 1;     // Mono
-    uint16_t bitsPerSample = 16;  // 16-Bit
+    uint16_t numChannels = 1;
+    uint16_t bitsPerSample = 16;
     uint32_t byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
     uint16_t blockAlign = (numChannels * bitsPerSample) / 8;
     uint32_t totalFileSize = 44 + pcmBytes;
 
-    // Generate 44-byte RIFF WAV Header
     uint8_t wavHeader[44];
-    // RIFF Chunk
     wavHeader[0] = 'R'; wavHeader[1] = 'I'; wavHeader[2] = 'F'; wavHeader[3] = 'F';
     uint32_t chunkSize = 36 + pcmBytes;
     wavHeader[4] = (uint8_t)(chunkSize & 0xFF);
@@ -103,10 +111,9 @@ void WifiServerManager::handleAudioWav() {
     wavHeader[7] = (uint8_t)((chunkSize >> 24) & 0xFF);
     wavHeader[8] = 'W'; wavHeader[9] = 'A'; wavHeader[10] = 'V'; wavHeader[11] = 'E';
 
-    // fmt subchunk
     wavHeader[12] = 'f'; wavHeader[13] = 'm'; wavHeader[14] = 't'; wavHeader[15] = ' ';
-    wavHeader[16] = 16; wavHeader[17] = 0; wavHeader[18] = 0; wavHeader[19] = 0; // Subchunk1Size = 16
-    wavHeader[20] = 1;  wavHeader[21] = 0; // AudioFormat = 1 (PCM)
+    wavHeader[16] = 16; wavHeader[17] = 0; wavHeader[18] = 0; wavHeader[19] = 0;
+    wavHeader[20] = 1;  wavHeader[21] = 0;
     wavHeader[22] = (uint8_t)(numChannels & 0xFF);
     wavHeader[23] = (uint8_t)((numChannels >> 8) & 0xFF);
     wavHeader[24] = (uint8_t)(sampleRate & 0xFF);
@@ -122,24 +129,20 @@ void WifiServerManager::handleAudioWav() {
     wavHeader[34] = (uint8_t)(bitsPerSample & 0xFF);
     wavHeader[35] = (uint8_t)((bitsPerSample >> 8) & 0xFF);
 
-    // data subchunk
     wavHeader[36] = 'd'; wavHeader[37] = 'a'; wavHeader[38] = 't'; wavHeader[39] = 'a';
     wavHeader[40] = (uint8_t)(pcmBytes & 0xFF);
     wavHeader[41] = (uint8_t)((pcmBytes >> 8) & 0xFF);
     wavHeader[42] = (uint8_t)((pcmBytes >> 16) & 0xFF);
     wavHeader[43] = (uint8_t)((pcmBytes >> 24) & 0xFF);
 
-    // Stream out via HTTP
     _server.sendHeader("Access-Control-Allow-Origin", "*");
     _server.sendHeader("Content-Disposition", "inline; filename=\"audio.wav\"");
     _server.setContentLength(totalFileSize);
     _server.send(200, "audio/wav", "");
 
     WiFiClient client = _server.client();
-    // Send 44-byte header
     client.write(wavHeader, 44);
 
-    // Stream PCM audio in fast 2048-byte chunks
     const size_t CHUNK_SIZE = 2048;
     size_t bytesSent = 0;
     while (bytesSent < pcmBytes && client.connected()) {
@@ -148,5 +151,5 @@ void WifiServerManager::handleAudioWav() {
         bytesSent += toSend;
     }
 
-    Serial.printf("[HTTP] Streamed audio.wav (%u bytes) to client in high-speed Wi-Fi mode!\n", totalFileSize);
+    Serial.printf("[HTTP] Transferred audio.wav (%u bytes) via Wi-Fi!\n", totalFileSize);
 }

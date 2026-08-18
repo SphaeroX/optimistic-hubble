@@ -14,7 +14,7 @@
 #define PIN_I2S_SCK             2   // XIAO D0 = GPIO 2 (Bit Clock)
 #define PIN_I2S_WS              3   // XIAO D1 = GPIO 3 (Word Select / LRCLK)
 #define PIN_I2S_SD              4   // XIAO D2 = GPIO 4 (Serial Data In)
-#define I2S_BUFFER_SAMPLES      256 // Number of stereo sample frames per read
+#define I2S_BUFFER_SAMPLES      128 // Number of stereo sample frames per read
 
 // Optional External Status LED (Recommended on D10)
 #define PIN_STATUS_LED          10  // XIAO D10 = GPIO 10
@@ -23,23 +23,23 @@
 #define SERIAL_BAUD_RATE        115200
 
 // ============================================================================
-// Audio Recording Parameters
+// Audio Recording Parameters (Safe for ESP32-C3 Internal SRAM)
 // ============================================================================
 #define AUDIO_SAMPLE_RATE       16000  // 16 kHz Voice sampling rate
-#define AUDIO_MAX_SECONDS       6      // Maximum recording duration per clip (seconds)
-#define AUDIO_BUFFER_BYTES      (AUDIO_SAMPLE_RATE * sizeof(int16_t) * AUDIO_MAX_SECONDS) // ~192 KB
+#define AUDIO_MAX_SECONDS       4      // 4 seconds at 16 kHz 16-Bit Mono = 128,000 bytes
+#define AUDIO_BUFFER_BYTES      (AUDIO_SAMPLE_RATE * sizeof(int16_t) * AUDIO_MAX_SECONDS)
 
 // ============================================================================
 // Tap & Shock Detection Parameters
 // ============================================================================
-#define TAP_JERK_THRESHOLD_G    1.4f   // Shock delta acceleration threshold in g
+#define TAP_JERK_THRESHOLD_G    1.3f   // Shock delta acceleration threshold in g
 #define TAP_DEBOUNCE_MS         500    // Minimum time between tap triggers (ms)
 
 // ============================================================================
 // Wi-Fi High-Speed Audio Server Parameters
 // ============================================================================
 #define WIFI_AP_SSID            "XIAO-Audio-Hotspot"
-#define WIFI_AP_PASS            "xiaoesp32c3" // Minimum 8 chars for WPA2 (or leave empty for open AP)
+#define WIFI_AP_PASS            "xiaoesp32c3" // WPA2 Passphrase (>= 8 chars)
 #define HTTP_SERVER_PORT        80
 
 // ============================================================================

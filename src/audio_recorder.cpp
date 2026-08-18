@@ -1,5 +1,6 @@
 #include "audio_recorder.h"
 #include <driver/i2s.h>
+#include <esp_heap_caps.h>
 
 AudioRecorder::AudioRecorder(uint8_t ledPin)
     : _ledPin(ledPin), _recording(false), _pcmBuffer(nullptr), 
@@ -17,19 +18,26 @@ bool AudioRecorder::begin() {
     setLed(false);
 
     if (_pcmBuffer == nullptr) {
-        // Try allocating buffer; if heap is tight, scale down to fit safely
-        size_t targetSamples = _maxSamples;
-        _pcmBuffer = (int16_t*)malloc(targetSamples * sizeof(int16_t));
+        // Find largest available contiguous heap block
+        size_t maxAlloc = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
         
-        while (_pcmBuffer == nullptr && targetSamples >= (AUDIO_SAMPLE_RATE * 3)) {
-            targetSamples -= AUDIO_SAMPLE_RATE; // Reduce by 1 second
-            _pcmBuffer = (int16_t*)malloc(targetSamples * sizeof(int16_t));
+        // Target 4 seconds = 128,000 bytes. Leave at least 50 KB for Wi-Fi & BLE stacks
+        size_t desiredBytes = AUDIO_SAMPLE_RATE * sizeof(int16_t) * AUDIO_MAX_SECONDS;
+        if (desiredBytes > maxAlloc - 50000) {
+            desiredBytes = (maxAlloc > 70000) ? (maxAlloc - 50000) : 48000;
         }
 
+        _maxSamples = desiredBytes / sizeof(int16_t);
+        _pcmBuffer = (int16_t*)malloc(_maxSamples * sizeof(int16_t));
+
         if (_pcmBuffer == nullptr) {
+            Serial.println(F("[RECORDER] Error: Out of memory for audio buffer!"));
             return false;
         }
-        _maxSamples = targetSamples;
+
+        Serial.printf("[RECORDER] Allocated %u samples (%.2f s, %u bytes). Free heap: %u\n", 
+                      _maxSamples, (float)_maxSamples / AUDIO_SAMPLE_RATE, 
+                      _maxSamples * sizeof(int16_t), ESP.getFreeHeap());
     }
 
     _recordedSamples = 0;
@@ -38,7 +46,6 @@ bool AudioRecorder::begin() {
 }
 
 void AudioRecorder::setLed(bool state) {
-    // Active-HIGH standard output
     digitalWrite(_ledPin, state ? HIGH : LOW);
 }
 
@@ -59,7 +66,7 @@ bool AudioRecorder::startRecording() {
     _recordedSamples = 0;
     _recording = true;
     _recordStartTime = millis();
-    setLed(true); // Light up LED
+    setLed(true);
     return true;
 }
 
@@ -68,8 +75,7 @@ bool AudioRecorder::processRecording(I2sMicDriver& mic) {
         return false;
     }
 
-    // Read audio chunk from I2S
-    static int32_t rawChunk[256 * 2]; // 256 stereo frames
+    static int32_t rawChunk[128 * 2]; // 128 stereo frames
     size_t bytesRead = 0;
     esp_err_t err = i2s_read(I2S_NUM_0, rawChunk, sizeof(rawChunk), &bytesRead, pdMS_TO_TICKS(10));
 
@@ -78,26 +84,19 @@ bool AudioRecorder::processRecording(I2sMicDriver& mic) {
 
         for (size_t i = 0; i < frameCount; ++i) {
             if (_recordedSamples >= _maxSamples) {
-                // Buffer full, auto stop
                 stopRecording();
                 return false;
             }
 
-            // Extract Left & Right 24-bit samples
             int32_t leftSample = rawChunk[2 * i] >> 8;
             int32_t rightSample = rawChunk[2 * i + 1] >> 8;
-
-            // Downsample / Mix to 16-bit mono
             int32_t mixed = (leftSample + rightSample) / 2;
-            
-            // Scale 24-bit (-8388608..8388607) down to 16-bit (-32768..32767)
             int16_t sample16 = (int16_t)(mixed >> 8);
 
             _pcmBuffer[_recordedSamples++] = sample16;
         }
     }
 
-    // Check maximum time limit
     if (millis() - _recordStartTime >= (AUDIO_MAX_SECONDS * 1000UL)) {
         stopRecording();
         return false;
@@ -108,5 +107,5 @@ bool AudioRecorder::processRecording(I2sMicDriver& mic) {
 
 void AudioRecorder::stopRecording() {
     _recording = false;
-    setLed(false); // Turn off LED
+    setLed(false);
 }
