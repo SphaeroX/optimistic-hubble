@@ -135,7 +135,7 @@ bool AudioRecorder::startRecording(uint16_t clipId) {
     _recordStartTime = millis();
     setLed(true);
 
-    Serial.printf("[RECORDER] Recording True Stereo Dual-Mic Audio (16 KB/s) -> %s\n", filename);
+    Serial.printf("[RECORDER] Recording Stereo Audio (+18 dB Preamp Boost) -> %s\n", filename);
     return true;
 }
 
@@ -164,8 +164,8 @@ bool AudioRecorder::processRecording(I2sMicDriver& mic) {
             int16_t sampleL16 = (int16_t)(rawL >> 8);
             int16_t sampleR16 = (int16_t)(rawR >> 8);
 
-            // Channel 1 (Left Mic) DC-blocking filter
-            float xL = (float)sampleL16;
+            // Channel 1 (Left Mic) Preamp Gain (+18 dB Boost) + DC Filter
+            float xL = (float)sampleL16 * MIC_GAIN_MULTIPLIER;
             float yL = xL - _dcPrevXL + (0.995f * _dcPrevYL);
             _dcPrevXL = xL;
             _dcPrevYL = yL;
@@ -173,8 +173,8 @@ bool AudioRecorder::processRecording(I2sMicDriver& mic) {
             else if (yL < -32768.0f) yL = -32768.0f;
             int16_t cleanL = (int16_t)yL;
 
-            // Channel 2 (Right Mic) DC-blocking filter
-            float xR = (float)sampleR16;
+            // Channel 2 (Right Mic) Preamp Gain (+18 dB Boost) + DC Filter
+            float xR = (float)sampleR16 * MIC_GAIN_MULTIPLIER;
             float yR = xR - _dcPrevXR + (0.995f * _dcPrevYR);
             _dcPrevXR = xR;
             _dcPrevYR = yR;
@@ -223,7 +223,7 @@ void AudioRecorder::stopRecording() {
         _activeFile.close();
 
         float dur = getDurationSeconds();
-        Serial.printf("[RECORDER] Stereo Clip saved: %.2f s (%u frames) -> %u bytes WAV (16 KB/s).\n",
+        Serial.printf("[RECORDER] Stereo Clip saved: %.2f s (%u frames) -> %u bytes WAV.\n",
                       dur, _totalFramesRecorded, 60 + _totalCompressedBytesWritten);
     }
 }

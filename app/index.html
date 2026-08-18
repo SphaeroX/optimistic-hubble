@@ -60,7 +60,7 @@
           </div>
           <div class="status-texts">
             <h3 id="stateLabel">Bereit</h3>
-            <p id="stateDesc">Hau auf das Breadboard zum Aufnehmen. Beide Mikrofone werden getrennt aufgezeichnet.</p>
+            <p id="stateDesc">Hau auf das Breadboard zum Aufnehmen. +18 dB Preamp Boost aktiv.</p>
           </div>
         </div>
 
@@ -89,8 +89,8 @@
           </div>
 
           <div class="sensor-pill">
-            <span class="pill-label">Mikrofone</span>
-            <span class="pill-val" style="color:var(--accent-cyan);">2x I2S Stereo</span>
+            <span class="pill-label">Preamp Verstärkung</span>
+            <span class="pill-val" style="color:var(--accent-emerald);">+18 dB (8x)</span>
           </div>
 
           <div class="sensor-pill">
@@ -125,7 +125,7 @@
         <!-- Dual-Mic DSP Noise Cancellation Controls -->
         <div class="dsp-card">
           <div class="dsp-title-row">
-            <span class="dsp-title">🎛️ Dual-Mikrofon DSP & Rauschfilter</span>
+            <span class="dsp-title">🎛️ Dual-Mikrofon DSP & Verstärker</span>
             <span id="dspModeBadge" class="badge badge-connected">Beamforming Aktiv</span>
           </div>
           
@@ -142,8 +142,13 @@
             </div>
 
             <div class="dsp-control-group">
-              <label for="noiseGateSlider">Noise-Gate (Stille in Sprechpausen): <span id="gateVal">25%</span></label>
-              <input type="range" id="noiseGateSlider" min="0" max="100" value="25" oninput="onDspSettingsChanged()">
+              <label for="volumeBoostSlider">Lautstärke-Boost: <span id="boostVal">150%</span></label>
+              <input type="range" id="volumeBoostSlider" min="50" max="350" value="150" oninput="onDspSettingsChanged()">
+            </div>
+
+            <div class="dsp-control-group" style="grid-column: 1 / -1;">
+              <label for="noiseGateSlider">Noise-Gate (Stille in Sprechpausen): <span id="gateVal">20%</span></label>
+              <input type="range" id="noiseGateSlider" min="0" max="100" value="20" oninput="onDspSettingsChanged()">
             </div>
           </div>
         </div>
@@ -194,7 +199,7 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-      <span>XIAO ESP32C3 Audio Companion &bull; Dual-Mic DSP & 4MB Flash Sync Hub</span>
+      <span>XIAO ESP32C3 Audio Companion &bull; Dual-Mic DSP & +18 dB Preamp Boost</span>
     </footer>
   </div>
 

@@ -14,20 +14,19 @@
 #define PIN_I2S_SCK             2   // XIAO D0 = GPIO 2 (Bit Clock)
 #define PIN_I2S_WS              3   // XIAO D1 = GPIO 3 (Word Select / LRCLK)
 #define PIN_I2S_SD              4   // XIAO D2 = GPIO 4 (Serial Data In)
-#define I2S_BUFFER_SAMPLES      128 // Number of stereo sample frames per read
+#define I2S_BUFFER_SAMPLES      256 // Number of stereo sample frames per read
 
-// Optional External Status LED (Recommended on D10)
+// External Status LED (Recording Indicator)
 #define PIN_STATUS_LED          10  // XIAO D10 = GPIO 10
 
 // Serial Baud Rate
 #define SERIAL_BAUD_RATE        115200
 
 // ============================================================================
-// Audio Recording Parameters (Safe for ESP32-C3 Internal SRAM)
+// Audio Recording & Preamp Parameters
 // ============================================================================
 #define AUDIO_SAMPLE_RATE       16000  // 16 kHz Voice sampling rate
-#define AUDIO_MAX_SECONDS       4      // 4 seconds at 16 kHz 16-Bit Mono = 128,000 bytes
-#define AUDIO_BUFFER_BYTES      (AUDIO_SAMPLE_RATE * sizeof(int16_t) * AUDIO_MAX_SECONDS)
+#define MIC_GAIN_MULTIPLIER     8.0f   // +18 dB Digital Preamp Gain (Crisp, loud & full-scale voice)
 
 // ============================================================================
 // Tap & Shock Detection Parameters

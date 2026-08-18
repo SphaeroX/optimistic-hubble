@@ -148,8 +148,13 @@ function applyDualMicDsp() {
   const mode = filterModeSelect.value;
   const gatePercent = parseInt(noiseGateSlider.value) / 100.0;
   const gateThreshold = gatePercent * 800; // Threshold in 16-bit units
-  const numFrames = rawLeftPcm.length;
+  
+  const volumeBoostSlider = document.getElementById('volumeBoostSlider');
+  const boostValEl = document.getElementById('boostVal');
+  const boostFactor = volumeBoostSlider ? (parseInt(volumeBoostSlider.value) / 100.0) : 1.5;
+  if (boostValEl) boostValEl.textContent = `${Math.round(boostFactor * 100)}%`;
 
+  const numFrames = rawLeftPcm.length;
   gateValEl.textContent = `${Math.round(gatePercent * 100)}%`;
 
   let channels = 1;
@@ -162,15 +167,15 @@ function applyDualMicDsp() {
     const chR = currentAudioBuffer.getChannelData(1);
 
     for (let i = 0; i < numFrames; i++) {
-      let sL = rawLeftPcm[i];
-      let sR = rawRightPcm[i];
+      let sL = rawLeftPcm[i] * boostFactor;
+      let sR = rawRightPcm[i] * boostFactor;
 
       // Noise Gate
       if (Math.abs(sL) < gateThreshold) sL = 0;
       if (Math.abs(sR) < gateThreshold) sR = 0;
 
-      chL[i] = sL / 32768.0;
-      chR[i] = sR / 32768.0;
+      chL[i] = Math.max(-1.0, Math.min(1.0, sL / 32768.0));
+      chR[i] = Math.max(-1.0, Math.min(1.0, sR / 32768.0));
     }
     dspModeBadge.textContent = 'Echtes Stereo (2 Kanäle)';
     drawWaveformStereo(rawLeftPcm, rawRightPcm);
@@ -184,14 +189,14 @@ function applyDualMicDsp() {
 
       if (mode === 'beamforming') {
         // Dual-Mic Beamforming: (Left + Right) / 2
-        val = (rawLeftPcm[i] + rawRightPcm[i]) / 2;
+        val = ((rawLeftPcm[i] + rawRightPcm[i]) / 2) * boostFactor;
       } else if (mode === 'anc') {
         // Differential Active Noise Cancellation (Spatial Noise Subtraction)
-        val = rawLeftPcm[i] - (0.5 * rawRightPcm[i]);
+        val = (rawLeftPcm[i] - (0.5 * rawRightPcm[i])) * boostFactor;
       } else if (mode === 'mic1') {
-        val = rawLeftPcm[i];
+        val = rawLeftPcm[i] * boostFactor;
       } else if (mode === 'mic2') {
-        val = rawRightPcm[i];
+        val = rawRightPcm[i] * boostFactor;
       }
 
       // Noise Gate (Stille in Sprechpausen)
