@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XIAO ESP32C3 - Voice Companion App</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="logo-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="22"></line>
+          </svg>
+        </div>
+        <div>
+          <h1>XIAO Voice Companion</h1>
+          <p class="subtitle">BLE Tap-to-Record Studio</p>
+        </div>
+      </div>
+
+      <button id="btnConnect" class="btn-connect" onclick="toggleBleConnection()">
+        <span class="btn-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m7 7 10 10-5 5V2l5 5L7 17"></path>
+          </svg>
+        </span>
+        <span id="btnConnectText">Mit XIAO verbinden</span>
+      </button>
+    </header>
+
+    <!-- Main Grid -->
+    <main class="main-grid">
+      <!-- Status & Device Card -->
+      <section class="card status-card">
+        <div class="card-header">
+          <h2>Gerätestatus</h2>
+          <span id="connectionBadge" class="badge badge-disconnected">Getrennt</span>
+        </div>
+
+        <div class="status-hero">
+          <div id="stateRing" class="state-ring state-idle">
+            <div class="state-icon-inner" id="stateIcon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+          </div>
+          <div class="status-texts">
+            <h3 id="stateLabel">Warte auf Verbindung</h3>
+            <p id="stateDesc">Klicke oben auf "Mit XIAO verbinden", um Sprachaufnahmen per Erschütterung zu empfangen.</p>
+          </div>
+        </div>
+
+        <!-- Transfer Progress Bar -->
+        <div id="transferContainer" class="transfer-box hidden">
+          <div class="transfer-header">
+            <span>Übertrage Audio via BLE...</span>
+            <span id="transferPercent">0%</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="transferBar" class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Sensor Indicators -->
+        <div class="sensor-grid">
+          <div class="sensor-pill">
+            <span class="pill-label">Erschütterung / Tap</span>
+            <div class="tap-indicator-container">
+              <span id="tapPulse" class="tap-pulse"></span>
+              <span id="tapText" class="pill-val">Ruhe</span>
+            </div>
+          </div>
+
+          <div class="sensor-pill">
+            <span class="pill-label">Controller</span>
+            <span id="deviceInfo" class="pill-val">Seeed ESP32C3</span>
+          </div>
+
+          <div class="sensor-pill">
+            <span class="pill-label">Sampling</span>
+            <span id="samplingInfo" class="pill-val">16 kHz / 16-Bit</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Player & Waveform Card -->
+      <section class="card player-card">
+        <div class="card-header">
+          <h2>Aktuelle Sprachaufnahme</h2>
+          <span id="clipMeta" class="meta-tag">Keine Aufnahme vorhanden</span>
+        </div>
+
+        <div class="waveform-container">
+          <canvas id="waveformCanvas"></canvas>
+          <div id="emptyWaveformMessage" class="empty-message">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M2 10v3"></path>
+              <path d="M6 6v11"></path>
+              <path d="M10 3v18"></path>
+              <path d="M14 8v7"></path>
+              <path d="M18 5v13"></path>
+              <path d="M22 10v3"></path>
+            </svg>
+            <p>Hau auf das Breadboard, um die erste Aufnahme zu starten!</p>
+          </div>
+        </div>
+
+        <!-- Player Controls -->
+        <div class="player-controls">
+          <div class="timeline-row">
+            <span id="currentTime" class="time-label">0:00</span>
+            <input type="range" id="seekSlider" min="0" max="100" value="0" step="0.1" oninput="seekAudio(this.value)">
+            <span id="totalTime" class="time-label">0:00</span>
+          </div>
+
+          <div class="action-buttons-row">
+            <button id="btnPlay" class="btn-play" onclick="togglePlayAudio()" disabled>
+              <svg id="playIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span id="btnPlayText">Abspielen</span>
+            </button>
+
+            <button id="btnDownload" class="btn-secondary" onclick="downloadCurrentClip()" disabled>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>WAV Herunterladen</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Recordings Library Section -->
+      <section class="card library-card">
+        <div class="card-header">
+          <h2>Aufnahme-Verlauf</h2>
+          <button class="btn-text" onclick="clearHistory()">Verlauf leeren</button>
+        </div>
+
+        <div id="clipsList" class="clips-list">
+          <div class="no-clips-msg">Noch keine Aufnahmen empfangen.</div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <span>XIAO ESP32C3 Audio Companion &bull; Web Bluetooth API</span>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

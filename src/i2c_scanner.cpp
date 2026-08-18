@@ -1,5 +1,4 @@
 #include "i2c_scanner.h"
-#include "config.h"
 
 void I2cScanner::begin(int sdaPin, int sclPin, uint32_t frequency) {
     Wire.begin(sdaPin, sclPin, frequency);
@@ -19,7 +18,7 @@ I2cScanResult I2cScanner::scanBus() {
             if (result.count < 16) {
                 result.addresses[result.count++] = address;
             }
-            if (address == BMI160_DEFAULT_ADDR || address == BMI160_ALT_ADDR) {
+            if (address == 0x6A || address == 0x68 || address == 0x69 || address == 0x6B) {
                 result.hasBmi160 = true;
                 result.bmi160Address = address;
             }
@@ -40,10 +39,12 @@ void I2cScanner::printScanReport(const I2cScanResult& result) {
         for (uint8_t i = 0; i < result.count; ++i) {
             uint8_t addr = result.addresses[i];
             Serial.printf("      - Device #%u: 0x%02X", i + 1, addr);
-            if (addr == BMI160_DEFAULT_ADDR) {
-                Serial.print(F(" (Likely BMI160 IMU @ Primary 0x68)"));
-            } else if (addr == BMI160_ALT_ADDR) {
-                Serial.print(F(" (Likely BMI160 IMU @ Alternate 0x69)"));
+            if (addr == 0x6A) {
+                Serial.print(F(" (ST LSM6DS-series IMU @ Primary 0x6A)"));
+            } else if (addr == 0x68) {
+                Serial.print(F(" (Bosch BMI160 / MPU IMU @ Primary 0x68)"));
+            } else if (addr == 0x69 || addr == 0x6B) {
+                Serial.print(F(" (Alternate IMU Address)"));
             }
             Serial.println();
         }
