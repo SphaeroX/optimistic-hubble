@@ -9,7 +9,7 @@
 #include "ble_manager.h"
 #include "wifi_server.h"
 
-// Global Hardware & Storage Modules
+// Global Modules
 static ImuDriver imu;
 static I2sMicDriver stereoMic;
 static TapDetector tapDetector(TAP_JERK_THRESHOLD_G, TAP_DEBOUNCE_MS);
@@ -23,8 +23,8 @@ static const unsigned long TELEMETRY_INTERVAL_MS = 100;
 
 void printBanner() {
     Serial.println(F("\n========================================================"));
-    Serial.println(F("  XIAO ESP32C3 - Voice Assistant with 4MB Flash Storage"));
-    Serial.println(F("  Tap to Record -> Auto-Save to Flash -> Sync via Wi-Fi"));
+    Serial.println(F("  XIAO ESP32C3 - Real-Time Direct-to-Flash Voice Vault"));
+    Serial.println(F("  Stream to LittleFS (Up to 5 min) -> Captive Wi-Fi Sync"));
     Serial.println(F("========================================================"));
 }
 
@@ -66,15 +66,15 @@ void setup() {
     }
 
     // 4. Initialize Audio Recorder & Status LED
-    Serial.println(F("[4/6] Initializing Audio Recorder & Status LED..."));
+    Serial.println(F("[4/6] Initializing Stream Recorder & Status LED..."));
     bool recOk = recorder.begin();
     if (recOk) {
-        Serial.println(F("  [PASS] Audio Buffer initialized."));
+        Serial.println(F("  [PASS] Stream Recorder ready."));
         recorder.blinkLed(3, 80);
     }
 
-    // 5. Initialize Wi-Fi Hotspot & Sync REST API
-    Serial.println(F("[5/6] Starting Wi-Fi Hotspot & Sync Server..."));
+    // 5. Initialize Wi-Fi Hotspot, Captive DNS & Sync Server
+    Serial.println(F("[5/6] Starting Wi-Fi Hotspot & Captive DNS Server..."));
     bool wifiOk = wifiServer.begin(WIFI_AP_SSID, WIFI_AP_PASS, HTTP_SERVER_PORT);
     if (wifiOk) {
         Serial.printf("  [PASS] Hotspot \"%s\" (PW: %s) -> http://%s\n",
@@ -91,46 +91,33 @@ void setup() {
     Serial.println(F("\n========================================================"));
     Serial.println(F("  SYSTEM READY:"));
     Serial.println(F("  1. Tap breadboard to START recording (LED turns ON)."));
-    Serial.println(F("  2. Speak into microphone."));
-    Serial.println(F("  3. Tap again to STOP -> Auto-saved to 4MB Flash storage!"));
-    Serial.println(F("  4. Open http://192.168.4.1 in any browser to listen & sync."));
+    Serial.println(F("  2. Speak into microphone (streams straight to Flash)."));
+    Serial.println(F("  3. Tap again to STOP -> Finalized WAV saved to Flash!"));
+    Serial.println(F("  4. Connect to \"XIAO-Audio-Hotspot\" -> http://192.168.4.1"));
     Serial.println(F("========================================================\n"));
 }
 
 void handleStopAndSave() {
     recorder.stopRecording();
-    size_t pcmBytes = recorder.getRecordedBytes();
-    float duration = recorder.getDurationSeconds();
+    size_t totalClips = storage.getClipCount();
+    uint16_t clipId = recorder.getCurrentClipId();
 
-    Serial.printf("\n[RECORD] Finished: %u samples (%.2f s, %u bytes)\n", 
-                  recorder.getRecordedSamples(), duration, pcmBytes);
+    Serial.printf("\n[RECORD STOP] Clip #%u saved! Total in Flash: %u (Free: %u KB)\n", 
+                  clipId, totalClips, (storage.getTotalBytes() - storage.getUsedBytes()) / 1024);
 
-    // Save directly to 4MB Flash (LittleFS) as standard WAV file
-    uint16_t newClipId = 0;
-    bool saved = storage.saveWavClip(recorder.getBuffer(), pcmBytes, recorder.getSampleRate(), &newClipId);
-
-    if (saved) {
-        size_t totalClips = storage.getClipCount();
-        Serial.printf("[STORAGE] Clip #%u saved! Total in Flash: %u (Free: %u KB)\n", 
-                      newClipId, totalClips, (storage.getTotalBytes() - storage.getUsedBytes()) / 1024);
-
-        // Notify BLE client: state=DONE, totalBytes=newClipId, sampleRate=totalClips
-        ble.updateState(STATE_DONE, newClipId, totalClips);
-    } else {
-        Serial.println(F("[STORAGE] Failed to save clip to Flash!"));
-        ble.updateState(STATE_IDLE);
-    }
+    // Notify BLE client
+    ble.updateState(STATE_DONE, clipId, totalClips);
 }
 
 void loop() {
-    // 1. Handle incoming Wi-Fi requests (Download / Sync / Dashboard)
+    // 1. Process Captive DNS & Web Server requests
     wifiServer.handleClient();
 
-    // 2. Process Active Recording
+    // 2. Process Active Real-Time Recording Stream
     if (recorder.isRecording()) {
         bool stillRecording = recorder.processRecording(stereoMic);
 
-        // Check if user tapped again to stop early
+        // Check if user tapped again to stop
         ImuMetricData imuData;
         if (imu.readSensorData(imuData)) {
             float shock = 0.0f;
@@ -157,10 +144,12 @@ void loop() {
     if (imuOk) {
         float shock = 0.0f;
         if (tapDetector.update(imuData, &shock)) {
-            Serial.printf("\n[TAP DETECTED] Start trigger! Shock: %.2f g -> RECORDING...\n", shock);
+            Serial.printf("\n[TAP DETECTED] Start trigger! Shock: %.2f g -> STREAMING TO FLASH...\n", shock);
             ble.notifyTap(shock);
             ble.updateState(STATE_RECORDING);
-            recorder.startRecording();
+            
+            uint16_t nextId = storage.getClipCount() + 1;
+            recorder.startRecording(nextId);
             return;
         }
     }

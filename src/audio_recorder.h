@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <LittleFS.h>
 #include "i2s_mic_driver.h"
 #include "config.h"
 
@@ -9,16 +10,16 @@ public:
     ~AudioRecorder();
 
     bool begin();
-    bool startRecording();
+    bool startRecording(uint16_t clipId);
     bool processRecording(I2sMicDriver& mic);
     void stopRecording();
 
     bool isRecording() const { return _recording; }
-    const uint8_t* getBuffer() const { return (const uint8_t*)_pcmBuffer; }
-    size_t getRecordedBytes() const { return _recordedSamples * sizeof(int16_t); }
-    size_t getRecordedSamples() const { return _recordedSamples; }
+    size_t getRecordedBytes() const { return _totalPcmBytesWritten; }
+    size_t getRecordedSamples() const { return _totalPcmBytesWritten / sizeof(int16_t); }
     uint32_t getSampleRate() const { return AUDIO_SAMPLE_RATE; }
-    float getDurationSeconds() const { return (float)_recordedSamples / (float)AUDIO_SAMPLE_RATE; }
+    float getDurationSeconds() const { return (float)_totalPcmBytesWritten / (float)(AUDIO_SAMPLE_RATE * sizeof(int16_t)); }
+    uint16_t getCurrentClipId() const { return _currentClipId; }
 
     void setLed(bool state);
     void blinkLed(uint8_t times, uint16_t delayMs = 60);
@@ -26,8 +27,10 @@ public:
 private:
     uint8_t _ledPin;
     bool _recording;
-    int16_t* _pcmBuffer;
-    size_t _maxSamples;
-    size_t _recordedSamples;
+    File _activeFile;
+    uint16_t _currentClipId;
+    size_t _totalPcmBytesWritten;
     unsigned long _recordStartTime;
+
+    void writeWavHeader(File& file, size_t pcmBytes, uint32_t sampleRate);
 };
