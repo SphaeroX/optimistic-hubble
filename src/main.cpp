@@ -1,11 +1,11 @@
 #include <Arduino.h>
 #include "config.h"
 #include "i2c_scanner.h"
-#include "bmi160_driver.h"
+#include "imu_driver.h"
 #include "i2s_mic_driver.h"
 
 // Global Hardware Drivers
-static Bmi160Driver bmi160;
+static ImuDriver imu;
 static I2sMicDriver stereoMic;
 
 // Display Modes
@@ -21,7 +21,7 @@ static const unsigned long PRINT_INTERVAL_MS = 100; // 10 Hz refresh rate for sm
 void printBanner() {
     Serial.println(F("\n========================================================"));
     Serial.println(F("  Seeed Studio XIAO ESP32C3 - Hardware Test Suite"));
-    Serial.println(F("  Target: 2x I2S MEMS Microphones + BMI160 6-Axis IMU"));
+    Serial.println(F("  Target: 2x I2S MEMS Microphones + 6-Axis IMU Sensor"));
     Serial.println(F("========================================================"));
 }
 
@@ -42,17 +42,15 @@ bool runHardwareSelfTest() {
     I2cScanResult scanResult = I2cScanner::scanBus();
     I2cScanner::printScanReport(scanResult);
 
-    Serial.println(F("[2/3] Initializing BMI160 6-Axis IMU Sensor..."));
-    uint8_t targetAddr = scanResult.hasBmi160 ? scanResult.bmi160Address : BMI160_DEFAULT_ADDR;
-    bool bmiOk = bmi160.begin(targetAddr);
+    Serial.println(F("[2/3] Probing and Initializing 6-Axis IMU Sensor..."));
+    bool imuOk = imu.begin();
 
-    if (bmiOk) {
-        Serial.printf("  [PASS] BMI160 initialized successfully at 0x%02X!\n", targetAddr);
-        Serial.printf("         Chip ID: 0x%02X (Expected: 0xD8)\n", bmi160.readChipId());
+    if (imuOk) {
+        Serial.printf("  [PASS] Identified & initialized: %s\n", imu.getChipName());
+        Serial.printf("         I2C Address: 0x%02X | Chip ID: 0x%02X\n", imu.getAddress(), imu.getChipId());
     } else {
-        Serial.printf("  [FAIL] Could not initialize BMI160 at 0x%02X (Chip ID read: 0x%02X)\n", 
-                      targetAddr, bmi160.readChipId());
-        Serial.println(F("         Check: SDA, SCL, VCC(3.3V), GND and SDO pins."));
+        Serial.println(F("  [FAIL] No supported 6-Axis IMU detected!"));
+        Serial.println(F("         Check: SDA (D4), SCL (D5), VCC (3.3V), GND and SDO/SA0 pins."));
     }
 
     Serial.println(F("\n[3/3] Initializing Stereo I2S MEMS Microphones..."));
@@ -69,13 +67,13 @@ bool runHardwareSelfTest() {
     Serial.println(F("\n========================================================"));
     Serial.println(F("                 SELF-TEST SUMMARY"));
     Serial.println(F("========================================================"));
-    Serial.printf("  - I2C Bus & Devices:     [%s] (%u devices)\n", (scanResult.count > 0) ? "PASS" : "FAIL", scanResult.count);
-    Serial.printf("  - BMI160 IMU:            [%s]\n", bmiOk ? "PASS" : "FAIL");
+    Serial.printf("  - I2C Bus & Devices:     [%s] (%u devices detected)\n", (scanResult.count > 0) ? "PASS" : "FAIL", scanResult.count);
+    Serial.printf("  - 6-Axis IMU Sensor:     [%s] (%s)\n", imuOk ? "PASS" : "FAIL", imuOk ? imu.getChipName() : "None");
     Serial.printf("  - Stereo I2S Microphones: [%s]\n", micOk ? "PASS" : "FAIL");
     Serial.println(F("========================================================"));
 
     printHelpMenu();
-    return (bmiOk && micOk);
+    return (imuOk && micOk);
 }
 
 void setup() {
@@ -121,18 +119,18 @@ void loop() {
     bool audioOk = stereoMic.readMetrics(audio);
 
     // Read IMU Data
-    Bmi160MetricData imu;
-    bool imuOk = bmi160.readSensorData(imu);
+    ImuMetricData imuData;
+    bool imuOk = imu.readSensorData(imuData);
 
     if (currentMode == MODE_PLOTTER) {
         // Serial Plotter output format: "Label1:val1 Label2:val2 ..."
         Serial.printf("MicL_RMS:%.1f\tMicR_RMS:%.1f\tAccX_g:%.2f\tAccY_g:%.2f\tAccZ_g:%.2f\tGyrZ_dps:%.1f\n",
                       audioOk ? audio.leftRms : 0.0f,
                       audioOk ? audio.rightRms : 0.0f,
-                      imuOk ? imu.accelX_g : 0.0f,
-                      imuOk ? imu.accelY_g : 0.0f,
-                      imuOk ? imu.accelZ_g : 0.0f,
-                      imuOk ? imu.gyroZ_dps : 0.0f);
+                      imuOk ? imuData.accelX_g : 0.0f,
+                      imuOk ? imuData.accelY_g : 0.0f,
+                      imuOk ? imuData.accelZ_g : 0.0f,
+                      imuOk ? imuData.gyroZ_dps : 0.0f);
     } else {
         // Dashboard / Monitor format with visual VU meters
         char vuLeft[32];
@@ -151,11 +149,12 @@ void loop() {
                       audio.rightActive ? "<*SOUND>" : "        ");
 
         if (imuOk) {
-            Serial.printf("  --> [IMU ACCEL (g)] X:%+5.2f  Y:%+5.2f  Z:%+5.2f | [GYRO (dps)] X:%+6.1f  Y:%+6.1f  Z:%+6.1f\n",
-                          imu.accelX_g, imu.accelY_g, imu.accelZ_g,
-                          imu.gyroX_dps, imu.gyroY_dps, imu.gyroZ_dps);
+            Serial.printf("  --> [%s] ACCEL(g) X:%+5.2f Y:%+5.2f Z:%+5.2f | GYRO(dps) X:%+6.1f Y:%+6.1f Z:%+6.1f\n",
+                          imu.getChipName(),
+                          imuData.accelX_g, imuData.accelY_g, imuData.accelZ_g,
+                          imuData.gyroX_dps, imuData.gyroY_dps, imuData.gyroZ_dps);
         } else {
-            Serial.println(F("  --> [IMU ERROR] BMI160 not responding! Check I2C wiring."));
+            Serial.println(F("  --> [IMU ERROR] Sensor not responding! Check I2C wiring."));
         }
     }
 }
