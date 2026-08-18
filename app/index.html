@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>XIAO ESP32C3 - Voice Companion & Sync Hub</title>
+  <title>XIAO ESP32C3 - Dual-Mic Voice Vault & Noise Filter</title>
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,7 +23,7 @@
         </div>
         <div>
           <h1>XIAO Voice Vault</h1>
-          <p class="subtitle">4MB Flash Zwischenspeicher & Wi-Fi Sync Hub</p>
+          <p class="subtitle">Dual-Mic Stereo &bull; Active Noise Cancellation DSP</p>
         </div>
       </div>
 
@@ -60,7 +60,7 @@
           </div>
           <div class="status-texts">
             <h3 id="stateLabel">Bereit</h3>
-            <p id="stateDesc">Hau auf das Breadboard. Alle Aufnahmen werden sicher im Flash-Speicher abgelegt.</p>
+            <p id="stateDesc">Hau auf das Breadboard zum Aufnehmen. Beide Mikrofone werden getrennt aufgezeichnet.</p>
           </div>
         </div>
 
@@ -89,8 +89,8 @@
           </div>
 
           <div class="sensor-pill">
-            <span class="pill-label">Flash-Speicher</span>
-            <span id="flashStatus" class="pill-val">4 MB LittleFS</span>
+            <span class="pill-label">Mikrofone</span>
+            <span class="pill-val" style="color:var(--accent-cyan);">2x I2S Stereo</span>
           </div>
 
           <div class="sensor-pill">
@@ -119,6 +119,32 @@
               <path d="M22 10v3"></path>
             </svg>
             <p>Klicke auf "WLAN Synchronisieren" oder wähle unten eine Aufnahme!</p>
+          </div>
+        </div>
+
+        <!-- Dual-Mic DSP Noise Cancellation Controls -->
+        <div class="dsp-card">
+          <div class="dsp-title-row">
+            <span class="dsp-title">🎛️ Dual-Mikrofon DSP & Rauschfilter</span>
+            <span id="dspModeBadge" class="badge badge-connected">Beamforming Aktiv</span>
+          </div>
+          
+          <div class="dsp-controls-grid">
+            <div class="dsp-control-group">
+              <label for="filterModeSelect">Wiedergabe-Modus:</label>
+              <select id="filterModeSelect" onchange="onDspSettingsChanged()">
+                <option value="beamforming" selected>🎙️ Dual-Mic Beamforming (+3 dB SNR & Rauschreduktion)</option>
+                <option value="anc">🛡️ Differenzielle Rauschunterdrückung (ANC Subtraktion)</option>
+                <option value="stereo">🎧 Echtes Stereo (Mic 1 Links + Mic 2 Rechts)</option>
+                <option value="mic1">🔊 Nur Mikrofon 1 (Links)</option>
+                <option value="mic2">🔊 Nur Mikrofon 2 (Rechts)</option>
+              </select>
+            </div>
+
+            <div class="dsp-control-group">
+              <label for="noiseGateSlider">Noise-Gate (Stille in Sprechpausen): <span id="gateVal">25%</span></label>
+              <input type="range" id="noiseGateSlider" min="0" max="100" value="25" oninput="onDspSettingsChanged()">
+            </div>
           </div>
         </div>
 
@@ -168,7 +194,7 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-      <span>XIAO ESP32C3 Audio Companion &bull; 4MB Flash Sync Engine</span>
+      <span>XIAO ESP32C3 Audio Companion &bull; Dual-Mic DSP & 4MB Flash Sync Hub</span>
     </footer>
   </div>
 

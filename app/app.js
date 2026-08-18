@@ -22,6 +22,11 @@ let playbackStartTime = 0;
 let playbackOffset = 0;
 let animationFrameId = null;
 
+// Raw 2-Channel Decoded Buffers
+let rawLeftPcm = null;
+let rawRightPcm = null;
+let sampleRate = 16000;
+
 let synchronizedClips = [];
 
 // DOM Elements
@@ -33,13 +38,16 @@ const stateLabel = document.getElementById('stateLabel');
 const stateDesc = document.getElementById('stateDesc');
 const tapPulse = document.getElementById('tapPulse');
 const tapText = document.getElementById('tapText');
-const flashStatus = document.getElementById('flashStatus');
 const wifiIpInput = document.getElementById('wifiIpInput');
 const btnSyncWifi = document.getElementById('btnSyncWifi');
 const btnSyncText = document.getElementById('btnSyncText');
 const currentClipTitle = document.getElementById('currentClipTitle');
 const waveformCanvas = document.getElementById('waveformCanvas');
 const emptyWaveformMessage = document.getElementById('emptyWaveformMessage');
+const filterModeSelect = document.getElementById('filterModeSelect');
+const noiseGateSlider = document.getElementById('noiseGateSlider');
+const gateValEl = document.getElementById('gateVal');
+const dspModeBadge = document.getElementById('dspModeBadge');
 const btnPlay = document.getElementById('btnPlay');
 const btnPlayText = document.getElementById('btnPlayText');
 const playIcon = document.getElementById('playIcon');
@@ -51,7 +59,7 @@ const clipMetaEl = document.getElementById('clipMeta');
 const clipsList = document.getElementById('clipsList');
 
 // ============================================================================
-// IMA-ADPCM Fast Decoder (4:1 Decompression to Linear 16-Bit PCM)
+// Stereo IMA-ADPCM Decoder (2-Channel Decompression)
 // ============================================================================
 const ADPCM_STEP_TABLE = [
   7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
@@ -63,12 +71,12 @@ const ADPCM_STEP_TABLE = [
 ];
 const ADPCM_INDEX_TABLE = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8];
 
-function decodeImaAdpcmBuffer(arrayBuffer) {
+function decodeStereoImaAdpcm(arrayBuffer) {
   const dataView = new DataView(arrayBuffer);
   let dataOffset = 60;
   let dataLength = arrayBuffer.byteLength - 60;
 
-  // Scan chunks to locate 'data' offset dynamically
+  // Scan chunks to locate 'data' offset
   let offset = 12;
   while (offset < arrayBuffer.byteLength - 8) {
     const chunkId = String.fromCharCode(
@@ -85,44 +93,141 @@ function decodeImaAdpcmBuffer(arrayBuffer) {
   }
 
   const rawBytes = new Uint8Array(arrayBuffer, dataOffset, dataLength);
-  const numSamples = rawBytes.length * 2;
-  const pcm16 = new Int16Array(numSamples);
+  const numFrames = rawBytes.length; // 1 byte = 1 Stereo frame (Left nibble + Right nibble)
+  
+  const leftPcm = new Int16Array(numFrames);
+  const rightPcm = new Int16Array(numFrames);
 
-  let predicted = 0;
-  let stepIndex = 0;
-  let sampleIdx = 0;
+  let predL = 0, stepIdxL = 0;
+  let predR = 0, stepIdxR = 0;
 
-  function decodeNibble(nibble) {
-    let step = ADPCM_STEP_TABLE[stepIndex];
+  function decodeNibble(nibble, isLeft) {
+    let step = ADPCM_STEP_TABLE[isLeft ? stepIdxL : stepIdxR];
     let diffq = step >> 3;
     if (nibble & 4) diffq += step;
     if (nibble & 2) diffq += (step >> 1);
     if (nibble & 1) diffq += (step >> 2);
 
-    if (nibble & 8) predicted -= diffq;
-    else predicted += diffq;
+    let pred = isLeft ? predL : predR;
+    if (nibble & 8) pred -= diffq;
+    else pred += diffq;
 
-    if (predicted > 32767) predicted = 32767;
-    else if (predicted < -32768) predicted = -32768;
+    if (pred > 32767) pred = 32767;
+    else if (pred < -32768) pred = -32768;
 
-    stepIndex += ADPCM_INDEX_TABLE[nibble & 0x0F];
-    if (stepIndex < 0) stepIndex = 0;
-    else if (stepIndex > 88) stepIndex = 88;
+    let nextIdx = (isLeft ? stepIdxL : stepIdxR) + ADPCM_INDEX_TABLE[nibble & 0x0F];
+    if (nextIdx < 0) nextIdx = 0;
+    else if (nextIdx > 88) nextIdx = 88;
 
-    return predicted;
+    if (isLeft) {
+      predL = pred;
+      stepIdxL = nextIdx;
+    } else {
+      predR = pred;
+      stepIdxR = nextIdx;
+    }
+
+    return pred;
   }
 
-  for (let i = 0; i < rawBytes.length; i++) {
+  for (let i = 0; i < numFrames; i++) {
     const byte = rawBytes[i];
-    pcm16[sampleIdx++] = decodeNibble(byte & 0x0F);
-    pcm16[sampleIdx++] = decodeNibble((byte >> 4) & 0x0F);
+    leftPcm[i] = decodeNibble(byte & 0x0F, true);          // Left (Mic 1)
+    rightPcm[i] = decodeNibble((byte >> 4) & 0x0F, false); // Right (Mic 2)
   }
 
-  return pcm16;
+  return { leftPcm, rightPcm, numFrames };
 }
 
 // ============================================================================
-// BLE Live Signaling (Optional Background Link)
+// Dual-Mic DSP Processing Engine
+// ============================================================================
+function applyDualMicDsp() {
+  if (!rawLeftPcm || !rawRightPcm || !audioContext) return;
+
+  const mode = filterModeSelect.value;
+  const gatePercent = parseInt(noiseGateSlider.value) / 100.0;
+  const gateThreshold = gatePercent * 800; // Threshold in 16-bit units
+  const numFrames = rawLeftPcm.length;
+
+  gateValEl.textContent = `${Math.round(gatePercent * 100)}%`;
+
+  let channels = 1;
+  if (mode === 'stereo') channels = 2;
+
+  currentAudioBuffer = audioContext.createBuffer(channels, numFrames, sampleRate);
+
+  if (mode === 'stereo') {
+    const chL = currentAudioBuffer.getChannelData(0);
+    const chR = currentAudioBuffer.getChannelData(1);
+
+    for (let i = 0; i < numFrames; i++) {
+      let sL = rawLeftPcm[i];
+      let sR = rawRightPcm[i];
+
+      // Noise Gate
+      if (Math.abs(sL) < gateThreshold) sL = 0;
+      if (Math.abs(sR) < gateThreshold) sR = 0;
+
+      chL[i] = sL / 32768.0;
+      chR[i] = sR / 32768.0;
+    }
+    dspModeBadge.textContent = 'Echtes Stereo (2 Kanäle)';
+    drawWaveformStereo(rawLeftPcm, rawRightPcm);
+
+  } else {
+    const ch0 = currentAudioBuffer.getChannelData(0);
+    const monoOut16 = new Int16Array(numFrames);
+
+    for (let i = 0; i < numFrames; i++) {
+      let val = 0;
+
+      if (mode === 'beamforming') {
+        // Dual-Mic Beamforming: (Left + Right) / 2
+        val = (rawLeftPcm[i] + rawRightPcm[i]) / 2;
+      } else if (mode === 'anc') {
+        // Differential Active Noise Cancellation (Spatial Noise Subtraction)
+        val = rawLeftPcm[i] - (0.5 * rawRightPcm[i]);
+      } else if (mode === 'mic1') {
+        val = rawLeftPcm[i];
+      } else if (mode === 'mic2') {
+        val = rawRightPcm[i];
+      }
+
+      // Noise Gate (Stille in Sprechpausen)
+      if (Math.abs(val) < gateThreshold) {
+        val = 0;
+      }
+
+      monoOut16[i] = Math.max(-32768, Math.min(32767, val));
+      ch0[i] = monoOut16[i] / 32768.0;
+    }
+
+    if (mode === 'beamforming') dspModeBadge.textContent = 'Beamforming (+3 dB SNR)';
+    else if (mode === 'anc') dspModeBadge.textContent = 'ANC Rauschfilter Aktiv';
+    else if (mode === 'mic1') dspModeBadge.textContent = 'Mic 1 (Links)';
+    else if (mode === 'mic2') dspModeBadge.textContent = 'Mic 2 (Rechts)';
+
+    drawWaveform(monoOut16);
+  }
+
+  const duration = currentAudioBuffer.duration;
+  totalTimeEl.textContent = formatTime(duration);
+  seekSlider.max = duration;
+}
+
+function onDspSettingsChanged() {
+  const wasPlaying = isPlaying;
+  const currentOffset = playbackOffset;
+
+  if (isPlaying) pausePlayback();
+  applyDualMicDsp();
+
+  if (wasPlaying) startPlayback(currentOffset);
+}
+
+// ============================================================================
+// BLE Live Signaling
 // ============================================================================
 async function toggleBleConnection() {
   if (bleDevice && bleDevice.gatt && bleDevice.gatt.connected) {
@@ -214,7 +319,7 @@ function updateDeviceState(state, latestClipId = 0, totalClips = 0) {
 
     case 1: // RECORDING
       stateRing.classList.add('state-recording');
-      stateLabel.textContent = 'Aufnahme läuft (ADPCM 8 KB/s)...';
+      stateLabel.textContent = 'Aufnahme läuft (Dual-Mic Stereo 16 KB/s)...';
       stateDesc.textContent = 'Sprich ins Mikrofon! Hau nochmals auf das Breadboard zum Beenden & Speichern.';
       break;
 
@@ -222,7 +327,6 @@ function updateDeviceState(state, latestClipId = 0, totalClips = 0) {
       stateRing.classList.add('state-idle');
       stateLabel.textContent = `Aufnahme #${latestClipId} im Flash gespeichert!`;
       stateDesc.textContent = `Gesamt ${totalClips} Aufnahme(n) im Flash bereit zur WLAN-Synchronisation.`;
-      flashStatus.textContent = `${totalClips} Aufnahmen`;
       break;
   }
 }
@@ -290,9 +394,8 @@ async function syncAllClipsFromWifi() {
     }
 
     renderClipsList();
-    flashStatus.textContent = `${serverClips.length} im Flash`;
     stateLabel.textContent = 'Synchronisation fertig!';
-    stateDesc.textContent = `${serverClips.length} Aufnahme(n) erfolgreich vom Flash heruntergeladen.`;
+    stateDesc.textContent = `${serverClips.length} Stereo-Aufnahme(n) erfolgreich vom Flash heruntergeladen.`;
 
     if (synchronizedClips.length > 0) {
       selectClip(synchronizedClips[0]);
@@ -313,7 +416,7 @@ async function selectClip(clip) {
   currentWavUrl = clip.url;
 
   currentClipTitle.textContent = `Aufnahme #${clip.id} (${clip.filename})`;
-  clipMetaEl.textContent = `${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB • IMA-ADPCM 16 kHz`;
+  clipMetaEl.textContent = `${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB • 2-Kanal Stereo ADPCM`;
 
   if (!audioContext) {
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -321,30 +424,16 @@ async function selectClip(clip) {
 
   const arrayBuffer = await currentWavBlob.arrayBuffer();
   
-  // Decompress IMA-ADPCM to Linear PCM16
-  const pcm16 = decodeImaAdpcmBuffer(arrayBuffer);
-  const sampleRate = 16000;
-  
-  // Create Web Audio Buffer
-  currentAudioBuffer = audioContext.createBuffer(1, pcm16.length, sampleRate);
-  const channelData = currentAudioBuffer.getChannelData(0);
-  for (let i = 0; i < pcm16.length; i++) {
-    channelData[i] = pcm16[i] / 32768.0;
-  }
+  // Decompress Stereo IMA-ADPCM into Left and Right raw buffers
+  const decoded = decodeStereoImaAdpcm(arrayBuffer);
+  rawLeftPcm = decoded.leftPcm;
+  rawRightPcm = decoded.rightPcm;
 
   emptyWaveformMessage.style.display = 'none';
   btnPlay.disabled = false;
   btnDownload.disabled = false;
 
-  const duration = currentAudioBuffer.duration;
-  totalTimeEl.textContent = formatTime(duration);
-  currentTimeEl.textContent = '0:00';
-  seekSlider.value = 0;
-  seekSlider.max = duration;
-
-  // Draw Waveform
-  drawWaveform(pcm16);
-
+  applyDualMicDsp();
   renderClipsList();
   startPlayback();
 }
@@ -364,7 +453,7 @@ function renderClipsList() {
     item.innerHTML = `
       <div class="clip-info" onclick="selectClipById(${clip.id})" style="cursor:pointer;flex:1;">
         <span class="clip-title" style="${isSelected ? 'color:var(--accent-cyan);' : ''}">Aufnahme #${clip.id}</span>
-        <span class="clip-sub">${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB (8 KB/s) • Synced ${clip.time}</span>
+        <span class="clip-sub">${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB (Stereo 16 KB/s) • Synced ${clip.time}</span>
       </div>
       <div class="clip-actions">
         <button class="btn-icon-small" onclick="selectClipById(${clip.id})">▶ Anhören</button>
@@ -385,7 +474,7 @@ function downloadClipDirect(id) {
   if (!clip) return;
   const a = document.createElement('a');
   a.href = clip.url;
-  a.download = `clip_${clip.id}.wav`;
+  a.download = `clip_${clip.id}_stereo.wav`;
   a.click();
 }
 
@@ -399,7 +488,6 @@ async function clearDeviceFlashStorage() {
     const res = await fetch(`http://${ip}/api/clear`, { method: 'POST' });
     if (res.ok) {
       alert('Der Flash-Speicher auf dem XIAO wurde vollständig geleert!');
-      flashStatus.textContent = '0 im Flash';
       synchronizedClips = [];
       renderClipsList();
     } else {
@@ -459,6 +547,56 @@ function drawWaveform(pcmData, playbackProgress = 0) {
 
     ctx.beginPath();
     ctx.roundRect(x, y, barWidth, barHeight, 3);
+    ctx.fill();
+  }
+}
+
+function drawWaveformStereo(leftPcm, rightPcm, playbackProgress = 0) {
+  const canvas = waveformCanvas;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  
+  canvas.width = canvas.parentElement.clientWidth * dpr;
+  canvas.height = canvas.parentElement.clientHeight * dpr;
+  ctx.scale(dpr, dpr);
+
+  const width = canvas.parentElement.clientWidth;
+  const height = canvas.parentElement.clientHeight;
+
+  ctx.clearRect(0, 0, width, height);
+
+  const numBars = 75;
+  const step = Math.floor(leftPcm.length / numBars);
+  const barWidth = (width / numBars) * 0.65;
+  const gap = (width / numBars) * 0.35;
+  const halfH = height / 2;
+
+  const currentPlayIndex = Math.floor(playbackProgress * numBars);
+
+  for (let i = 0; i < numBars; i++) {
+    let sumL = 0, sumR = 0;
+    for (let j = 0; j < step; j++) {
+      sumL += Math.abs(leftPcm[i * step + j] || 0);
+      sumR += Math.abs(rightPcm[i * step + j] || 0);
+    }
+    const avgL = sumL / step;
+    const avgR = sumR / step;
+
+    const barH_L = Math.max(2, Math.min(1, avgL / 12000) * (halfH * 0.8));
+    const barH_R = Math.max(2, Math.min(1, avgR / 12000) * (halfH * 0.8));
+
+    const x = i * (barWidth + gap);
+
+    // Left Mic (Top Half - Cyan)
+    ctx.fillStyle = (i <= currentPlayIndex && isPlaying) ? '#06b6d4' : '#1e3a8a';
+    ctx.beginPath();
+    ctx.roundRect(x, halfH - barH_L - 1, barWidth, barH_L, 2);
+    ctx.fill();
+
+    // Right Mic (Bottom Half - Emerald)
+    ctx.fillStyle = (i <= currentPlayIndex && isPlaying) ? '#10b981' : '#064e3b';
+    ctx.beginPath();
+    ctx.roundRect(x, halfH + 1, barWidth, barH_R, 2);
     ctx.fill();
   }
 }
@@ -543,10 +681,14 @@ function trackPlaybackProgress() {
     seekSlider.value = current;
     currentTimeEl.textContent = formatTime(current);
 
-    const pcm = currentAudioBuffer.getChannelData(0);
-    const int16 = new Int16Array(pcm.length);
-    for (let i = 0; i < pcm.length; i++) int16[i] = pcm[i] * 32767;
-    drawWaveform(int16, current / duration);
+    if (filterModeSelect.value === 'stereo' && rawLeftPcm && rawRightPcm) {
+      drawWaveformStereo(rawLeftPcm, rawRightPcm, current / duration);
+    } else if (currentAudioBuffer) {
+      const pcm = currentAudioBuffer.getChannelData(0);
+      const int16 = new Int16Array(pcm.length);
+      for (let i = 0; i < pcm.length; i++) int16[i] = pcm[i] * 32767;
+      drawWaveform(int16, current / duration);
+    }
 
     animationFrameId = requestAnimationFrame(trackPlaybackProgress);
   }
@@ -566,7 +708,7 @@ function downloadCurrentClip() {
   if (!currentWavBlob) return;
   const a = document.createElement('a');
   a.href = currentWavUrl;
-  a.download = `xiao_clip_${currentActiveClipId || 'rec'}.wav`;
+  a.download = `xiao_clip_${currentActiveClipId || 'rec'}_stereo.wav`;
   a.click();
 }
 

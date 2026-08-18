@@ -17,9 +17,9 @@ public:
 
     bool isRecording() const { return _recording; }
     size_t getRecordedBytes() const { return _totalCompressedBytesWritten; }
-    size_t getRecordedSamples() const { return _totalSamplesRecorded; }
+    size_t getRecordedFrames() const { return _totalFramesRecorded; }
     uint32_t getSampleRate() const { return AUDIO_SAMPLE_RATE; }
-    float getDurationSeconds() const { return (float)_totalSamplesRecorded / (float)AUDIO_SAMPLE_RATE; }
+    float getDurationSeconds() const { return (float)_totalFramesRecorded / (float)AUDIO_SAMPLE_RATE; }
     uint16_t getCurrentClipId() const { return _currentClipId; }
 
     void setLed(bool state);
@@ -31,21 +31,21 @@ private:
     File _activeFile;
     uint16_t _currentClipId;
     size_t _totalCompressedBytesWritten;
-    size_t _totalSamplesRecorded;
+    size_t _totalFramesRecorded;
     unsigned long _recordStartTime;
 
-    ImaAdpcm _encoder;
-    bool _hasPendingNibble;
-    uint8_t _pendingNibble;
+    // Independent ADPCM Encoders for Left & Right Mics
+    ImaAdpcm _encoderLeft;
+    ImaAdpcm _encoderRight;
 
-    // DC-Blocking Filter State (Left & Right)
-    float _dcPrevX;
-    float _dcPrevY;
+    // Independent DC-Blocking Filter States (Left & Right)
+    float _dcPrevXL, _dcPrevYL;
+    float _dcPrevXR, _dcPrevYR;
 
     static const size_t FLASH_WRITE_BUFFER_SIZE = 4096;
     uint8_t _flashWriteBuffer[FLASH_WRITE_BUFFER_SIZE];
     size_t _flashBufferIndex;
 
     void flushFlashBuffer();
-    void writeWavHeader(File& file, size_t adpcmDataBytes, size_t totalSamples, uint32_t sampleRate);
+    void writeWavHeader(File& file, size_t adpcmDataBytes, size_t totalFrames, uint32_t sampleRate);
 };

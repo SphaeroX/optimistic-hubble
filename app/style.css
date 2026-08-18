@@ -130,7 +130,7 @@ body {
 
 @media (min-width: 768px) {
   .main-grid {
-    grid-template-columns: 1fr 1.2fr;
+    grid-template-columns: 1fr 1.25fr;
   }
   .library-card {
     grid-column: 1 / -1;
@@ -145,7 +145,7 @@ body {
   padding: 22px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -220,13 +220,6 @@ body {
   border: 2px solid var(--accent-rose);
   color: var(--accent-rose);
   animation: pulse-ring 1.5s infinite;
-}
-
-.state-transferring {
-  background: rgba(6, 182, 212, 0.2);
-  border: 2px solid var(--accent-cyan);
-  color: var(--accent-cyan);
-  animation: spin-glow 2s infinite linear;
 }
 
 @keyframes pulse-ring {
@@ -362,7 +355,7 @@ body {
 .waveform-container {
   position: relative;
   width: 100%;
-  height: 140px;
+  height: 130px;
   background: #090d14;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
@@ -391,6 +384,68 @@ body {
 
 .empty-message p {
   font-size: 0.85rem;
+}
+
+/* DSP Card */
+.dsp-card {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dsp-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dsp-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.dsp-controls-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 600px) {
+  .dsp-controls-grid {
+    grid-template-columns: 1.4fr 1fr;
+  }
+}
+
+.dsp-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dsp-control-group label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.dsp-control-group select {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  outline: none;
+  font-weight: 500;
+}
+
+.dsp-control-group select:focus {
+  border-color: var(--accent-cyan);
 }
 
 /* Player Controls */

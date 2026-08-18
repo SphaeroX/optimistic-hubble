@@ -53,9 +53,9 @@ std::vector<ClipInfo> StorageManager::listClips() {
             info.fileSize = file.size();
             info.sampleRate = 16000;
             
-            // 4-bit IMA-ADPCM at 16 kHz = 8,000 bytes per second
+            // 4-bit Stereo IMA-ADPCM at 16 kHz = 16,000 bytes per second
             size_t dataBytes = (info.fileSize > 60) ? (info.fileSize - 60) : ((info.fileSize > 44) ? (info.fileSize - 44) : 0);
-            info.duration = (float)dataBytes / 8000.0f;
+            info.duration = (float)dataBytes / 16000.0f;
 
             clips.push_back(info);
         }
