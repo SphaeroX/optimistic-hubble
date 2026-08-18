@@ -474,13 +474,38 @@ function selectClipById(id) {
   if (clip) selectClip(clip);
 }
 
-function downloadClipDirect(id) {
+async function downloadClipDirect(id) {
   const clip = synchronizedClips.find(c => c.id === id);
   if (!clip) return;
-  const a = document.createElement('a');
-  a.href = clip.url;
-  a.download = `clip_${clip.id}_stereo.wav`;
-  a.click();
+
+  try {
+    const arrayBuffer = await clip.blob.arrayBuffer();
+    const decoded = decodeStereoImaAdpcm(arrayBuffer);
+    
+    if (!audioContext) {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    const buf = audioContext.createBuffer(2, decoded.numFrames, 16000);
+    const chL = buf.getChannelData(0);
+    const chR = buf.getChannelData(1);
+    for (let i = 0; i < decoded.numFrames; i++) {
+      chL[i] = decoded.leftPcm[i] / 32768.0;
+      chR[i] = decoded.rightPcm[i] / 32768.0;
+    }
+
+    const pcmBlob = audioBufferToPcmWavBlob(buf);
+    const url = URL.createObjectURL(pcmBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `clip_${clip.id}_stereo_pcm16.wav`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 8000);
+  } catch (e) {
+    console.error('Download error:', e);
+  }
 }
 
 async function clearDeviceFlashStorage() {
@@ -709,12 +734,82 @@ function updatePlayButtonUI(playing) {
   }
 }
 
+// ============================================================================
+// Standard Linear 16-Bit PCM WAV Exporter (Format Tag 0x0001)
+// Fully compatible with Windows Media Player, VLC, QuickTime, Android, Audacity
+// ============================================================================
+function audioBufferToPcmWavBlob(buffer) {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const numFrames = buffer.length;
+  const bytesPerSample = 2;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = numFrames * blockAlign;
+  const headerSize = 44;
+  const totalSize = headerSize + dataSize;
+
+  const arrayBuffer = new ArrayBuffer(totalSize);
+  const view = new DataView(arrayBuffer);
+
+  // RIFF header
+  view.setUint8(0, 0x52); // 'R'
+  view.setUint8(1, 0x49); // 'I'
+  view.setUint8(2, 0x46); // 'F'
+  view.setUint8(3, 0x46); // 'F'
+  view.setUint32(4, 36 + dataSize, true);
+  view.setUint8(8, 0x57); // 'W'
+  view.setUint8(9, 0x41); // 'A'
+  view.setUint8(10, 0x56); // 'V'
+  view.setUint8(11, 0x45); // 'E'
+
+  // fmt subchunk (PCM)
+  view.setUint8(12, 0x66); // 'f'
+  view.setUint8(13, 0x6d); // 'm'
+  view.setUint8(14, 0x74); // 't'
+  view.setUint8(15, 0x20); // ' '
+  view.setUint32(16, 16, true);       // Subchunk1Size = 16 for PCM
+  view.setUint16(20, 1, true);        // AudioFormat = 1 (Linear PCM)
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);       // BitsPerSample = 16
+
+  // data subchunk
+  view.setUint8(36, 0x64); // 'd'
+  view.setUint8(37, 0x61); // 'a'
+  view.setUint8(38, 0x74); // 't'
+  view.setUint8(39, 0x61); // 'a'
+  view.setUint32(40, dataSize, true);
+
+  // Interleave and scale Float32 [-1.0, 1.0] to signed Int16 [-32768, 32767]
+  let offset = 44;
+  for (let i = 0; i < numFrames; i++) {
+    for (let channel = 0; channel < numChannels; channel++) {
+      let sample = buffer.getChannelData(channel)[i];
+      sample = Math.max(-1.0, Math.min(1.0, sample));
+      let int16 = sample < 0 ? (sample * 32768) : (sample * 32767);
+      view.setInt16(offset, int16, true);
+      offset += 2;
+    }
+  }
+
+  return new Blob([view], { type: 'audio/wav' });
+}
+
 function downloadCurrentClip() {
-  if (!currentWavBlob) return;
+  if (!currentAudioBuffer) return;
+  const pcmBlob = audioBufferToPcmWavBlob(currentAudioBuffer);
+  const url = URL.createObjectURL(pcmBlob);
   const a = document.createElement('a');
-  a.href = currentWavUrl;
-  a.download = `xiao_clip_${currentActiveClipId || 'rec'}_stereo.wav`;
+  a.href = url;
+  const mode = filterModeSelect ? filterModeSelect.value : 'audio';
+  a.download = `clip_${currentActiveClipId || 'recording'}_${mode}_pcm16.wav`;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 8000);
 }
 
 function formatTime(seconds) {
