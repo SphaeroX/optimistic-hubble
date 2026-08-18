@@ -38,6 +38,10 @@ private:
     bool _hasPendingNibble;
     uint8_t _pendingNibble;
 
+    // DC-Blocking Filter State (Left & Right)
+    float _dcPrevX;
+    float _dcPrevY;
+
     static const size_t FLASH_WRITE_BUFFER_SIZE = 4096;
     uint8_t _flashWriteBuffer[FLASH_WRITE_BUFFER_SIZE];
     size_t _flashBufferIndex;

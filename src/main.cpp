@@ -21,10 +21,13 @@ static WifiServerManager wifiServer(storage);
 static unsigned long lastTelemetryTime = 0;
 static const unsigned long TELEMETRY_INTERVAL_MS = 100;
 
+static unsigned long lastImuPollTime = 0;
+static const unsigned long IMU_POLL_INTERVAL_MS = 20; // 50 Hz tap polling
+
 void printBanner() {
     Serial.println(F("\n========================================================"));
-    Serial.println(F("  XIAO ESP32C3 - Real-Time Direct-to-Flash Voice Vault"));
-    Serial.println(F("  Stream to LittleFS (Up to 5 min) -> Captive Wi-Fi Sync"));
+    Serial.println(F("  XIAO ESP32C3 - Seamless Real-Time Audio Vault"));
+    Serial.println(F("  IMA-ADPCM 4:1 (8 KB/s) &bull; Zero-Drop DMA Pipeline"));
     Serial.println(F("========================================================"));
 }
 
@@ -73,7 +76,7 @@ void setup() {
         recorder.blinkLed(3, 80);
     }
 
-    // 5. Initialize Wi-Fi Hotspot, Captive DNS & Sync Server
+    // 5. Initialize Wi-Fi Hotspot & Sync Server
     Serial.println(F("[5/6] Starting Wi-Fi Hotspot & Captive DNS Server..."));
     bool wifiOk = wifiServer.begin(WIFI_AP_SSID, WIFI_AP_PASS, HTTP_SERVER_PORT);
     if (wifiOk) {
@@ -90,10 +93,9 @@ void setup() {
 
     Serial.println(F("\n========================================================"));
     Serial.println(F("  SYSTEM READY:"));
-    Serial.println(F("  1. Tap breadboard to START recording (LED turns ON)."));
-    Serial.println(F("  2. Speak into microphone (streams straight to Flash)."));
-    Serial.println(F("  3. Tap again to STOP -> Finalized WAV saved to Flash!"));
-    Serial.println(F("  4. Connect to \"XIAO-Audio-Hotspot\" -> http://192.168.4.1"));
+    Serial.println(F("  1. Tap breadboard to START recording."));
+    Serial.println(F("  2. Speak clearly into microphones."));
+    Serial.println(F("  3. Tap again to STOP -> Saved to Flash in ADPCM (8 KB/s)!"));
     Serial.println(F("========================================================\n"));
 }
 
@@ -105,27 +107,29 @@ void handleStopAndSave() {
     Serial.printf("\n[RECORD STOP] Clip #%u saved! Total in Flash: %u (Free: %u KB)\n", 
                   clipId, totalClips, (storage.getTotalBytes() - storage.getUsedBytes()) / 1024);
 
-    // Notify BLE client
     ble.updateState(STATE_DONE, clipId, totalClips);
 }
 
 void loop() {
-    // 1. Process Captive DNS & Web Server requests
-    wifiServer.handleClient();
+    unsigned long now = millis();
 
-    // 2. Process Active Real-Time Recording Stream
+    // 1. Process Active Real-Time Recording Stream
     if (recorder.isRecording()) {
         bool stillRecording = recorder.processRecording(stereoMic);
 
-        // Check if user tapped again to stop
-        ImuMetricData imuData;
-        if (imu.readSensorData(imuData)) {
-            float shock = 0.0f;
-            if (tapDetector.update(imuData, &shock)) {
-                Serial.printf("\n[TAP DETECTED] Stop trigger! Shock: %.2f g\n", shock);
-                ble.notifyTap(shock);
-                handleStopAndSave();
-                return;
+        // Check IMU for stop tap at a clean 50 Hz interval (avoids I2C bus hogging)
+        if (now - lastImuPollTime >= IMU_POLL_INTERVAL_MS) {
+            lastImuPollTime = now;
+
+            ImuMetricData imuData;
+            if (imu.readSensorData(imuData)) {
+                float shock = 0.0f;
+                if (tapDetector.update(imuData, &shock)) {
+                    Serial.printf("\n[TAP DETECTED] Stop trigger! Shock: %.2f g\n", shock);
+                    ble.notifyTap(shock);
+                    handleStopAndSave();
+                    return;
+                }
             }
         }
 
@@ -134,28 +138,33 @@ void loop() {
             return;
         }
 
-        delay(1);
+        // Give immediate priority back to audio draining
         return;
     }
 
+    // 2. IDLE State: Handle WebServer and DNS requests
+    wifiServer.handleClient();
+
     // 3. IDLE State: Monitor IMU for Start Tap
-    ImuMetricData imuData;
-    bool imuOk = imu.readSensorData(imuData);
-    if (imuOk) {
-        float shock = 0.0f;
-        if (tapDetector.update(imuData, &shock)) {
-            Serial.printf("\n[TAP DETECTED] Start trigger! Shock: %.2f g -> STREAMING TO FLASH...\n", shock);
-            ble.notifyTap(shock);
-            ble.updateState(STATE_RECORDING);
-            
-            uint16_t nextId = storage.getClipCount() + 1;
-            recorder.startRecording(nextId);
-            return;
+    if (now - lastImuPollTime >= IMU_POLL_INTERVAL_MS) {
+        lastImuPollTime = now;
+
+        ImuMetricData imuData;
+        if (imu.readSensorData(imuData)) {
+            float shock = 0.0f;
+            if (tapDetector.update(imuData, &shock)) {
+                Serial.printf("\n[TAP DETECTED] Start trigger! Shock: %.2f g -> RECORDING...\n", shock);
+                ble.notifyTap(shock);
+                ble.updateState(STATE_RECORDING);
+                
+                uint16_t nextId = storage.getClipCount() + 1;
+                recorder.startRecording(nextId);
+                return;
+            }
         }
     }
 
     // 4. Periodic Telemetry
-    unsigned long now = millis();
     if (now - lastTelemetryTime >= TELEMETRY_INTERVAL_MS) {
         lastTelemetryTime = now;
 

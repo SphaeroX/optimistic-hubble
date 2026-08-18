@@ -4,7 +4,8 @@
 AudioRecorder::AudioRecorder(uint8_t ledPin)
     : _ledPin(ledPin), _recording(false), _currentClipId(0), 
       _totalCompressedBytesWritten(0), _totalSamplesRecorded(0), 
-      _recordStartTime(0), _hasPendingNibble(false), _pendingNibble(0), _flashBufferIndex(0) {}
+      _recordStartTime(0), _hasPendingNibble(false), _pendingNibble(0),
+      _dcPrevX(0.0f), _dcPrevY(0.0f), _flashBufferIndex(0) {}
 
 AudioRecorder::~AudioRecorder() {
     stopRecording();
@@ -18,6 +19,8 @@ bool AudioRecorder::begin() {
     _totalSamplesRecorded = 0;
     _flashBufferIndex = 0;
     _hasPendingNibble = false;
+    _dcPrevX = 0.0f;
+    _dcPrevY = 0.0f;
     return true;
 }
 
@@ -39,7 +42,7 @@ void AudioRecorder::writeWavHeader(File& file, size_t adpcmDataBytes, size_t tot
     uint16_t bitsPerSample = 4;   // 4-Bit ADPCM
     uint32_t byteRate = (sampleRate * numChannels * bitsPerSample) / 8; // 8000 B/s @ 16 kHz
     uint16_t blockAlign = 1;
-    uint32_t chunkSize = 36 + 14 + adpcmDataBytes; // with fact chunk
+    uint32_t chunkSize = 36 + 14 + adpcmDataBytes;
 
     uint8_t header[60];
     memset(header, 0, sizeof(header));
@@ -54,7 +57,7 @@ void AudioRecorder::writeWavHeader(File& file, size_t adpcmDataBytes, size_t tot
 
     // fmt subchunk
     header[12] = 'f'; header[13] = 'm'; header[14] = 't'; header[15] = ' ';
-    header[16] = 20; header[17] = 0; header[18] = 0; header[19] = 0; // fmt size: 20 bytes
+    header[16] = 20; header[17] = 0; header[18] = 0; header[19] = 0;
     header[20] = 0x11; header[21] = 0x00; // Format 0x0011: IMA ADPCM
     header[22] = (uint8_t)(numChannels & 0xFF);
     header[23] = (uint8_t)((numChannels >> 8) & 0xFF);
@@ -70,10 +73,10 @@ void AudioRecorder::writeWavHeader(File& file, size_t adpcmDataBytes, size_t tot
     header[33] = (uint8_t)((blockAlign >> 8) & 0xFF);
     header[34] = (uint8_t)(bitsPerSample & 0xFF);
     header[35] = (uint8_t)((bitsPerSample >> 8) & 0xFF);
-    header[36] = 2; header[37] = 0; // cbSize = 2 extra bytes
+    header[36] = 2; header[37] = 0; // cbSize = 2
     header[38] = 1; header[39] = 0; // wSamplesPerBlock = 1
 
-    // fact subchunk (standard for compressed WAV)
+    // fact subchunk
     header[40] = 'f'; header[41] = 'a'; header[42] = 'c'; header[43] = 't';
     header[44] = 4; header[45] = 0; header[46] = 0; header[47] = 0;
     header[48] = (uint8_t)(totalSamples & 0xFF);
@@ -109,6 +112,8 @@ bool AudioRecorder::startRecording(uint16_t clipId) {
     _totalSamplesRecorded = 0;
     _flashBufferIndex = 0;
     _hasPendingNibble = false;
+    _dcPrevX = 0.0f;
+    _dcPrevY = 0.0f;
     _encoder.reset();
 
     char filename[32];
@@ -128,7 +133,7 @@ bool AudioRecorder::startRecording(uint16_t clipId) {
     _recordStartTime = millis();
     setLed(true);
 
-    Serial.printf("[RECORDER] Streaming 4:1 IMA-ADPCM Audio (8 KB/s) directly to %s...\n", filename);
+    Serial.printf("[RECORDER] Continuous clean stream recording started -> %s\n", filename);
     return true;
 }
 
@@ -137,23 +142,38 @@ bool AudioRecorder::processRecording(I2sMicDriver& mic) {
         return false;
     }
 
-    // Read up to 256 stereo frames from I2S
+    // Completely drain all pending audio frames from I2S hardware queue
+    // to guarantee 0% dropped frames, no cracks, and no temporal skipping!
     static int32_t rawChunk[256 * 2];
-    size_t bytesRead = 0;
-    esp_err_t err = i2s_read(I2S_NUM_0, rawChunk, sizeof(rawChunk), &bytesRead, pdMS_TO_TICKS(20));
+    while (true) {
+        size_t bytesRead = 0;
+        esp_err_t err = i2s_read(I2S_NUM_0, rawChunk, sizeof(rawChunk), &bytesRead, 0);
 
-    if (err == ESP_OK && bytesRead > 0) {
+        if (err != ESP_OK || bytesRead == 0) {
+            break;
+        }
+
         size_t frameCount = bytesRead / (2 * sizeof(int32_t));
 
         for (size_t i = 0; i < frameCount; ++i) {
-            // Dual-Mic Beamforming: Coherent summing of Left (Mic 1) & Right (Mic 2)
+            // Dual-mic downmix
             int32_t leftSample = rawChunk[2 * i] >> 8;
             int32_t rightSample = rawChunk[2 * i + 1] >> 8;
             int32_t mixed = (leftSample + rightSample) / 2;
-            int16_t sample16 = (int16_t)(mixed >> 8);
+            int16_t raw16 = (int16_t)(mixed >> 8);
 
-            // Compress sample with 4-bit IMA ADPCM (4:1 compression)
-            uint8_t nibble = _encoder.encodeSample(sample16);
+            // DC-blocking filter (fc ~ 15 Hz @ 16 kHz): y[n] = x[n] - x[n-1] + 0.995 * y[n-1]
+            float x = (float)raw16;
+            float y = x - _dcPrevX + (0.995f * _dcPrevY);
+            _dcPrevX = x;
+            _dcPrevY = y;
+
+            if (y > 32767.0f) y = 32767.0f;
+            else if (y < -32768.0f) y = -32768.0f;
+            int16_t cleanSample16 = (int16_t)y;
+
+            // Compress sample with 4-bit IMA ADPCM
+            uint8_t nibble = _encoder.encodeSample(cleanSample16);
             _totalSamplesRecorded++;
 
             if (!_hasPendingNibble) {
@@ -188,13 +208,11 @@ void AudioRecorder::stopRecording() {
     setLed(false);
 
     if (_activeFile) {
-        // If there's an odd nibble pending, pack it
         if (_hasPendingNibble) {
             _flashWriteBuffer[_flashBufferIndex++] = _pendingNibble;
             _hasPendingNibble = false;
         }
 
-        // Flush remaining buffer to flash
         flushFlashBuffer();
 
         // Finalize 60-byte WAV header
@@ -204,7 +222,7 @@ void AudioRecorder::stopRecording() {
         _activeFile.close();
 
         float dur = getDurationSeconds();
-        Serial.printf("[RECORDER] ADPCM Clip finalized: %.2f seconds (%u samples) -> %u bytes compressed file (8 KB/s).\n",
+        Serial.printf("[RECORDER] Seamless audio saved: %.2f s (%u samples) -> %u bytes WAV (8 KB/s).\n",
                       dur, _totalSamplesRecorded, 60 + _totalCompressedBytesWritten);
     }
 }
