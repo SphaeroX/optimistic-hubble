@@ -22,11 +22,9 @@ let playbackStartTime = 0;
 let playbackOffset = 0;
 let animationFrameId = null;
 
-// Raw 2-Channel Decoded Buffers
-let rawLeftPcm = null;
-let rawRightPcm = null;
+// Decoded Audio Data
+let rawMonoPcm = null;
 let sampleRate = 16000;
-
 let synchronizedClips = [];
 
 // DOM Elements
@@ -44,10 +42,10 @@ const btnSyncText = document.getElementById('btnSyncText');
 const currentClipTitle = document.getElementById('currentClipTitle');
 const waveformCanvas = document.getElementById('waveformCanvas');
 const emptyWaveformMessage = document.getElementById('emptyWaveformMessage');
-const filterModeSelect = document.getElementById('filterModeSelect');
+const volumeBoostSlider = document.getElementById('volumeBoostSlider');
+const boostValEl = document.getElementById('boostVal');
 const noiseGateSlider = document.getElementById('noiseGateSlider');
 const gateValEl = document.getElementById('gateVal');
-const dspModeBadge = document.getElementById('dspModeBadge');
 const btnPlay = document.getElementById('btnPlay');
 const btnPlayText = document.getElementById('btnPlayText');
 const playIcon = document.getElementById('playIcon');
@@ -59,7 +57,7 @@ const clipMetaEl = document.getElementById('clipMeta');
 const clipsList = document.getElementById('clipsList');
 
 // ============================================================================
-// Stereo IMA-ADPCM Decoder (2-Channel Decompression)
+// Mono IMA-ADPCM Decoder (4-Bit 8 KB/s)
 // ============================================================================
 const ADPCM_STEP_TABLE = [
   7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
@@ -71,7 +69,7 @@ const ADPCM_STEP_TABLE = [
 ];
 const ADPCM_INDEX_TABLE = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8];
 
-function decodeStereoImaAdpcm(arrayBuffer) {
+function decodeMonoImaAdpcm(arrayBuffer) {
   const dataView = new DataView(arrayBuffer);
   let dataOffset = 60;
   let dataLength = arrayBuffer.byteLength - 60;
@@ -93,142 +91,151 @@ function decodeStereoImaAdpcm(arrayBuffer) {
   }
 
   const rawBytes = new Uint8Array(arrayBuffer, dataOffset, dataLength);
-  const numFrames = rawBytes.length; // 1 byte = 1 Stereo frame (Left nibble + Right nibble)
-  
-  const leftPcm = new Int16Array(numFrames);
-  const rightPcm = new Int16Array(numFrames);
+  const numSamples = rawBytes.length * 2;
+  const pcm = new Int16Array(numSamples);
 
-  let predL = 0, stepIdxL = 0;
-  let predR = 0, stepIdxR = 0;
+  let pred = 0, stepIdx = 0;
 
-  function decodeNibble(nibble, isLeft) {
-    let step = ADPCM_STEP_TABLE[isLeft ? stepIdxL : stepIdxR];
+  function decodeNibble(nibble) {
+    let step = ADPCM_STEP_TABLE[stepIdx];
     let diffq = step >> 3;
     if (nibble & 4) diffq += step;
     if (nibble & 2) diffq += (step >> 1);
     if (nibble & 1) diffq += (step >> 2);
 
-    let pred = isLeft ? predL : predR;
     if (nibble & 8) pred -= diffq;
     else pred += diffq;
 
     if (pred > 32767) pred = 32767;
     else if (pred < -32768) pred = -32768;
 
-    let nextIdx = (isLeft ? stepIdxL : stepIdxR) + ADPCM_INDEX_TABLE[nibble & 0x0F];
+    let nextIdx = stepIdx + ADPCM_INDEX_TABLE[nibble & 0x0F];
     if (nextIdx < 0) nextIdx = 0;
     else if (nextIdx > 88) nextIdx = 88;
-
-    if (isLeft) {
-      predL = pred;
-      stepIdxL = nextIdx;
-    } else {
-      predR = pred;
-      stepIdxR = nextIdx;
-    }
+    stepIdx = nextIdx;
 
     return pred;
   }
 
-  for (let i = 0; i < numFrames; i++) {
+  let sampleIdx = 0;
+  for (let i = 0; i < rawBytes.length; i++) {
     const byte = rawBytes[i];
-    leftPcm[i] = decodeNibble(byte & 0x0F, true);          // Left (Mic 1)
-    rightPcm[i] = decodeNibble((byte >> 4) & 0x0F, false); // Right (Mic 2)
+    pcm[sampleIdx++] = decodeNibble(byte & 0x0F);
+    pcm[sampleIdx++] = decodeNibble((byte >> 4) & 0x0F);
   }
 
-  return { leftPcm, rightPcm, numFrames };
+  return { pcm, numSamples };
 }
 
 // ============================================================================
-// Dual-Mic DSP Processing Engine
+// Audio Processing & Playback Engine
 // ============================================================================
-function applyDualMicDsp() {
-  if (!rawLeftPcm || !rawRightPcm || !audioContext) return;
+function applyAudioEffects() {
+  if (!rawMonoPcm || !audioContext) return;
 
-  const mode = filterModeSelect.value;
-  const gatePercent = parseInt(noiseGateSlider.value) / 100.0;
-  const gateThreshold = gatePercent * 800; // Threshold in 16-bit units
-  
-  const volumeBoostSlider = document.getElementById('volumeBoostSlider');
-  const boostValEl = document.getElementById('boostVal');
   const boostFactor = volumeBoostSlider ? (parseInt(volumeBoostSlider.value) / 100.0) : 1.5;
   if (boostValEl) boostValEl.textContent = `${Math.round(boostFactor * 100)}%`;
 
-  const numFrames = rawLeftPcm.length;
-  gateValEl.textContent = `${Math.round(gatePercent * 100)}%`;
+  const gatePercent = parseInt(noiseGateSlider.value) / 100.0;
+  const gateThreshold = gatePercent * 800; // Threshold in 16-bit units
+  if (gateValEl) gateValEl.textContent = `${Math.round(gatePercent * 100)}%`;
 
-  let channels = 1;
-  if (mode === 'stereo') channels = 2;
+  const numSamples = rawMonoPcm.length;
+  currentAudioBuffer = audioContext.createBuffer(1, numSamples, sampleRate);
+  const ch0 = currentAudioBuffer.getChannelData(0);
+  const processedInt16 = new Int16Array(numSamples);
 
-  currentAudioBuffer = audioContext.createBuffer(channels, numFrames, sampleRate);
+  for (let i = 0; i < numSamples; i++) {
+    let val = rawMonoPcm[i] * boostFactor;
 
-  if (mode === 'stereo') {
-    const chL = currentAudioBuffer.getChannelData(0);
-    const chR = currentAudioBuffer.getChannelData(1);
-
-    for (let i = 0; i < numFrames; i++) {
-      let sL = rawLeftPcm[i] * boostFactor;
-      let sR = rawRightPcm[i] * boostFactor;
-
-      // Noise Gate
-      if (Math.abs(sL) < gateThreshold) sL = 0;
-      if (Math.abs(sR) < gateThreshold) sR = 0;
-
-      chL[i] = Math.max(-1.0, Math.min(1.0, sL / 32768.0));
-      chR[i] = Math.max(-1.0, Math.min(1.0, sR / 32768.0));
-    }
-    dspModeBadge.textContent = 'Echtes Stereo (2 Kanäle)';
-    drawWaveformStereo(rawLeftPcm, rawRightPcm);
-
-  } else {
-    const ch0 = currentAudioBuffer.getChannelData(0);
-    const monoOut16 = new Int16Array(numFrames);
-
-    for (let i = 0; i < numFrames; i++) {
-      let val = 0;
-
-      if (mode === 'beamforming') {
-        // Dual-Mic Beamforming: (Left + Right) / 2
-        val = ((rawLeftPcm[i] + rawRightPcm[i]) / 2) * boostFactor;
-      } else if (mode === 'anc') {
-        // Differential Active Noise Cancellation (Spatial Noise Subtraction)
-        val = (rawLeftPcm[i] - (0.5 * rawRightPcm[i])) * boostFactor;
-      } else if (mode === 'mic1') {
-        val = rawLeftPcm[i] * boostFactor;
-      } else if (mode === 'mic2') {
-        val = rawRightPcm[i] * boostFactor;
-      }
-
-      // Noise Gate (Stille in Sprechpausen)
-      if (Math.abs(val) < gateThreshold) {
-        val = 0;
-      }
-
-      monoOut16[i] = Math.max(-32768, Math.min(32767, val));
-      ch0[i] = monoOut16[i] / 32768.0;
+    // Noise Gate
+    if (Math.abs(val) < gateThreshold) {
+      val = 0;
     }
 
-    if (mode === 'beamforming') dspModeBadge.textContent = 'Beamforming (+3 dB SNR)';
-    else if (mode === 'anc') dspModeBadge.textContent = 'ANC Rauschfilter Aktiv';
-    else if (mode === 'mic1') dspModeBadge.textContent = 'Mic 1 (Links)';
-    else if (mode === 'mic2') dspModeBadge.textContent = 'Mic 2 (Rechts)';
-
-    drawWaveform(monoOut16);
+    processedInt16[i] = Math.max(-32768, Math.min(32767, val));
+    ch0[i] = processedInt16[i] / 32768.0;
   }
+
+  drawWaveform(processedInt16);
 
   const duration = currentAudioBuffer.duration;
   totalTimeEl.textContent = formatTime(duration);
   seekSlider.max = duration;
 }
 
-function onDspSettingsChanged() {
+function onAudioSettingsChanged() {
   const wasPlaying = isPlaying;
   const currentOffset = playbackOffset;
 
   if (isPlaying) pausePlayback();
-  applyDualMicDsp();
+  applyAudioEffects();
 
   if (wasPlaying) startPlayback(currentOffset);
+}
+
+// ============================================================================
+// Standard Linear 16-Bit PCM WAV Exporter (Format Tag 0x0001)
+// Fully compatible with Windows Media Player, VLC, QuickTime, Android, Audacity
+// ============================================================================
+function audioBufferToPcmWavBlob(buffer) {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const numFrames = buffer.length;
+  const bytesPerSample = 2;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = numFrames * blockAlign;
+  const headerSize = 44;
+  const totalSize = headerSize + dataSize;
+
+  const arrayBuffer = new ArrayBuffer(totalSize);
+  const view = new DataView(arrayBuffer);
+
+  // RIFF header
+  view.setUint8(0, 0x52); // 'R'
+  view.setUint8(1, 0x49); // 'I'
+  view.setUint8(2, 0x46); // 'F'
+  view.setUint8(3, 0x46); // 'F'
+  view.setUint32(4, 36 + dataSize, true);
+  view.setUint8(8, 0x57); // 'W'
+  view.setUint8(9, 0x41); // 'A'
+  view.setUint8(10, 0x56); // 'V'
+  view.setUint8(11, 0x45); // 'E'
+
+  // fmt subchunk (PCM)
+  view.setUint8(12, 0x66); // 'f'
+  view.setUint8(13, 0x6d); // 'm'
+  view.setUint8(14, 0x74); // 't'
+  view.setUint8(15, 0x20); // ' '
+  view.setUint32(16, 16, true);       // Subchunk1Size = 16 for PCM
+  view.setUint16(20, 1, true);        // AudioFormat = 1 (Linear PCM)
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);       // BitsPerSample = 16
+
+  // data subchunk
+  view.setUint8(36, 0x64); // 'd'
+  view.setUint8(37, 0x61); // 'a'
+  view.setUint8(38, 0x74); // 't'
+  view.setUint8(39, 0x61); // 'a'
+  view.setUint32(40, dataSize, true);
+
+  // Write 16-bit PCM samples
+  let offset = 44;
+  for (let i = 0; i < numFrames; i++) {
+    for (let channel = 0; channel < numChannels; channel++) {
+      let sample = buffer.getChannelData(channel)[i];
+      sample = Math.max(-1.0, Math.min(1.0, sample));
+      let int16 = sample < 0 ? (sample * 32768) : (sample * 32767);
+      view.setInt16(offset, int16, true);
+      offset += 2;
+    }
+  }
+
+  return new Blob([view], { type: 'audio/wav' });
 }
 
 // ============================================================================
@@ -324,7 +331,7 @@ function updateDeviceState(state, latestClipId = 0, totalClips = 0) {
 
     case 1: // RECORDING
       stateRing.classList.add('state-recording');
-      stateLabel.textContent = 'Aufnahme läuft (Dual-Mic Stereo 16 KB/s)...';
+      stateLabel.textContent = 'Aufnahme läuft (Dual-Mic Noise Filter 8 KB/s)...';
       stateDesc.textContent = 'Sprich ins Mikrofon! Hau nochmals auf das Breadboard zum Beenden & Speichern.';
       break;
 
@@ -400,7 +407,7 @@ async function syncAllClipsFromWifi() {
 
     renderClipsList();
     stateLabel.textContent = 'Synchronisation fertig!';
-    stateDesc.textContent = `${serverClips.length} Stereo-Aufnahme(n) erfolgreich vom Flash heruntergeladen.`;
+    stateDesc.textContent = `${serverClips.length} Aufnahme(n) erfolgreich vom Flash heruntergeladen.`;
 
     if (synchronizedClips.length > 0) {
       selectClip(synchronizedClips[0]);
@@ -421,7 +428,7 @@ async function selectClip(clip) {
   currentWavUrl = clip.url;
 
   currentClipTitle.textContent = `Aufnahme #${clip.id} (${clip.filename})`;
-  clipMetaEl.textContent = `${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB • 2-Kanal Stereo ADPCM`;
+  clipMetaEl.textContent = `${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB • Dual-Mic Filter (Mono 8 KB/s)`;
 
   if (!audioContext) {
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -429,16 +436,15 @@ async function selectClip(clip) {
 
   const arrayBuffer = await currentWavBlob.arrayBuffer();
   
-  // Decompress Stereo IMA-ADPCM into Left and Right raw buffers
-  const decoded = decodeStereoImaAdpcm(arrayBuffer);
-  rawLeftPcm = decoded.leftPcm;
-  rawRightPcm = decoded.rightPcm;
+  // Decompress Mono IMA-ADPCM
+  const decoded = decodeMonoImaAdpcm(arrayBuffer);
+  rawMonoPcm = decoded.pcm;
 
   emptyWaveformMessage.style.display = 'none';
   btnPlay.disabled = false;
   btnDownload.disabled = false;
 
-  applyDualMicDsp();
+  applyAudioEffects();
   renderClipsList();
   startPlayback();
 }
@@ -458,7 +464,7 @@ function renderClipsList() {
     item.innerHTML = `
       <div class="clip-info" onclick="selectClipById(${clip.id})" style="cursor:pointer;flex:1;">
         <span class="clip-title" style="${isSelected ? 'color:var(--accent-cyan);' : ''}">Aufnahme #${clip.id}</span>
-        <span class="clip-sub">${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB (Stereo 16 KB/s) • Synced ${clip.time}</span>
+        <span class="clip-sub">${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB (8 KB/s) • Synced ${clip.time}</span>
       </div>
       <div class="clip-actions">
         <button class="btn-icon-small" onclick="selectClipById(${clip.id})">▶ Anhören</button>
@@ -480,25 +486,23 @@ async function downloadClipDirect(id) {
 
   try {
     const arrayBuffer = await clip.blob.arrayBuffer();
-    const decoded = decodeStereoImaAdpcm(arrayBuffer);
+    const decoded = decodeMonoImaAdpcm(arrayBuffer);
     
     if (!audioContext) {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
 
-    const buf = audioContext.createBuffer(2, decoded.numFrames, 16000);
-    const chL = buf.getChannelData(0);
-    const chR = buf.getChannelData(1);
-    for (let i = 0; i < decoded.numFrames; i++) {
-      chL[i] = decoded.leftPcm[i] / 32768.0;
-      chR[i] = decoded.rightPcm[i] / 32768.0;
+    const buf = audioContext.createBuffer(1, decoded.numSamples, 16000);
+    const ch0 = buf.getChannelData(0);
+    for (let i = 0; i < decoded.numSamples; i++) {
+      ch0[i] = decoded.pcm[i] / 32768.0;
     }
 
     const pcmBlob = audioBufferToPcmWavBlob(buf);
     const url = URL.createObjectURL(pcmBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `clip_${clip.id}_stereo_pcm16.wav`;
+    a.download = `clip_${clip.id}_pcm16.wav`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -577,56 +581,6 @@ function drawWaveform(pcmData, playbackProgress = 0) {
 
     ctx.beginPath();
     ctx.roundRect(x, y, barWidth, barHeight, 3);
-    ctx.fill();
-  }
-}
-
-function drawWaveformStereo(leftPcm, rightPcm, playbackProgress = 0) {
-  const canvas = waveformCanvas;
-  const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
-  
-  canvas.width = canvas.parentElement.clientWidth * dpr;
-  canvas.height = canvas.parentElement.clientHeight * dpr;
-  ctx.scale(dpr, dpr);
-
-  const width = canvas.parentElement.clientWidth;
-  const height = canvas.parentElement.clientHeight;
-
-  ctx.clearRect(0, 0, width, height);
-
-  const numBars = 75;
-  const step = Math.floor(leftPcm.length / numBars);
-  const barWidth = (width / numBars) * 0.65;
-  const gap = (width / numBars) * 0.35;
-  const halfH = height / 2;
-
-  const currentPlayIndex = Math.floor(playbackProgress * numBars);
-
-  for (let i = 0; i < numBars; i++) {
-    let sumL = 0, sumR = 0;
-    for (let j = 0; j < step; j++) {
-      sumL += Math.abs(leftPcm[i * step + j] || 0);
-      sumR += Math.abs(rightPcm[i * step + j] || 0);
-    }
-    const avgL = sumL / step;
-    const avgR = sumR / step;
-
-    const barH_L = Math.max(2, Math.min(1, avgL / 12000) * (halfH * 0.8));
-    const barH_R = Math.max(2, Math.min(1, avgR / 12000) * (halfH * 0.8));
-
-    const x = i * (barWidth + gap);
-
-    // Left Mic (Top Half - Cyan)
-    ctx.fillStyle = (i <= currentPlayIndex && isPlaying) ? '#06b6d4' : '#1e3a8a';
-    ctx.beginPath();
-    ctx.roundRect(x, halfH - barH_L - 1, barWidth, barH_L, 2);
-    ctx.fill();
-
-    // Right Mic (Bottom Half - Emerald)
-    ctx.fillStyle = (i <= currentPlayIndex && isPlaying) ? '#10b981' : '#064e3b';
-    ctx.beginPath();
-    ctx.roundRect(x, halfH + 1, barWidth, barH_R, 2);
     ctx.fill();
   }
 }
@@ -711,9 +665,7 @@ function trackPlaybackProgress() {
     seekSlider.value = current;
     currentTimeEl.textContent = formatTime(current);
 
-    if (filterModeSelect.value === 'stereo' && rawLeftPcm && rawRightPcm) {
-      drawWaveformStereo(rawLeftPcm, rawRightPcm, current / duration);
-    } else if (currentAudioBuffer) {
+    if (currentAudioBuffer) {
       const pcm = currentAudioBuffer.getChannelData(0);
       const int16 = new Int16Array(pcm.length);
       for (let i = 0; i < pcm.length; i++) int16[i] = pcm[i] * 32767;
@@ -734,78 +686,13 @@ function updatePlayButtonUI(playing) {
   }
 }
 
-// ============================================================================
-// Standard Linear 16-Bit PCM WAV Exporter (Format Tag 0x0001)
-// Fully compatible with Windows Media Player, VLC, QuickTime, Android, Audacity
-// ============================================================================
-function audioBufferToPcmWavBlob(buffer) {
-  const numChannels = buffer.numberOfChannels;
-  const sampleRate = buffer.sampleRate;
-  const numFrames = buffer.length;
-  const bytesPerSample = 2;
-  const blockAlign = numChannels * bytesPerSample;
-  const byteRate = sampleRate * blockAlign;
-  const dataSize = numFrames * blockAlign;
-  const headerSize = 44;
-  const totalSize = headerSize + dataSize;
-
-  const arrayBuffer = new ArrayBuffer(totalSize);
-  const view = new DataView(arrayBuffer);
-
-  // RIFF header
-  view.setUint8(0, 0x52); // 'R'
-  view.setUint8(1, 0x49); // 'I'
-  view.setUint8(2, 0x46); // 'F'
-  view.setUint8(3, 0x46); // 'F'
-  view.setUint32(4, 36 + dataSize, true);
-  view.setUint8(8, 0x57); // 'W'
-  view.setUint8(9, 0x41); // 'A'
-  view.setUint8(10, 0x56); // 'V'
-  view.setUint8(11, 0x45); // 'E'
-
-  // fmt subchunk (PCM)
-  view.setUint8(12, 0x66); // 'f'
-  view.setUint8(13, 0x6d); // 'm'
-  view.setUint8(14, 0x74); // 't'
-  view.setUint8(15, 0x20); // ' '
-  view.setUint32(16, 16, true);       // Subchunk1Size = 16 for PCM
-  view.setUint16(20, 1, true);        // AudioFormat = 1 (Linear PCM)
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, byteRate, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, 16, true);       // BitsPerSample = 16
-
-  // data subchunk
-  view.setUint8(36, 0x64); // 'd'
-  view.setUint8(37, 0x61); // 'a'
-  view.setUint8(38, 0x74); // 't'
-  view.setUint8(39, 0x61); // 'a'
-  view.setUint32(40, dataSize, true);
-
-  // Interleave and scale Float32 [-1.0, 1.0] to signed Int16 [-32768, 32767]
-  let offset = 44;
-  for (let i = 0; i < numFrames; i++) {
-    for (let channel = 0; channel < numChannels; channel++) {
-      let sample = buffer.getChannelData(channel)[i];
-      sample = Math.max(-1.0, Math.min(1.0, sample));
-      let int16 = sample < 0 ? (sample * 32768) : (sample * 32767);
-      view.setInt16(offset, int16, true);
-      offset += 2;
-    }
-  }
-
-  return new Blob([view], { type: 'audio/wav' });
-}
-
 function downloadCurrentClip() {
   if (!currentAudioBuffer) return;
   const pcmBlob = audioBufferToPcmWavBlob(currentAudioBuffer);
   const url = URL.createObjectURL(pcmBlob);
   const a = document.createElement('a');
   a.href = url;
-  const mode = filterModeSelect ? filterModeSelect.value : 'audio';
-  a.download = `clip_${currentActiveClipId || 'recording'}_${mode}_pcm16.wav`;
+  a.download = `clip_${currentActiveClipId || 'recording'}_clean_pcm16.wav`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

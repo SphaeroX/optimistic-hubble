@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>XIAO ESP32C3 - Dual-Mic Voice Vault & Noise Filter</title>
+  <title>XIAO ESP32C3 - Voice Assistant & Dual-Mic Noise Filter</title>
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,7 +23,7 @@
         </div>
         <div>
           <h1>XIAO Voice Vault</h1>
-          <p class="subtitle">Dual-Mic Stereo &bull; Active Noise Cancellation DSP</p>
+          <p class="subtitle">Hardware Dual-Mic Noise Filtering &bull; 8 KB/s High-Efficiency Storage</p>
         </div>
       </div>
 
@@ -60,7 +60,7 @@
           </div>
           <div class="status-texts">
             <h3 id="stateLabel">Bereit</h3>
-            <p id="stateDesc">Hau auf das Breadboard zum Aufnehmen. +18 dB Preamp Boost aktiv.</p>
+            <p id="stateDesc">Hau auf das Breadboard zum Aufnehmen. Dual-Mikrofon Rauschfilterung aktiv.</p>
           </div>
         </div>
 
@@ -89,13 +89,13 @@
           </div>
 
           <div class="sensor-pill">
-            <span class="pill-label">Preamp Verstärkung</span>
-            <span class="pill-val" style="color:var(--accent-emerald);">+18 dB (8x)</span>
+            <span class="pill-label">Rauschfilter (DSP)</span>
+            <span class="pill-val" style="color:var(--accent-emerald);">Hardware Aktiv</span>
           </div>
 
           <div class="sensor-pill">
-            <span class="pill-label">WLAN-Hotspot</span>
-            <span class="pill-val">XIAO-Audio-Hotspot</span>
+            <span class="pill-label">Speichereffizienz</span>
+            <span class="pill-val" style="color:var(--accent-cyan);">8 KB/s (Mono)</span>
           </div>
         </div>
       </section>
@@ -122,33 +122,22 @@
           </div>
         </div>
 
-        <!-- Dual-Mic DSP Noise Cancellation Controls -->
+        <!-- Audio Tuning & DSP Controls -->
         <div class="dsp-card">
           <div class="dsp-title-row">
-            <span class="dsp-title">🎛️ Dual-Mikrofon DSP & Verstärker</span>
-            <span id="dspModeBadge" class="badge badge-connected">Beamforming Aktiv</span>
+            <span class="dsp-title">🎛️ Audio-Feinschliff & Verstärkung</span>
+            <span class="badge badge-connected">Rauschgefiltert (+3 dB SNR)</span>
           </div>
           
           <div class="dsp-controls-grid">
             <div class="dsp-control-group">
-              <label for="filterModeSelect">Wiedergabe-Modus:</label>
-              <select id="filterModeSelect" onchange="onDspSettingsChanged()">
-                <option value="beamforming" selected>🎙️ Dual-Mic Beamforming (+3 dB SNR & Rauschreduktion)</option>
-                <option value="anc">🛡️ Differenzielle Rauschunterdrückung (ANC Subtraktion)</option>
-                <option value="stereo">🎧 Echtes Stereo (Mic 1 Links + Mic 2 Rechts)</option>
-                <option value="mic1">🔊 Nur Mikrofon 1 (Links)</option>
-                <option value="mic2">🔊 Nur Mikrofon 2 (Rechts)</option>
-              </select>
+              <label for="volumeBoostSlider">Lautstärke-Boost: <span id="boostVal">150%</span></label>
+              <input type="range" id="volumeBoostSlider" min="50" max="350" value="150" oninput="onAudioSettingsChanged()">
             </div>
 
             <div class="dsp-control-group">
-              <label for="volumeBoostSlider">Lautstärke-Boost: <span id="boostVal">150%</span></label>
-              <input type="range" id="volumeBoostSlider" min="50" max="350" value="150" oninput="onDspSettingsChanged()">
-            </div>
-
-            <div class="dsp-control-group" style="grid-column: 1 / -1;">
               <label for="noiseGateSlider">Noise-Gate (Stille in Sprechpausen): <span id="gateVal">20%</span></label>
-              <input type="range" id="noiseGateSlider" min="0" max="100" value="20" oninput="onDspSettingsChanged()">
+              <input type="range" id="noiseGateSlider" min="0" max="100" value="20" oninput="onAudioSettingsChanged()">
             </div>
           </div>
         </div>
@@ -175,7 +164,7 @@
                 <polyline points="7 10 12 15 17 10"></polyline>
                 <line x1="12" y1="15" x2="12" y2="3"></line>
               </svg>
-              <span>WAV Herunterladen</span>
+              <span>Standard WAV Herunterladen</span>
             </button>
           </div>
         </div>
@@ -199,7 +188,7 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-      <span>XIAO ESP32C3 Audio Companion &bull; Dual-Mic DSP & +18 dB Preamp Boost</span>
+      <span>XIAO ESP32C3 Audio Companion &bull; Hardware Dual-Mic Filter &bull; 8 KB/s Flash Vault</span>
     </footer>
   </div>
 
