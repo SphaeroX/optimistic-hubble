@@ -19,12 +19,12 @@ static BleManager ble;
 static WifiServerManager wifiServer(storage);
 
 static unsigned long lastTelemetryTime = 0;
-static const unsigned long TELEMETRY_INTERVAL_MS = 100;
+static const unsigned long TELEMETRY_INTERVAL_MS = 1000;
 
 void printBanner() {
     Serial.println(F("\n========================================================"));
     Serial.println(F("  XIAO ESP32C3 - Real-Time Direct-to-Flash Voice Vault"));
-    Serial.println(F("  Stream to LittleFS (Up to 5 min) -> Captive Wi-Fi Sync"));
+    Serial.println(F("  Stream to LittleFS (Up to 5 min) -> High-Speed Wi-Fi"));
     Serial.println(F("========================================================"));
 }
 
@@ -73,8 +73,8 @@ void setup() {
         recorder.blinkLed(3, 80);
     }
 
-    // 5. Initialize Wi-Fi Hotspot, Captive DNS & Sync Server
-    Serial.println(F("[5/6] Starting Wi-Fi Hotspot & Captive DNS Server..."));
+    // 5. Initialize Wi-Fi Hotspot & Sync Server
+    Serial.println(F("[5/6] Starting Wi-Fi Hotspot & Sync Server..."));
     bool wifiOk = wifiServer.begin(WIFI_AP_SSID, WIFI_AP_PASS, HTTP_SERVER_PORT);
     if (wifiOk) {
         Serial.printf("  [PASS] Hotspot \"%s\" (PW: %s) -> http://%s\n",
@@ -110,7 +110,7 @@ void handleStopAndSave() {
 }
 
 void loop() {
-    // 1. Process Captive DNS & Web Server requests
+    // 1. Process Web Server requests (High priority, non-blocking)
     wifiServer.handleClient();
 
     // 2. Process Active Real-Time Recording Stream
@@ -138,7 +138,7 @@ void loop() {
         return;
     }
 
-    // 3. IDLE State: Monitor IMU for Start Tap
+    // 3. IDLE State: Non-blocking IMU monitoring for Start Tap
     ImuMetricData imuData;
     bool imuOk = imu.readSensorData(imuData);
     if (imuOk) {
@@ -154,22 +154,14 @@ void loop() {
         }
     }
 
-    // 4. Periodic Telemetry
+    // 4. Periodic lightweight heartbeat
     unsigned long now = millis();
     if (now - lastTelemetryTime >= TELEMETRY_INTERVAL_MS) {
         lastTelemetryTime = now;
 
-        StereoAudioMetrics audio;
-        stereoMic.readMetrics(audio);
-
-        char vuL[24], vuR[24];
-        I2sMicDriver::formatVuBar(vuL, sizeof(vuL), audio.leftRms, 50000.0f, 10);
-        I2sMicDriver::formatVuBar(vuR, sizeof(vuR), audio.rightRms, 50000.0f, 10);
-
-        Serial.printf("[BLE: %s] [FLASH: %u clips] [MIC-L] %s RMS:%5.0f | [MIC-R] %s RMS:%5.0f\r",
+        Serial.printf("[STATUS] BLE: %s | Flash: %u clips (Free: %u KB) | AP: http://192.168.4.1\n",
                       ble.isConnected() ? "CONNECTED" : "STANDBY  ",
                       storage.getClipCount(),
-                      vuL, audio.leftRms,
-                      vuR, audio.rightRms);
+                      (storage.getTotalBytes() - storage.getUsedBytes()) / 1024);
     }
 }
