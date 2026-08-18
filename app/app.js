@@ -1,5 +1,5 @@
 // ============================================================================
-// BLE UUIDs matching ESP32-C3 Firmware
+// BLE & Web Serial UUIDs / Constants
 // ============================================================================
 const BLE_SERVICE_UUID     = '19b10000-e8f2-537e-4f6c-d104768a1214';
 const BLE_CHAR_STATE_UUID  = '19b10001-e8f2-537e-4f6c-d104768a1214';
@@ -53,10 +53,10 @@ const clipMetaEl = document.getElementById('clipMeta');
 const clipsList = document.getElementById('clipsList');
 
 // ============================================================================
-// BLE Connection Management
+// Robust Web Bluetooth Connection Handler (Windows Compatible)
 // ============================================================================
 async function toggleBleConnection() {
-  if (bleDevice && bleDevice.gatt.connected) {
+  if (bleDevice && bleDevice.gatt && bleDevice.gatt.connected) {
     disconnectBle();
   } else {
     connectBle();
@@ -65,12 +65,12 @@ async function toggleBleConnection() {
 
 async function connectBle() {
   if (!navigator.bluetooth) {
-    alert('Web Bluetooth wird von diesem Browser nicht unterstützt. Bitte nutze Google Chrome oder Microsoft Edge.');
+    alert('Web Bluetooth wird in diesem Browser nicht unterstützt. Bitte nutze Google Chrome oder Microsoft Edge.');
     return;
   }
 
   try {
-    btnConnectText.textContent = 'Verbinde...';
+    btnConnectText.textContent = 'Suche Gerät...';
     
     bleDevice = await navigator.bluetooth.requestDevice({
       filters: [{ name: 'XIAO-Audio-Recorder' }],
@@ -79,8 +79,35 @@ async function connectBle() {
 
     bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
 
+    btnConnectText.textContent = 'Verbinde GATT...';
+    console.log('[BLE] Requesting GATT connection...');
+    
     gattServer = await bleDevice.gatt.connect();
-    const service = await gattServer.getPrimaryService(BLE_SERVICE_UUID);
+
+    // Windows Bluetooth stack stabilization delay
+    await new Promise(r => setTimeout(r, 600));
+
+    btnConnectText.textContent = 'Lade Services...';
+
+    // Retrieve Primary Service with retry for Windows GATT handshake
+    let service = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        if (!bleDevice.gatt.connected) {
+          console.log(`[BLE] Reconnecting before service query (attempt ${attempt})...`);
+          gattServer = await bleDevice.gatt.connect();
+          await new Promise(r => setTimeout(r, 500));
+        }
+        service = await gattServer.getPrimaryService(BLE_SERVICE_UUID);
+        break;
+      } catch (err) {
+        console.warn(`[BLE] Service query attempt ${attempt} failed:`, err);
+        if (attempt === 3) throw err;
+        await new Promise(r => setTimeout(r, 800));
+      }
+    }
+
+    console.log('[BLE] Service discovered. Fetching characteristics...');
 
     // State Characteristic
     charState = await service.getCharacteristic(BLE_CHAR_STATE_UUID);
@@ -99,24 +126,24 @@ async function connectBle() {
 
     // Update UI for Connected State
     btnConnect.classList.add('connected');
-    btnConnectText.textContent = 'Verbunden trennen';
-    connectionBadge.textContent = 'Verbunden';
+    btnConnectText.textContent = 'Trennen';
+    connectionBadge.textContent = 'Verbunden (BLE)';
     connectionBadge.className = 'badge badge-connected';
     
     updateDeviceState(0); // IDLE
-    console.log('[BLE] Connected and subscribed to GATT notifications.');
+    console.log('[BLE] Successfully connected & subscribed to all characteristics!');
 
   } catch (err) {
     console.error('[BLE Connection Error]', err);
     btnConnectText.textContent = 'Mit XIAO verbinden';
     if (err.name !== 'NotFoundError') {
-      alert('Verbindungsfehler: ' + err.message);
+      alert(`Verbindungsfehler: ${err.message}\n\nHinweis: Falls Windows zickt, kopple das Gerät einmal in Windows-Einstellungen > Bluetooth oder schalte Bluetooth kurz aus/ein.`);
     }
   }
 }
 
 function disconnectBle() {
-  if (bleDevice && bleDevice.gatt.connected) {
+  if (bleDevice && bleDevice.gatt && bleDevice.gatt.connected) {
     bleDevice.gatt.disconnect();
   }
   onDisconnected();
@@ -263,7 +290,6 @@ async function assembleAndProcessAudio() {
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
   }
 
-  // Decode audio data for playback
   const arrayBuffer = await currentWavBlob.arrayBuffer();
   currentAudioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 

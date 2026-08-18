@@ -7,7 +7,6 @@ BleManager::BleManager()
 void BleManager::onConnect(NimBLEServer* pServer) {
     _connected = true;
     Serial.println(F("[BLE] Client connected!"));
-    updateState(_currentState);
 }
 
 void BleManager::onDisconnect(NimBLEServer* pServer) {
@@ -18,8 +17,7 @@ void BleManager::onDisconnect(NimBLEServer* pServer) {
 
 bool BleManager::begin(const char* deviceName) {
     NimBLEDevice::init(deviceName);
-    NimBLEDevice::setPower(ESP_PWR_LVL_P9); // Max TX power (+9 dBm)
-    NimBLEDevice::setMTU(517);
+    NimBLEDevice::setPower(ESP_PWR_LVL_P9); // +9 dBm for strong stable signal
 
     _pServer = NimBLEDevice::createServer();
     _pServer->setCallbacks(this);
@@ -44,19 +42,22 @@ bool BleManager::begin(const char* deviceName) {
         NIMBLE_PROPERTY::NOTIFY
     );
 
+    // Set initial values
+    uint8_t initPayload[7] = {0, 0, 0, 0, 0, (uint8_t)(AUDIO_SAMPLE_RATE & 0xFF), (uint8_t)((AUDIO_SAMPLE_RATE >> 8) & 0xFF)};
+    _pCharState->setValue(initPayload, sizeof(initPayload));
+
     _pService->start();
 
-    // Setup Advertising
+    // Configure Advertising for maximum Windows compatibility
     NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(BLE_SERVICE_UUID);
     pAdvertising->setScanResponse(true);
-    pAdvertising->setMinPreferred(0x06); // 7.5ms connection interval
-    pAdvertising->setMaxPreferred(0x12); // 22.5ms connection interval
+    pAdvertising->setMinPreferred(0x10); // ~20ms interval
+    pAdvertising->setMaxPreferred(0x20); // ~40ms interval
     
-    NimBLEDevice::startAdvertising();
-    Serial.printf("[BLE] GATT Server active. Advertising as \"%s\"...\n", deviceName);
+    pAdvertising->start();
+    Serial.printf("[BLE] Server active. Advertising as \"%s\"...\n", deviceName);
 
-    updateState(STATE_IDLE);
     return true;
 }
 
@@ -102,7 +103,7 @@ bool BleManager::transmitAudio(const uint8_t* audioData, size_t totalBytes, uint
     updateState(STATE_TRANSFERRING, totalBytes, sampleRate);
     delay(50);
 
-    const size_t CHUNK_PAYLOAD_SIZE = 240; // 240 bytes audio payload per BLE notification
+    const size_t CHUNK_PAYLOAD_SIZE = 240; // 240 bytes audio payload
     size_t totalChunks = (totalBytes + CHUNK_PAYLOAD_SIZE - 1) / CHUNK_PAYLOAD_SIZE;
 
     Serial.printf("[BLE] Transmitting %u bytes of audio in %u chunks...\n", totalBytes, totalChunks);
@@ -126,20 +127,18 @@ bool BleManager::transmitAudio(const uint8_t* audioData, size_t totalBytes, uint
         packet[4] = (uint8_t)(thisPayload & 0xFF);
         packet[5] = (uint8_t)((thisPayload >> 8) & 0xFF);
 
-        // Copy audio payload
         memcpy(&packet[6], &audioData[offset], thisPayload);
 
         _pCharAudio->setValue(packet, 6 + thisPayload);
         _pCharAudio->notify();
 
-        // Small delay between packets to prevent BLE buffer congestion
-        delay(6);
+        delay(8); // Safe spacing for Windows BLE link layer
     }
 
     Serial.println(F("[BLE] Audio transmission complete!"));
     delay(50);
     updateState(STATE_DONE, totalBytes, sampleRate);
-    delay(50);
+    delay(100);
     updateState(STATE_IDLE);
 
     return true;
