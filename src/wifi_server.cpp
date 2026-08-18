@@ -27,7 +27,7 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
 
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
-    // Start DNS Server for Captive Portal (Port 53, redirects all domains to 192.168.4.1)
+    // Start DNS Server for Captive Portal
     _dnsServer.start(53, "*", localIp);
 
     Serial.println(F("--------------------------------------------------"));
@@ -43,7 +43,7 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
     _server.on("/api/clear", HTTP_POST, [this]() { handleApiClear(); });
     _server.on("/api/status", HTTP_GET, [this]() { handleStatus(); });
 
-    // Captive Portal probes for Android / Windows / iOS
+    // Captive Portal probes
     _server.on("/generate_204", HTTP_GET, [this]() { handleCaptivePortal(); });
     _server.on("/gen_204", HTTP_GET, [this]() { handleCaptivePortal(); });
     _server.on("/hotspot-detect.html", HTTP_GET, [this]() { handleCaptivePortal(); });
@@ -75,7 +75,6 @@ void WifiServerManager::handleOptions() {
         _server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
         _server.send(204);
     } else {
-        // Unknown route -> redirect to root dashboard
         handleCaptivePortal();
     }
 }
@@ -139,12 +138,12 @@ void WifiServerManager::handleApiDownload() {
         return;
     }
 
-    // Built-in streamFile handles socket buffering, chunking, and memory flow control flawlessly
-    _server.sendHeader("Content-Disposition", "inline; filename=\"clip.wav\"");
+    char filename[32];
+    snprintf(filename, sizeof(filename), "clip_%03u.wav", clipId);
+
+    _server.sendHeader("Content-Disposition", "inline; filename=\"" + String(filename) + "\"");
     _server.streamFile(file, "audio/wav");
     file.close();
-
-    Serial.printf("[HTTP] Streamed clip (ID: %u) via streamFile().\n", clipId);
 }
 
 void WifiServerManager::handleApiClear() {
@@ -162,7 +161,7 @@ void WifiServerManager::handleRoot() {
 
     String html = "<!DOCTYPE html><html lang='de'><head><meta charset='utf-8'>"
                   "<meta name='viewport' content='width=device-width,initial-scale=1.0'>"
-                  "<title>XIAO Voice Vault</title>"
+                  "<title>XIAO Voice Vault (ADPCM 4:1)</title>"
                   "<style>"
                   "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;background:#0b0f17;color:#f8fafc;padding:16px;margin:0;}"
                   ".container{max-width:540px;margin:0 auto;}"
@@ -171,12 +170,11 @@ void WifiServerManager::handleRoot() {
                   ".stat{font-family:monospace;font-size:0.8rem;background:#1c2738;padding:8px 12px;border-radius:8px;margin-bottom:14px;display:flex;justify-content:space-between;}"
                   ".clip{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#1c2738;border:1px solid #273549;border-radius:10px;margin-bottom:10px;}"
                   ".clip-title{font-weight:600;font-size:0.9rem;}.clip-meta{font-size:0.75rem;color:#94a3b8;font-family:monospace;}"
-                  "audio{height:32px;width:140px;}"
                   "button{background:#0284c7;color:#fff;border:none;border-radius:6px;padding:8px 12px;font-weight:600;cursor:pointer;font-size:0.82rem;}"
                   ".btn-danger{background:#e11d48;margin-top:10px;width:100%;}"
                   "</style></head><body><div class='container'>"
                   "<div class='card'><h1>XIAO Voice Vault</h1>"
-                  "<p>Gespeicherte Aufnahmen auf dem ESP32-C3 Flash (4 MB)</p>"
+                  "<p>4:1 IMA-ADPCM Kompression (8 KB/s) &bull; Dual-Mic Beamforming</p>"
                   "<div class='stat'><span>Aufnahmen: <strong>" + String(clips.size()) + "</strong></span>"
                   "<span>Speicher: <strong>" + String(usedKb) + " / " + String(totalKb) + " KB</strong></span></div>";
 
@@ -186,10 +184,10 @@ void WifiServerManager::handleRoot() {
         for (int i = clips.size() - 1; i >= 0; --i) {
             html += "<div class='clip'><div>"
                     "<div class='clip-title'>Aufnahme #" + String(clips[i].id) + "</div>"
-                    "<div class='clip-meta'>" + String(clips[i].duration, 1) + "s • " + String(clips[i].fileSize / 1024) + " KB</div>"
+                    "<div class='clip-meta'>" + String(clips[i].duration, 1) + "s &bull; " + String(clips[i].fileSize / 1024) + " KB (8 KB/s)</div>"
                     "</div>"
                     "<div style='display:flex;align-items:center;gap:6px;'>"
-                    "<audio controls src='/api/download?id=" + String(clips[i].id) + "'></audio>"
+                    "<button onclick=\"playAdpcm('/api/download?id=" + String(clips[i].id) + "')\">▶ Play</button>"
                     "<a href='/api/download?id=" + String(clips[i].id) + "' download><button>⬇</button></a>"
                     "</div></div>";
         }
@@ -197,6 +195,32 @@ void WifiServerManager::handleRoot() {
                 "<button type='submit' class='btn-danger'>Alle Aufnahmen vom Flash löschen</button></form>";
     }
 
-    html += "</div></div></body></html>";
+    html += "</div></div><script>"
+            "let actx = null;"
+            "const stepT = [7,8,9,10,11,12,13,14,16,17,19,21,23,25,28,31,34,37,41,45,50,55,60,66,73,80,88,97,107,118,130,143,157,173,190,209,230,253,279,307,337,371,408,449,494,544,598,658,724,796,876,963,1060,1166,1282,1411,1552,1707,1878,2066,2272,2499,2749,3024,3327,3660,4026,4428,4871,5358,5894,6484,7132,7845,8630,9493,10442,11487,12635,13899,15289,16818,18500,20350,22385,24623,27086,29794,32767];"
+            "const idxT = [-1,-1,-1,-1,2,4,6,8,-1,-1,-1,-1,2,4,6,8];"
+            "async function playAdpcm(url){"
+            "  if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)();"
+            "  const res = await fetch(url); const buf = await res.arrayBuffer();"
+            "  const raw = new Uint8Array(buf, 60);"
+            "  const pcm = new Float32Array(raw.length * 2);"
+            "  let pred = 0, si = 0, pi = 0;"
+            "  function dec(n){"
+            "    let step = stepT[si], dq = step >> 3;"
+            "    if(n & 4) dq += step; if(n & 2) dq += (step >> 1); if(n & 1) dq += (step >> 2);"
+            "    if(n & 8) pred -= dq; else pred += dq;"
+            "    if(pred > 32767) pred = 32767; else if(pred < -32768) pred = -32768;"
+            "    si += idxT[n & 15]; if(si < 0) si = 0; else if(si > 88) si = 88;"
+            "    return pred / 32768.0;"
+            "  }"
+            "  for(let i=0; i<raw.length; i++){"
+            "    pcm[pi++] = dec(raw[i] & 15); pcm[pi++] = dec((raw[i] >> 4) & 15);"
+            "  }"
+            "  const ab = actx.createBuffer(1, pcm.length, 16000);"
+            "  ab.getChannelData(0).set(pcm);"
+            "  const src = actx.createBufferSource(); src.buffer = ab; src.connect(actx.destination); src.start();"
+            "}"
+            "</script></body></html>";
+
     _server.send(200, "text/html", html);
 }

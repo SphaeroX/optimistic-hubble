@@ -51,6 +51,77 @@ const clipMetaEl = document.getElementById('clipMeta');
 const clipsList = document.getElementById('clipsList');
 
 // ============================================================================
+// IMA-ADPCM Fast Decoder (4:1 Decompression to Linear 16-Bit PCM)
+// ============================================================================
+const ADPCM_STEP_TABLE = [
+  7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+  50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230, 
+  253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 
+  1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 
+  3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 
+  12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767
+];
+const ADPCM_INDEX_TABLE = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8];
+
+function decodeImaAdpcmBuffer(arrayBuffer) {
+  const dataView = new DataView(arrayBuffer);
+  let dataOffset = 60;
+  let dataLength = arrayBuffer.byteLength - 60;
+
+  // Scan chunks to locate 'data' offset dynamically
+  let offset = 12;
+  while (offset < arrayBuffer.byteLength - 8) {
+    const chunkId = String.fromCharCode(
+      dataView.getUint8(offset), dataView.getUint8(offset+1),
+      dataView.getUint8(offset+2), dataView.getUint8(offset+3)
+    );
+    const chunkSize = dataView.getUint32(offset + 4, true);
+    if (chunkId === 'data') {
+      dataOffset = offset + 8;
+      dataLength = chunkSize;
+      break;
+    }
+    offset += 8 + chunkSize;
+  }
+
+  const rawBytes = new Uint8Array(arrayBuffer, dataOffset, dataLength);
+  const numSamples = rawBytes.length * 2;
+  const pcm16 = new Int16Array(numSamples);
+
+  let predicted = 0;
+  let stepIndex = 0;
+  let sampleIdx = 0;
+
+  function decodeNibble(nibble) {
+    let step = ADPCM_STEP_TABLE[stepIndex];
+    let diffq = step >> 3;
+    if (nibble & 4) diffq += step;
+    if (nibble & 2) diffq += (step >> 1);
+    if (nibble & 1) diffq += (step >> 2);
+
+    if (nibble & 8) predicted -= diffq;
+    else predicted += diffq;
+
+    if (predicted > 32767) predicted = 32767;
+    else if (predicted < -32768) predicted = -32768;
+
+    stepIndex += ADPCM_INDEX_TABLE[nibble & 0x0F];
+    if (stepIndex < 0) stepIndex = 0;
+    else if (stepIndex > 88) stepIndex = 88;
+
+    return predicted;
+  }
+
+  for (let i = 0; i < rawBytes.length; i++) {
+    const byte = rawBytes[i];
+    pcm16[sampleIdx++] = decodeNibble(byte & 0x0F);
+    pcm16[sampleIdx++] = decodeNibble((byte >> 4) & 0x0F);
+  }
+
+  return pcm16;
+}
+
+// ============================================================================
 // BLE Live Signaling (Optional Background Link)
 // ============================================================================
 async function toggleBleConnection() {
@@ -102,9 +173,6 @@ async function connectBle() {
   } catch (err) {
     console.warn('[BLE Warning]', err);
     btnConnectText.textContent = 'BLE Live-Signal';
-    if (err.name !== 'NotFoundError') {
-      console.log('BLE optional hint:', err.message);
-    }
   }
 }
 
@@ -146,7 +214,7 @@ function updateDeviceState(state, latestClipId = 0, totalClips = 0) {
 
     case 1: // RECORDING
       stateRing.classList.add('state-recording');
-      stateLabel.textContent = 'Aufnahme läuft...';
+      stateLabel.textContent = 'Aufnahme läuft (ADPCM 8 KB/s)...';
       stateDesc.textContent = 'Sprich ins Mikrofon! Hau nochmals auf das Breadboard zum Beenden & Speichern.';
       break;
 
@@ -184,7 +252,6 @@ async function syncAllClipsFromWifi() {
   btnSyncText.textContent = 'Lade Liste...';
 
   try {
-    // 1. Fetch JSON List of all clips stored on LittleFS
     const listRes = await fetch(`http://${ip}/api/clips?t=${Date.now()}`, { cache: 'no-store' });
     if (!listRes.ok) throw new Error(`HTTP ${listRes.status}: ${listRes.statusText}`);
 
@@ -200,7 +267,6 @@ async function syncAllClipsFromWifi() {
 
     btnSyncText.textContent = `Lade ${serverClips.length} Clips...`;
 
-    // 2. Fetch all clips and store in local session
     for (let i = 0; i < serverClips.length; ++i) {
       const clip = serverClips[i];
       const existing = synchronizedClips.find(c => c.id === clip.id);
@@ -228,7 +294,6 @@ async function syncAllClipsFromWifi() {
     stateLabel.textContent = 'Synchronisation fertig!';
     stateDesc.textContent = `${serverClips.length} Aufnahme(n) erfolgreich vom Flash heruntergeladen.`;
 
-    // Select the latest clip
     if (synchronizedClips.length > 0) {
       selectClip(synchronizedClips[0]);
     }
@@ -248,14 +313,24 @@ async function selectClip(clip) {
   currentWavUrl = clip.url;
 
   currentClipTitle.textContent = `Aufnahme #${clip.id} (${clip.filename})`;
-  clipMetaEl.textContent = `${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB • 16 kHz WAV`;
+  clipMetaEl.textContent = `${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB • IMA-ADPCM 16 kHz`;
 
   if (!audioContext) {
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
   }
 
   const arrayBuffer = await currentWavBlob.arrayBuffer();
-  currentAudioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  
+  // Decompress IMA-ADPCM to Linear PCM16
+  const pcm16 = decodeImaAdpcmBuffer(arrayBuffer);
+  const sampleRate = 16000;
+  
+  // Create Web Audio Buffer
+  currentAudioBuffer = audioContext.createBuffer(1, pcm16.length, sampleRate);
+  const channelData = currentAudioBuffer.getChannelData(0);
+  for (let i = 0; i < pcm16.length; i++) {
+    channelData[i] = pcm16[i] / 32768.0;
+  }
 
   emptyWaveformMessage.style.display = 'none';
   btnPlay.disabled = false;
@@ -268,11 +343,6 @@ async function selectClip(clip) {
   seekSlider.max = duration;
 
   // Draw Waveform
-  const pcmFloat = currentAudioBuffer.getChannelData(0);
-  const pcm16 = new Int16Array(pcmFloat.length);
-  for (let i = 0; i < pcmFloat.length; ++i) {
-    pcm16[i] = pcmFloat[i] * 32767;
-  }
   drawWaveform(pcm16);
 
   renderClipsList();
@@ -294,7 +364,7 @@ function renderClipsList() {
     item.innerHTML = `
       <div class="clip-info" onclick="selectClipById(${clip.id})" style="cursor:pointer;flex:1;">
         <span class="clip-title" style="${isSelected ? 'color:var(--accent-cyan);' : ''}">Aufnahme #${clip.id}</span>
-        <span class="clip-sub">${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB • Synced ${clip.time}</span>
+        <span class="clip-sub">${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB (8 KB/s) • Synced ${clip.time}</span>
       </div>
       <div class="clip-actions">
         <button class="btn-icon-small" onclick="selectClipById(${clip.id})">▶ Anhören</button>

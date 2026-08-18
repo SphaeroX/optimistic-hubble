@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include "i2s_mic_driver.h"
+#include "adpcm.h"
 #include "config.h"
 
 class AudioRecorder {
@@ -15,10 +16,10 @@ public:
     void stopRecording();
 
     bool isRecording() const { return _recording; }
-    size_t getRecordedBytes() const { return _totalPcmBytesWritten; }
-    size_t getRecordedSamples() const { return _totalPcmBytesWritten / sizeof(int16_t); }
+    size_t getRecordedBytes() const { return _totalCompressedBytesWritten; }
+    size_t getRecordedSamples() const { return _totalSamplesRecorded; }
     uint32_t getSampleRate() const { return AUDIO_SAMPLE_RATE; }
-    float getDurationSeconds() const { return (float)_totalPcmBytesWritten / (float)(AUDIO_SAMPLE_RATE * sizeof(int16_t)); }
+    float getDurationSeconds() const { return (float)_totalSamplesRecorded / (float)AUDIO_SAMPLE_RATE; }
     uint16_t getCurrentClipId() const { return _currentClipId; }
 
     void setLed(bool state);
@@ -29,14 +30,18 @@ private:
     bool _recording;
     File _activeFile;
     uint16_t _currentClipId;
-    size_t _totalPcmBytesWritten;
+    size_t _totalCompressedBytesWritten;
+    size_t _totalSamplesRecorded;
     unsigned long _recordStartTime;
 
-    // Fast 4KB RAM buffer for aligned flash block writes
+    ImaAdpcm _encoder;
+    bool _hasPendingNibble;
+    uint8_t _pendingNibble;
+
     static const size_t FLASH_WRITE_BUFFER_SIZE = 4096;
     uint8_t _flashWriteBuffer[FLASH_WRITE_BUFFER_SIZE];
     size_t _flashBufferIndex;
 
     void flushFlashBuffer();
-    void writeWavHeader(File& file, size_t pcmBytes, uint32_t sampleRate);
+    void writeWavHeader(File& file, size_t adpcmDataBytes, size_t totalSamples, uint32_t sampleRate);
 };
