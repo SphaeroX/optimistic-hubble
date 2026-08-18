@@ -50,14 +50,6 @@ const totalTimeEl = document.getElementById('totalTime');
 const clipMetaEl = document.getElementById('clipMeta');
 const clipsList = document.getElementById('clipsList');
 
-function getApiBaseUrl() {
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return ''; // Proxy through local server seamlessly
-  }
-  const ip = (wifiIpInput && wifiIpInput.value.trim()) || '192.168.4.1';
-  return `http://${ip}`;
-}
-
 // ============================================================================
 // BLE Live Signaling (Optional Background Link)
 // ============================================================================
@@ -71,7 +63,7 @@ async function toggleBleConnection() {
 
 async function connectBle() {
   if (!navigator.bluetooth) {
-    alert('Web Bluetooth wird von diesem Browser nicht unterstützt. Du kannst alle Daten jederzeit über WLAN synchronisieren!');
+    alert('Web Bluetooth wird nicht unterstützt. Du kannst alle Daten jederzeit direkt über WLAN synchronisieren!');
     return;
   }
 
@@ -110,6 +102,9 @@ async function connectBle() {
   } catch (err) {
     console.warn('[BLE Warning]', err);
     btnConnectText.textContent = 'BLE Live-Signal';
+    if (err.name !== 'NotFoundError') {
+      console.log('BLE optional hint:', err.message);
+    }
   }
 }
 
@@ -184,17 +179,16 @@ function onTapEvent(event) {
 // Multi-Clip Wi-Fi Synchronization Engine
 // ============================================================================
 async function syncAllClipsFromWifi() {
-  const base = getApiBaseUrl();
+  const ip = wifiIpInput.value.trim() || '192.168.4.1';
   btnSyncWifi.disabled = true;
   btnSyncText.textContent = 'Lade Liste...';
 
   try {
-    const listRes = await fetch(`${base}/api/clips?t=${Date.now()}`, { cache: 'no-store' });
+    // 1. Fetch JSON List of all clips stored on LittleFS
+    const listRes = await fetch(`http://${ip}/api/clips?t=${Date.now()}`, { cache: 'no-store' });
     if (!listRes.ok) throw new Error(`HTTP ${listRes.status}: ${listRes.statusText}`);
 
     const data = await listRes.json();
-    if (data.error) throw new Error(data.error);
-
     const serverClips = data.clips || [];
 
     if (serverClips.length === 0) {
@@ -206,13 +200,13 @@ async function syncAllClipsFromWifi() {
 
     btnSyncText.textContent = `Lade ${serverClips.length} Clips...`;
 
-    // Fetch all clips and store in local session
+    // 2. Fetch all clips and store in local session
     for (let i = 0; i < serverClips.length; ++i) {
       const clip = serverClips[i];
       const existing = synchronizedClips.find(c => c.id === clip.id);
 
       if (!existing) {
-        const audioRes = await fetch(`${base}/api/download?id=${clip.id}`, { cache: 'no-store' });
+        const audioRes = await fetch(`http://${ip}/api/download?id=${clip.id}`, { cache: 'no-store' });
         if (audioRes.ok) {
           const blob = await audioRes.blob();
           const url = URL.createObjectURL(blob);
@@ -232,7 +226,7 @@ async function syncAllClipsFromWifi() {
     renderClipsList();
     flashStatus.textContent = `${serverClips.length} im Flash`;
     stateLabel.textContent = 'Synchronisation fertig!';
-    stateDesc.textContent = `${serverClips.length} Aufnahme(n) erfolgreich heruntergeladen.`;
+    stateDesc.textContent = `${serverClips.length} Aufnahme(n) erfolgreich vom Flash heruntergeladen.`;
 
     // Select the latest clip
     if (synchronizedClips.length > 0) {
@@ -330,9 +324,9 @@ async function clearDeviceFlashStorage() {
     return;
   }
 
-  const base = getApiBaseUrl();
+  const ip = wifiIpInput.value.trim() || '192.168.4.1';
   try {
-    const res = await fetch(`${base}/api/clear`, { method: 'POST' });
+    const res = await fetch(`http://${ip}/api/clear`, { method: 'POST' });
     if (res.ok) {
       alert('Der Flash-Speicher auf dem XIAO wurde vollständig geleert!');
       flashStatus.textContent = '0 im Flash';
@@ -342,7 +336,7 @@ async function clearDeviceFlashStorage() {
       throw new Error(`HTTP ${res.status}`);
     }
   } catch (err) {
-    alert(`Löschen fehlgeschlagen: ${err.message}`);
+    alert(`Löschen fehlgeschlagen: ${err.message}\nVerbinde dich mit dem WLAN "XIAO-Audio-Hotspot".`);
   }
 }
 

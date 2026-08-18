@@ -3,14 +3,14 @@
 #include <math.h>
 
 I2sMicDriver::I2sMicDriver()
-    : _initialized(false), _i2sPort(I2S_NUM_0), _dmaBuffer(nullptr), _bufferSampleCount(I2S_BUFFER_SAMPLES) {}
+    : _initialized(false), _i2sPort(I2S_NUM_0), _dmaBuffer(nullptr), _bufferSampleCount(256) {}
 
 bool I2sMicDriver::begin(int sckPin, int wsPin, int sdPin, uint32_t sampleRate) {
     if (_initialized) {
         stop();
     }
 
-    _bufferSampleCount = I2S_BUFFER_SAMPLES;
+    _bufferSampleCount = 256;
     if (_dmaBuffer == nullptr) {
         _dmaBuffer = (int32_t*)malloc(_bufferSampleCount * 2 * sizeof(int32_t)); // 2 channels (Stereo)
         if (_dmaBuffer == nullptr) {
@@ -25,8 +25,8 @@ bool I2sMicDriver::begin(int sckPin, int wsPin, int sdPin, uint32_t sampleRate) 
         .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT, // Stereo: Left (GND) + Right (3.3V)
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-        .dma_buf_count = 4,
-        .dma_buf_len = (int)_bufferSampleCount,
+        .dma_buf_count = 16,            // 16 DMA buffers for deep hardware buffering
+        .dma_buf_len = 256,              // 256 samples per buffer = 256ms total DMA reserve
         .use_apll = false,
         .tx_desc_auto_clear = false,
         .fixed_mclk = 0
@@ -58,6 +58,8 @@ bool I2sMicDriver::begin(int sckPin, int wsPin, int sdPin, uint32_t sampleRate) 
     i2s_read(_i2sPort, _dmaBuffer, _bufferSampleCount * 2 * sizeof(int32_t), &bytesRead, pdMS_TO_TICKS(100));
 
     _initialized = true;
+    Serial.printf("[I2S Driver] Started at %u Hz (Stereo 32-bit DMA). Deep buffers: %u x %u\n", 
+                  sampleRate, i2s_config.dma_buf_count, i2s_config.dma_buf_len);
     return true;
 }
 
@@ -79,78 +81,57 @@ bool I2sMicDriver::readMetrics(StereoAudioMetrics& metrics) {
     }
 
     size_t bytesRead = 0;
-    size_t bytesToRead = _bufferSampleCount * 2 * sizeof(int32_t);
-    esp_err_t err = i2s_read(_i2sPort, _dmaBuffer, bytesToRead, &bytesRead, pdMS_TO_TICKS(100));
-
+    esp_err_t err = i2s_read(_i2sPort, _dmaBuffer, _bufferSampleCount * 2 * sizeof(int32_t), &bytesRead, 0);
     if (err != ESP_OK || bytesRead == 0) {
         return false;
     }
 
-    size_t sampleCount = bytesRead / (2 * sizeof(int32_t));
-    if (sampleCount == 0) {
-        return false;
+    size_t frameCount = bytesRead / (2 * sizeof(int32_t));
+    if (frameCount == 0) return false;
+
+    double leftSumSq = 0;
+    double rightSumSq = 0;
+    int32_t leftPeak = 0;
+    int32_t rightPeak = 0;
+
+    for (size_t i = 0; i < frameCount; ++i) {
+        int32_t rawL = _dmaBuffer[2 * i] >> 8;
+        int32_t rawR = _dmaBuffer[2 * i + 1] >> 8;
+
+        int32_t absL = abs(rawL);
+        int32_t absR = abs(rawR);
+
+        if (absL > leftPeak) leftPeak = absL;
+        if (absR > rightPeak) rightPeak = absR;
+
+        leftSumSq += (double)rawL * (double)rawL;
+        rightSumSq += (double)rawR * (double)rawR;
     }
 
-    double sumSqLeft = 0.0;
-    double sumSqRight = 0.0;
-    int32_t minL = INT32_MAX, maxL = INT32_MIN;
-    int32_t minR = INT32_MAX, maxR = INT32_MIN;
-
-    for (size_t i = 0; i < sampleCount; ++i) {
-        // INMP441 is 24-bit data MSB-aligned in 32-bit slot
-        // Shift right by 8 to normalize to signed 24-bit integer
-        int32_t rawLeft = _dmaBuffer[2 * i] >> 8;
-        int32_t rawRight = _dmaBuffer[2 * i + 1] >> 8;
-
-        // Peak tracking
-        if (rawLeft < minL) minL = rawLeft;
-        if (rawLeft > maxL) maxL = rawLeft;
-
-        if (rawRight < minR) minR = rawRight;
-        if (rawRight > maxR) maxR = rawRight;
-
-        // Sum of squares for RMS calculation
-        sumSqLeft += ((double)rawLeft * (double)rawLeft);
-        sumSqRight += ((double)rawRight * (double)rawRight);
-    }
-
-    metrics.leftRms = sqrt(sumSqLeft / (double)sampleCount);
-    metrics.rightRms = sqrt(sumSqRight / (double)sampleCount);
-
-    metrics.leftPeak = (maxL > minL) ? (maxL - minL) : 0;
-    metrics.rightPeak = (maxR > minR) ? (maxR - minR) : 0;
-
-    // Relative dBFS calculation (reference 24-bit full scale 8388607)
-    const float fullScale24Bit = 8388607.0f;
-    metrics.leftDb = (metrics.leftRms > 1.0f) ? (20.0f * log10f(metrics.leftRms / fullScale24Bit)) : -96.0f;
-    metrics.rightDb = (metrics.rightRms > 1.0f) ? (20.0f * log10f(metrics.rightRms / fullScale24Bit)) : -96.0f;
-
-    // Active detection: RMS > threshold
-    const float ACTIVITY_THRESHOLD = 1500.0f;
-    metrics.leftActive = (metrics.leftRms > ACTIVITY_THRESHOLD);
-    metrics.rightActive = (metrics.rightRms > ACTIVITY_THRESHOLD);
+    metrics.leftRms = (float)sqrt(leftSumSq / frameCount);
+    metrics.rightRms = (float)sqrt(rightSumSq / frameCount);
+    metrics.leftPeak = (float)leftPeak;
+    metrics.rightPeak = (float)rightPeak;
 
     return true;
 }
 
-void I2sMicDriver::formatVuBar(char* buffer, size_t maxLen, float rmsValue, float maxScale, size_t barWidth) {
-    if (buffer == nullptr || maxLen < barWidth + 3) {
-        return;
-    }
+void I2sMicDriver::formatVuBar(char* outStr, size_t maxLen, float rmsValue, float maxScale, size_t barWidth) {
+    if (maxLen == 0) return;
+    if (maxScale <= 0) maxScale = 1.0f;
 
     float ratio = rmsValue / maxScale;
     if (ratio < 0.0f) ratio = 0.0f;
     if (ratio > 1.0f) ratio = 1.0f;
 
-    size_t activeChars = (size_t)(ratio * (float)barWidth);
-    if (rmsValue > 500.0f && activeChars == 0) {
-        activeChars = 1; // Show at least 1 tick if above baseline noise
-    }
+    size_t filled = (size_t)(ratio * barWidth);
+    if (filled > barWidth) filled = barWidth;
 
-    buffer[0] = '[';
-    for (size_t i = 0; i < barWidth; ++i) {
-        buffer[i + 1] = (i < activeChars) ? '#' : '.';
+    size_t idx = 0;
+    outStr[idx++] = '[';
+    for (size_t i = 0; i < barWidth && idx < maxLen - 2; ++i) {
+        outStr[idx++] = (i < filled) ? '#' : '.';
     }
-    buffer[barWidth + 1] = ']';
-    buffer[barWidth + 2] = '\0';
+    outStr[idx++] = ']';
+    outStr[idx] = '\0';
 }

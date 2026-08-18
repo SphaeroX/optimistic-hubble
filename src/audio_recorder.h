@@ -32,5 +32,11 @@ private:
     size_t _totalPcmBytesWritten;
     unsigned long _recordStartTime;
 
+    // Fast 4KB RAM buffer for aligned flash block writes
+    static const size_t FLASH_WRITE_BUFFER_SIZE = 4096;
+    uint8_t _flashWriteBuffer[FLASH_WRITE_BUFFER_SIZE];
+    size_t _flashBufferIndex;
+
+    void flushFlashBuffer();
     void writeWavHeader(File& file, size_t pcmBytes, uint32_t sampleRate);
 };

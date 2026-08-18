@@ -8,7 +8,6 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
     _ssid = ssid;
     _pass = pass;
 
-    WiFi.persistent(false);
     WiFi.disconnect(true);
     delay(50);
     WiFi.mode(WIFI_AP);
@@ -22,12 +21,14 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
     bool apOk = WiFi.softAP(_ssid, _pass, 1, 0, 4);
 
     if (!apOk) {
-        Serial.println(F("[WIFI] Warning: SoftAP with pass failed, starting open AP..."));
+        Serial.println(F("[WIFI] Warning: SoftAP start with password failed, starting open AP..."));
         apOk = WiFi.softAP(_ssid);
     }
 
-    WiFi.setSleep(false);                 // Prevent modem sleep for instant HTTP responses
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Maximum RF power
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
+
+    // Start DNS Server for Captive Portal (Port 53, redirects all domains to 192.168.4.1)
+    _dnsServer.start(53, "*", localIp);
 
     Serial.println(F("--------------------------------------------------"));
     Serial.printf("[WIFI AP ACTIVE] SSID: \"%s\" | Password: \"%s\"\n", _ssid, _pass);
@@ -42,37 +43,45 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
     _server.on("/api/clear", HTTP_POST, [this]() { handleApiClear(); });
     _server.on("/api/status", HTTP_GET, [this]() { handleStatus(); });
 
-    // Handle Preflight and not found
+    // Captive Portal probes for Android / Windows / iOS
+    _server.on("/generate_204", HTTP_GET, [this]() { handleCaptivePortal(); });
+    _server.on("/gen_204", HTTP_GET, [this]() { handleCaptivePortal(); });
+    _server.on("/hotspot-detect.html", HTTP_GET, [this]() { handleCaptivePortal(); });
+    _server.on("/ncsi.txt", HTTP_GET, [this]() { handleCaptivePortal(); });
+    _server.on("/connecttest.txt", HTTP_GET, [this]() { handleCaptivePortal(); });
+
     _server.onNotFound([this]() { handleOptions(); });
 
     _server.begin();
-    Serial.println(F("[HTTP] Sync Server listening on port 80."));
+    Serial.println(F("[HTTP] Sync Server & Captive Portal listening on port 80."));
     return true;
 }
 
 void WifiServerManager::handleClient() {
+    _dnsServer.processNextRequest();
     _server.handleClient();
 }
 
-void WifiServerManager::sendCorsHeaders() {
-    _server.sendHeader("Access-Control-Allow-Origin", "*");
-    _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE");
-    _server.sendHeader("Access-Control-Allow-Headers", "*");
-    _server.sendHeader("Access-Control-Allow-Private-Network", "true");
+void WifiServerManager::handleCaptivePortal() {
+    _server.sendHeader("Location", "http://192.168.4.1/", true);
+    _server.send(302, "text/plain", "");
 }
 
 void WifiServerManager::handleOptions() {
-    sendCorsHeaders();
-    if (_server.method() == HTTP_OPTIONS) {
+    String method = _server.method() == HTTP_OPTIONS ? "OPTIONS" : "UNKNOWN";
+    if (method == "OPTIONS") {
+        _server.sendHeader("Access-Control-Allow-Origin", "*");
+        _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE");
+        _server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
         _server.send(204);
     } else {
-        // If unknown route, return 404 or redirect to root
-        _server.send(404, "text/plain", "Not found");
+        // Unknown route -> redirect to root dashboard
+        handleCaptivePortal();
     }
 }
 
 void WifiServerManager::handleStatus() {
-    sendCorsHeaders();
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
     _server.sendHeader("Content-Type", "application/json");
 
     size_t total = _storage.getTotalBytes();
@@ -88,7 +97,7 @@ void WifiServerManager::handleStatus() {
 }
 
 void WifiServerManager::handleApiClips() {
-    sendCorsHeaders();
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
     _server.sendHeader("Content-Type", "application/json");
 
     std::vector<ClipInfo> clips = _storage.listClips();
@@ -108,7 +117,7 @@ void WifiServerManager::handleApiClips() {
 }
 
 void WifiServerManager::handleApiDownload() {
-    sendCorsHeaders();
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
 
     uint16_t clipId = 0;
     if (_server.hasArg("id")) {
@@ -130,21 +139,22 @@ void WifiServerManager::handleApiDownload() {
         return;
     }
 
+    // Built-in streamFile handles socket buffering, chunking, and memory flow control flawlessly
     _server.sendHeader("Content-Disposition", "inline; filename=\"clip.wav\"");
     _server.streamFile(file, "audio/wav");
     file.close();
 
-    Serial.printf("[HTTP] Downloaded clip (ID: %u)\n", clipId);
+    Serial.printf("[HTTP] Streamed clip (ID: %u) via streamFile().\n", clipId);
 }
 
 void WifiServerManager::handleApiClear() {
-    sendCorsHeaders();
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
     _storage.clearAll();
     _server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"All clips cleared\"}");
 }
 
 void WifiServerManager::handleRoot() {
-    sendCorsHeaders();
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
 
     std::vector<ClipInfo> clips = _storage.listClips();
     size_t usedKb = _storage.getUsedBytes() / 1024;

@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include "storage_manager.h"
 
 class WifiServerManager {
@@ -16,14 +17,15 @@ public:
 private:
     StorageManager& _storage;
     WebServer _server;
+    DNSServer _dnsServer;
     const char* _ssid;
     const char* _pass;
 
-    void sendCorsHeaders();
     void handleRoot();
     void handleApiClips();
     void handleApiDownload();
     void handleApiClear();
     void handleStatus();
     void handleOptions();
+    void handleCaptivePortal();
 };
