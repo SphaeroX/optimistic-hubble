@@ -2,25 +2,27 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
-#include "audio_recorder.h"
+#include "storage_manager.h"
 
 class WifiServerManager {
 public:
-    WifiServerManager(AudioRecorder& recorderRef);
+    WifiServerManager(StorageManager& storageRef);
 
-    bool begin(const char* ssid = WIFI_AP_SSID, const char* pass = WIFI_AP_PASS, uint16_t port = HTTP_SERVER_PORT);
+    bool begin(const char* ssid = "XIAO-Audio-Hotspot", const char* pass = "xiaoesp32c3", uint16_t port = 80);
     void handleClient();
     IPAddress getIp() const { return WiFi.softAPIP(); }
     const char* getSsid() const { return _ssid; }
 
 private:
-    AudioRecorder& _recorder;
+    StorageManager& _storage;
     WebServer _server;
     const char* _ssid;
     const char* _pass;
 
     void handleRoot();
-    void handleAudioWav();
+    void handleApiClips();
+    void handleApiDownload();
+    void handleApiClear();
     void handleStatus();
     void handleOptions();
 };

@@ -1,14 +1,13 @@
 #include "wifi_server.h"
 #include "config.h"
 
-WifiServerManager::WifiServerManager(AudioRecorder& recorderRef)
-    : _recorder(recorderRef), _server(HTTP_SERVER_PORT), _ssid(WIFI_AP_SSID), _pass(WIFI_AP_PASS) {}
+WifiServerManager::WifiServerManager(StorageManager& storageRef)
+    : _storage(storageRef), _server(HTTP_SERVER_PORT), _ssid(WIFI_AP_SSID), _pass(WIFI_AP_PASS) {}
 
 bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port) {
     _ssid = ssid;
     _pass = pass;
 
-    // Disconnect any lingering station & configure AP mode
     WiFi.disconnect(true);
     delay(50);
     WiFi.mode(WIFI_AP);
@@ -19,29 +18,31 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
     IPAddress subnet(255, 255, 255, 0);
 
     WiFi.softAPConfig(localIp, gateway, subnet);
-    // Start SoftAP on Channel 1, broadcast SSID (hidden=0), max 4 clients
     bool apOk = WiFi.softAP(_ssid, _pass, 1, 0, 4);
 
     if (!apOk) {
-        Serial.println(F("[WIFI] Warning: SoftAP start failed, retrying without password..."));
+        Serial.println(F("[WIFI] Warning: SoftAP start failed, retrying open AP..."));
         apOk = WiFi.softAP(_ssid);
     }
 
-    WiFi.setTxPower(WIFI_POWER_19_5dBm); // Maximum RF transmit power
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
     Serial.println(F("--------------------------------------------------"));
     Serial.printf("[WIFI AP ACTIVE] SSID: \"%s\" | Password: \"%s\"\n", _ssid, _pass);
-    Serial.printf("[WIFI AP ACTIVE] IP Address: http://%s\n", WiFi.softAPIP().toString().c_str());
+    Serial.printf("[WIFI AP ACTIVE] Web Dashboard: http://%s\n", WiFi.softAPIP().toString().c_str());
     Serial.println(F("--------------------------------------------------"));
 
     // Register WebServer Routes
     _server.on("/", HTTP_GET, [this]() { handleRoot(); });
-    _server.on("/audio.wav", HTTP_GET, [this]() { handleAudioWav(); });
-    _server.on("/status", HTTP_GET, [this]() { handleStatus(); });
+    _server.on("/api/clips", HTTP_GET, [this]() { handleApiClips(); });
+    _server.on("/api/download", HTTP_GET, [this]() { handleApiDownload(); });
+    _server.on("/api/clear", HTTP_GET, [this]() { handleApiClear(); });
+    _server.on("/api/clear", HTTP_POST, [this]() { handleApiClear(); });
+    _server.on("/api/status", HTTP_GET, [this]() { handleStatus(); });
     _server.onNotFound([this]() { handleOptions(); });
 
     _server.begin();
-    Serial.println(F("[HTTP] Server listening on port 80."));
+    Serial.println(F("[HTTP] Sync REST API & Dashboard listening on port 80."));
     return true;
 }
 
@@ -51,105 +52,140 @@ void WifiServerManager::handleClient() {
 
 void WifiServerManager::handleOptions() {
     _server.sendHeader("Access-Control-Allow-Origin", "*");
-    _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE");
     _server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
     _server.send(204);
-}
-
-void WifiServerManager::handleRoot() {
-    _server.sendHeader("Access-Control-Allow-Origin", "*");
-    String html = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>XIAO Audio Server</title></head>"
-                  "<body style='font-family:sans-serif;padding:30px;background:#111;color:#eee;'>"
-                  "<h2>XIAO ESP32C3 Audio Server</h2>"
-                  "<p>Status: <strong>Ready</strong></p>"
-                  "<p>Latest Recording: <a href='/audio.wav' style='color:#06b6d4;'>Download audio.wav</a></p>"
-                  "<p><a href='/status' style='color:#3b82f6;'>JSON Status</a></p>"
-                  "</body></html>";
-    _server.send(200, "text/html", html);
 }
 
 void WifiServerManager::handleStatus() {
     _server.sendHeader("Access-Control-Allow-Origin", "*");
     _server.sendHeader("Content-Type", "application/json");
 
-    size_t samples = _recorder.getRecordedSamples();
-    size_t bytes = _recorder.getRecordedBytes();
-    float dur = _recorder.getDurationSeconds();
-    bool isRec = _recorder.isRecording();
+    size_t total = _storage.getTotalBytes();
+    size_t used = _storage.getUsedBytes();
+    size_t count = _storage.getClipCount();
 
-    char json[160];
-    snprintf(json, sizeof(json), 
-             "{\"recording\":%s,\"samples\":%u,\"bytes\":%u,\"duration\":%.2f,\"sampleRate\":%u}",
-             isRec ? "true" : "false", samples, bytes, dur, _recorder.getSampleRate());
+    char json[180];
+    snprintf(json, sizeof(json),
+             "{\"totalClips\":%u,\"usedBytes\":%u,\"totalBytes\":%u,\"freeBytes\":%u,\"usedKb\":%u,\"totalKb\":%u}",
+             count, used, total, (total > used) ? (total - used) : 0, used / 1024, total / 1024);
 
     _server.send(200, "application/json", json);
 }
 
-void WifiServerManager::handleAudioWav() {
-    size_t pcmBytes = _recorder.getRecordedBytes();
-    const uint8_t* pcmData = _recorder.getBuffer();
+void WifiServerManager::handleApiClips() {
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
+    _server.sendHeader("Content-Type", "application/json");
 
-    if (pcmBytes == 0 || pcmData == nullptr) {
-        _server.sendHeader("Access-Control-Allow-Origin", "*");
-        _server.send(404, "text/plain", "No audio clip recorded yet. Tap breadboard to record!");
+    std::vector<ClipInfo> clips = _storage.listClips();
+
+    String json = "{\"clips\":[";
+    for (size_t i = 0; i < clips.size(); ++i) {
+        if (i > 0) json += ",";
+        json += "{\"id\":" + String(clips[i].id) +
+                ",\"filename\":\"" + String(clips[i].filename) + "\"" +
+                ",\"size\":" + String(clips[i].fileSize) +
+                ",\"duration\":" + String(clips[i].duration, 2) +
+                ",\"sampleRate\":" + String(clips[i].sampleRate) + "}";
+    }
+    json += "]}";
+
+    _server.send(200, "application/json", json);
+}
+
+void WifiServerManager::handleApiDownload() {
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
+
+    uint16_t clipId = 0;
+    if (_server.hasArg("id")) {
+        clipId = (uint16_t)_server.arg("id").toInt();
+    }
+
+    File file;
+    if (clipId > 0) {
+        file = _storage.getClipFile(clipId);
+    } else {
+        // If no ID specified, fetch the latest clip
+        std::vector<ClipInfo> clips = _storage.listClips();
+        if (!clips.empty()) {
+            file = _storage.getClipFile(clips.back().id);
+        }
+    }
+
+    if (!file || file.isDirectory()) {
+        _server.send(404, "text/plain", "Clip not found!");
         return;
     }
 
-    uint32_t sampleRate = _recorder.getSampleRate();
-    uint16_t numChannels = 1;
-    uint16_t bitsPerSample = 16;
-    uint32_t byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
-    uint16_t blockAlign = (numChannels * bitsPerSample) / 8;
-    uint32_t totalFileSize = 44 + pcmBytes;
+    size_t fileSize = file.size();
+    char filename[32];
+    snprintf(filename, sizeof(filename), "clip_%03u.wav", clipId);
 
-    uint8_t wavHeader[44];
-    wavHeader[0] = 'R'; wavHeader[1] = 'I'; wavHeader[2] = 'F'; wavHeader[3] = 'F';
-    uint32_t chunkSize = 36 + pcmBytes;
-    wavHeader[4] = (uint8_t)(chunkSize & 0xFF);
-    wavHeader[5] = (uint8_t)((chunkSize >> 8) & 0xFF);
-    wavHeader[6] = (uint8_t)((chunkSize >> 16) & 0xFF);
-    wavHeader[7] = (uint8_t)((chunkSize >> 24) & 0xFF);
-    wavHeader[8] = 'W'; wavHeader[9] = 'A'; wavHeader[10] = 'V'; wavHeader[11] = 'E';
-
-    wavHeader[12] = 'f'; wavHeader[13] = 'm'; wavHeader[14] = 't'; wavHeader[15] = ' ';
-    wavHeader[16] = 16; wavHeader[17] = 0; wavHeader[18] = 0; wavHeader[19] = 0;
-    wavHeader[20] = 1;  wavHeader[21] = 0;
-    wavHeader[22] = (uint8_t)(numChannels & 0xFF);
-    wavHeader[23] = (uint8_t)((numChannels >> 8) & 0xFF);
-    wavHeader[24] = (uint8_t)(sampleRate & 0xFF);
-    wavHeader[25] = (uint8_t)((sampleRate >> 8) & 0xFF);
-    wavHeader[26] = (uint8_t)((sampleRate >> 16) & 0xFF);
-    wavHeader[27] = (uint8_t)((sampleRate >> 24) & 0xFF);
-    wavHeader[28] = (uint8_t)(byteRate & 0xFF);
-    wavHeader[29] = (uint8_t)((byteRate >> 8) & 0xFF);
-    wavHeader[30] = (uint8_t)((byteRate >> 16) & 0xFF);
-    wavHeader[31] = (uint8_t)((byteRate >> 24) & 0xFF);
-    wavHeader[32] = (uint8_t)(blockAlign & 0xFF);
-    wavHeader[33] = (uint8_t)((blockAlign >> 8) & 0xFF);
-    wavHeader[34] = (uint8_t)(bitsPerSample & 0xFF);
-    wavHeader[35] = (uint8_t)((bitsPerSample >> 8) & 0xFF);
-
-    wavHeader[36] = 'd'; wavHeader[37] = 'a'; wavHeader[38] = 't'; wavHeader[39] = 'a';
-    wavHeader[40] = (uint8_t)(pcmBytes & 0xFF);
-    wavHeader[41] = (uint8_t)((pcmBytes >> 8) & 0xFF);
-    wavHeader[42] = (uint8_t)((pcmBytes >> 16) & 0xFF);
-    wavHeader[43] = (uint8_t)((pcmBytes >> 24) & 0xFF);
-
-    _server.sendHeader("Access-Control-Allow-Origin", "*");
-    _server.sendHeader("Content-Disposition", "inline; filename=\"audio.wav\"");
-    _server.setContentLength(totalFileSize);
+    _server.sendHeader("Content-Disposition", "inline; filename=\"" + String(filename) + "\"");
+    _server.setContentLength(fileSize);
     _server.send(200, "audio/wav", "");
 
     WiFiClient client = _server.client();
-    client.write(wavHeader, 44);
+    uint8_t buffer[2048];
+    while (file.available() && client.connected()) {
+        size_t bytesRead = file.read(buffer, sizeof(buffer));
+        client.write(buffer, bytesRead);
+    }
+    file.close();
 
-    const size_t CHUNK_SIZE = 2048;
-    size_t bytesSent = 0;
-    while (bytesSent < pcmBytes && client.connected()) {
-        size_t toSend = (pcmBytes - bytesSent > CHUNK_SIZE) ? CHUNK_SIZE : (pcmBytes - bytesSent);
-        client.write(&pcmData[bytesSent], toSend);
-        bytesSent += toSend;
+    Serial.printf("[HTTP] Downloaded clip_%03u.wav (%u bytes) over Wi-Fi.\n", clipId, fileSize);
+}
+
+void WifiServerManager::handleApiClear() {
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
+    _storage.clearAll();
+    _server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"All clips cleared\"}");
+}
+
+void WifiServerManager::handleRoot() {
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
+
+    std::vector<ClipInfo> clips = _storage.listClips();
+    size_t usedKb = _storage.getUsedBytes() / 1024;
+    size_t totalKb = _storage.getTotalBytes() / 1024;
+
+    String html = "<!DOCTYPE html><html lang='de'><head><meta charset='utf-8'>"
+                  "<meta name='viewport' content='width=device-width,initial-scale=1.0'>"
+                  "<title>XIAO Voice Vault</title>"
+                  "<style>"
+                  "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;background:#0b0f17;color:#f8fafc;padding:20px;margin:0;}"
+                  ".container{max-width:600px;margin:0 auto;}"
+                  ".card{background:#131b26;border:1px solid #273549;border-radius:14px;padding:20px;margin-bottom:16px;box-shadow:0 4px 12px rgba(0,0,0,0.4);}"
+                  "h1{font-size:1.3rem;margin:0 0 4px;color:#38bdf8;}p{font-size:0.85rem;color:#94a3b8;margin:0 0 12px;}"
+                  ".stat{font-family:monospace;font-size:0.85rem;background:#1c2738;padding:8px 12px;border-radius:8px;margin-bottom:14px;display:flex;justify-content:space-between;}"
+                  ".clip{display:flex;align-items:center;justify-content:space-between;padding:12px;background:#1c2738;border:1px solid #273549;border-radius:10px;margin-bottom:10px;}"
+                  ".clip-title{font-weight:600;font-size:0.92rem;}.clip-meta{font-size:0.75rem;color:#94a3b8;font-family:monospace;}"
+                  "audio{height:34px;width:160px;}"
+                  "button{background:#0284c7;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-weight:600;cursor:pointer;font-size:0.85rem;}"
+                  ".btn-danger{background:#e11d48;margin-top:10px;width:100%;}"
+                  "</style></head><body><div class='container'>"
+                  "<div class='card'><h1>XIAO Voice Vault</h1>"
+                  "<p>Gespeicherte Aufnahmen auf dem ESP32-C3 Flash (4 MB)</p>"
+                  "<div class='stat'><span>Aufnahmen: <strong>" + String(clips.size()) + "</strong></span>"
+                  "<span>Speicher: <strong>" + String(usedKb) + " / " + String(totalKb) + " KB</strong></span></div>";
+
+    if (clips.empty()) {
+        html += "<p style='text-align:center;padding:20px 0;color:#64748b;'>Noch keine Aufnahmen im Flash gespeichert.<br>Hau auf das Breadboard, um aufzunehmen!</p>";
+    } else {
+        for (int i = clips.size() - 1; i >= 0; --i) {
+            html += "<div class='clip'><div>"
+                    "<div class='clip-title'>Aufnahme #" + String(clips[i].id) + "</div>"
+                    "<div class='clip-meta'>" + String(clips[i].duration, 1) + "s • " + String(clips[i].fileSize / 1024) + " KB</div>"
+                    "</div>"
+                    "<div style='display:flex;align-items:center;gap:8px;'>"
+                    "<audio controls src='/api/download?id=" + String(clips[i].id) + "'></audio>"
+                    "<a href='/api/download?id=" + String(clips[i].id) + "' download><button>⬇</button></a>"
+                    "</div></div>";
+        }
+        html += "<form method='POST' action='/api/clear' onsubmit='return confirm(\"Wirklich alle Aufnahmen löschen?\");'>"
+                "<button type='submit' class='btn-danger'>Alle Aufnahmen vom Flash löschen</button></form>";
     }
 
-    Serial.printf("[HTTP] Transferred audio.wav (%u bytes) via Wi-Fi!\n", totalFileSize);
+    html += "</div></div></body></html>";
+    _server.send(200, "text/html", html);
 }

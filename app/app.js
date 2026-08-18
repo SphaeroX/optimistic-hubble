@@ -11,9 +11,9 @@ let gattServer = null;
 let charState = null;
 let charTap = null;
 
-let currentSampleRate = 16000;
 let currentWavBlob = null;
 let currentWavUrl = null;
+let currentActiveClipId = null;
 let audioContext = null;
 let currentAudioBuffer = null;
 let currentSourceNode = null;
@@ -22,7 +22,7 @@ let playbackStartTime = 0;
 let playbackOffset = 0;
 let animationFrameId = null;
 
-let recordedClips = [];
+let synchronizedClips = [];
 
 // DOM Elements
 const btnConnect = document.getElementById('btnConnect');
@@ -33,8 +33,11 @@ const stateLabel = document.getElementById('stateLabel');
 const stateDesc = document.getElementById('stateDesc');
 const tapPulse = document.getElementById('tapPulse');
 const tapText = document.getElementById('tapText');
+const flashStatus = document.getElementById('flashStatus');
 const wifiIpInput = document.getElementById('wifiIpInput');
-const btnFetchWifi = document.getElementById('btnFetchWifi');
+const btnSyncWifi = document.getElementById('btnSyncWifi');
+const btnSyncText = document.getElementById('btnSyncText');
+const currentClipTitle = document.getElementById('currentClipTitle');
 const waveformCanvas = document.getElementById('waveformCanvas');
 const emptyWaveformMessage = document.getElementById('emptyWaveformMessage');
 const btnPlay = document.getElementById('btnPlay');
@@ -48,7 +51,7 @@ const clipMetaEl = document.getElementById('clipMeta');
 const clipsList = document.getElementById('clipsList');
 
 // ============================================================================
-// BLE Connection Management
+// BLE Live Signaling (Optional Background Link)
 // ============================================================================
 async function toggleBleConnection() {
   if (bleDevice && bleDevice.gatt && bleDevice.gatt.connected) {
@@ -60,12 +63,12 @@ async function toggleBleConnection() {
 
 async function connectBle() {
   if (!navigator.bluetooth) {
-    alert('Web Bluetooth wird nicht unterstützt. Du kannst die Sprachaufnahme aber direkt über WLAN ("Von WLAN laden") abrufen!');
+    alert('Web Bluetooth wird nicht unterstützt. Du kannst alle Daten jederzeit direkt über WLAN synchronisieren!');
     return;
   }
 
   try {
-    btnConnectText.textContent = 'Suche BLE...';
+    btnConnectText.textContent = 'Suche...';
     
     bleDevice = await navigator.bluetooth.requestDevice({
       filters: [{ name: 'XIAO-Audio-Recorder' }],
@@ -76,47 +79,31 @@ async function connectBle() {
 
     btnConnectText.textContent = 'Verbinde...';
     gattServer = await bleDevice.gatt.connect();
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 500));
 
-    let service = null;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        if (!bleDevice.gatt.connected) {
-          gattServer = await bleDevice.gatt.connect();
-          await new Promise(r => setTimeout(r, 400));
-        }
-        service = await gattServer.getPrimaryService(BLE_SERVICE_UUID);
-        break;
-      } catch (err) {
-        if (attempt === 3) throw err;
-        await new Promise(r => setTimeout(r, 600));
-      }
-    }
+    const service = await gattServer.getPrimaryService(BLE_SERVICE_UUID);
 
-    // State Characteristic
     charState = await service.getCharacteristic(BLE_CHAR_STATE_UUID);
     await charState.startNotifications();
     charState.addEventListener('characteristicvaluechanged', onStateChanged);
 
-    // Tap Characteristic
     charTap = await service.getCharacteristic(BLE_CHAR_TAP_UUID);
     await charTap.startNotifications();
     charTap.addEventListener('characteristicvaluechanged', onTapEvent);
 
-    // Update UI
     btnConnect.classList.add('connected');
-    btnConnectText.textContent = 'Trennen';
-    connectionBadge.textContent = 'BLE Verbunden';
+    btnConnectText.textContent = 'BLE Verbunden';
+    connectionBadge.textContent = 'BLE Online';
     connectionBadge.className = 'badge badge-connected';
     
     updateDeviceState(0);
-    console.log('[BLE] Connected. Signaling ready!');
+    console.log('[BLE] Connected & Subscribed!');
 
   } catch (err) {
-    console.error('[BLE Error]', err);
-    btnConnectText.textContent = 'Mit BLE verbinden';
+    console.warn('[BLE Warning]', err);
+    btnConnectText.textContent = 'BLE Live-Signal';
     if (err.name !== 'NotFoundError') {
-      alert(`BLE-Hinweis: ${err.message}\nDu kannst das Audio auch ohne BLE direkt per Klick auf "Von WLAN laden" abrufen!`);
+      console.log('BLE optional hint:', err.message);
     }
   }
 }
@@ -130,57 +117,44 @@ function disconnectBle() {
 
 function onDisconnected() {
   btnConnect.classList.remove('connected');
-  btnConnectText.textContent = 'Mit BLE verbinden';
-  connectionBadge.textContent = 'BLE Getrennt';
+  btnConnectText.textContent = 'BLE Live-Signal';
+  connectionBadge.textContent = 'BLE Standby';
   connectionBadge.className = 'badge badge-disconnected';
-  
-  stateRing.className = 'state-ring state-idle';
-  stateLabel.textContent = 'Bereit';
-  stateDesc.textContent = 'Hau auf das Breadboard zum Aufnehmen. Audio kann jederzeit über WLAN geladen werden.';
   console.log('[BLE] Disconnected.');
 }
 
-// ============================================================================
-// BLE Notification Handlers
-// ============================================================================
 function onStateChanged(event) {
   const data = event.target.value;
   if (data.byteLength < 1) return;
 
   const state = data.getUint8(0);
-  const totalBytes = data.byteLength >= 5 ? data.getUint32(1, true) : 0;
-  const sampleRate = data.byteLength >= 7 ? data.getUint16(5, true) : 16000;
+  const latestClipId = data.byteLength >= 5 ? data.getUint32(1, true) : 0;
+  const totalClips = data.byteLength >= 7 ? data.getUint16(5, true) : 0;
 
-  if (sampleRate > 0) currentSampleRate = sampleRate;
-  updateDeviceState(state, totalBytes);
-
-  // When recording is finished (STATE_DONE), fetch instantly over Wi-Fi!
-  if (state === 3) {
-    console.log('[BLE] Received CLIP_READY signal! Fetching audio over Wi-Fi...');
-    fetchAudioFromWifi(false);
-  }
+  updateDeviceState(state, latestClipId, totalClips);
 }
 
-function updateDeviceState(state, totalBytes = 0) {
+function updateDeviceState(state, latestClipId = 0, totalClips = 0) {
   stateRing.className = 'state-ring';
 
   switch (state) {
     case 0: // IDLE
       stateRing.classList.add('state-idle');
-      stateLabel.textContent = 'Bereit zum Aufnehmen';
-      stateDesc.textContent = 'Hau auf das Breadboard, um die Aufnahme zu starten (LED leuchtet).';
+      stateLabel.textContent = 'Bereit';
+      stateDesc.textContent = 'Hau auf das Breadboard, um eine Aufnahme zu starten (LED leuchtet).';
       break;
 
     case 1: // RECORDING
       stateRing.classList.add('state-recording');
       stateLabel.textContent = 'Aufnahme läuft...';
-      stateDesc.textContent = 'Sprich jetzt ins Mikrofon! Hau nochmals auf das Breadboard zum Beenden.';
+      stateDesc.textContent = 'Sprich ins Mikrofon! Hau nochmals auf das Breadboard zum Beenden & Speichern.';
       break;
 
-    case 3: // DONE / READY_ON_WIFI
+    case 3: // DONE / SAVED_TO_FLASH
       stateRing.classList.add('state-idle');
-      stateLabel.textContent = 'Lade Audio über WLAN...';
-      stateDesc.textContent = 'Empfange WAV-Audiodatei mit voller Geschwindigkeit (>2 MB/s)...';
+      stateLabel.textContent = `Aufnahme #${latestClipId} im Flash gespeichert!`;
+      stateDesc.textContent = `Gesamt ${totalClips} Aufnahme(n) im Flash bereit zur WLAN-Synchronisation.`;
+      flashStatus.textContent = `${totalClips} Aufnahmen`;
       break;
   }
 }
@@ -202,79 +176,173 @@ function onTapEvent(event) {
 }
 
 // ============================================================================
-// High-Speed Wi-Fi Audio Fetching (Sub-100ms)
+// Multi-Clip Wi-Fi Synchronization Engine
 // ============================================================================
-async function fetchAudioFromWifi(showManualAlert = false) {
+async function syncAllClipsFromWifi() {
   const ip = wifiIpInput.value.trim() || '192.168.4.1';
-  const url = `http://${ip}/audio.wav?t=${Date.now()}`;
+  btnSyncWifi.disabled = true;
+  btnSyncText.textContent = 'Lade Liste...';
 
   try {
-    btnFetchWifi.disabled = true;
-    btnFetchWifi.innerHTML = '<span>Lade...</span>';
-    stateLabel.textContent = 'Übertrage via WLAN...';
+    // 1. Fetch JSON List of all clips stored on LittleFS
+    const listRes = await fetch(`http://${ip}/api/clips?t=${Date.now()}`, { cache: 'no-store' });
+    if (!listRes.ok) throw new Error(`HTTP ${listRes.status}: ${listRes.statusText}`);
 
-    const startTime = performance.now();
-    const response = await fetch(url, { cache: 'no-store' });
+    const data = await listRes.json();
+    const serverClips = data.clips || [];
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    if (serverClips.length === 0) {
+      alert('Der Flash-Speicher auf dem XIAO ist leer.\nHau auf das Breadboard, um eine Aufnahme zu machen!');
+      btnSyncText.textContent = 'WLAN Synchronisieren';
+      btnSyncWifi.disabled = false;
+      return;
     }
 
-    currentWavBlob = await response.blob();
-    const elapsedMs = Math.round(performance.now() - startTime);
+    btnSyncText.textContent = `Lade ${serverClips.length} Clips...`;
 
-    if (currentWavUrl) URL.revokeObjectURL(currentWavUrl);
-    currentWavUrl = URL.createObjectURL(currentWavBlob);
+    // 2. Fetch all clips and store in local session
+    for (let i = 0; i < serverClips.length; ++i) {
+      const clip = serverClips[i];
+      const existing = synchronizedClips.find(c => c.id === clip.id);
 
-    // Initialize Web Audio Context
-    if (!audioContext) {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      if (!existing) {
+        const audioRes = await fetch(`http://${ip}/api/download?id=${clip.id}`, { cache: 'no-store' });
+        if (audioRes.ok) {
+          const blob = await audioRes.blob();
+          const url = URL.createObjectURL(blob);
+          synchronizedClips.unshift({
+            id: clip.id,
+            filename: clip.filename,
+            duration: clip.duration,
+            sizeKb: (blob.size / 1024).toFixed(1),
+            blob: blob,
+            url: url,
+            time: new Date().toLocaleTimeString()
+          });
+        }
+      }
     }
 
-    const arrayBuffer = await currentWavBlob.arrayBuffer();
-    currentAudioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    renderClipsList();
+    flashStatus.textContent = `${serverClips.length} im Flash`;
+    stateLabel.textContent = 'Synchronisation fertig!';
+    stateDesc.textContent = `${serverClips.length} Aufnahme(n) erfolgreich vom Flash heruntergeladen.`;
 
-    // Update UI
-    emptyWaveformMessage.style.display = 'none';
-    btnPlay.disabled = false;
-    btnDownload.disabled = false;
-
-    const durationSec = currentAudioBuffer.duration;
-    totalTimeEl.textContent = formatTime(durationSec);
-    currentTimeEl.textContent = '0:00';
-    seekSlider.value = 0;
-    seekSlider.max = durationSec;
-
-    clipMetaEl.textContent = `${durationSec.toFixed(1)}s • WLAN (${elapsedMs}ms) • ${(currentWavBlob.size / 1024).toFixed(1)} KB`;
-    stateLabel.textContent = 'Aufnahme bereit!';
-    stateDesc.textContent = `WLAN-Download in ${elapsedMs}ms abgeschlossen!`;
-
-    // Draw Waveform
-    const pcmFloat = currentAudioBuffer.getChannelData(0);
-    const pcm16 = new Int16Array(pcmFloat.length);
-    for (let i = 0; i < pcmFloat.length; ++i) {
-      pcm16[i] = pcmFloat[i] * 32767;
+    // Select the latest clip
+    if (synchronizedClips.length > 0) {
+      selectClip(synchronizedClips[0]);
     }
-    drawWaveform(pcm16);
-
-    // Add to History & Auto-play
-    addClipToHistory(currentWavBlob, durationSec, elapsedMs);
-    startPlayback();
-
-    console.log(`[WIFI] Audio downloaded and decoded in ${elapsedMs}ms!`);
 
   } catch (err) {
-    console.error('[WIFI Download Error]', err);
-    stateLabel.textContent = 'WLAN-Download fehlgeschlagen';
-    stateDesc.textContent = `Konnte http://${ip}/audio.wav nicht erreichen. Stelle sicher, dass du mit dem WLAN "XIAO-Audio-Hotspot" verbunden bist.`;
-    
-    if (showManualAlert) {
-      alert(`WLAN-Fehler: Konnte http://${ip}/audio.wav nicht laden.\n\nPrüfe:\n1. Bist du mit dem WLAN-Hotspot "XIAO-Audio-Hotspot" (Passwort: xiaoesp32c3) verbunden?\n2. Hast du vorher auf das Breadboard gehauen, um eine Aufnahme zu machen?`);
-    }
+    console.error('[Sync Error]', err);
+    alert(`WLAN-Synchronisation fehlgeschlagen: ${err.message}\n\nStelle sicher, dass du mit dem WLAN "XIAO-Audio-Hotspot" (Passwort: xiaoesp32c3) verbunden bist!`);
   } finally {
-    btnFetchWifi.disabled = false;
-    btnFetchWifi.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg><span>Von WLAN laden</span>';
+    btnSyncWifi.disabled = false;
+    btnSyncText.textContent = 'WLAN Synchronisieren';
   }
+}
+
+async function selectClip(clip) {
+  currentActiveClipId = clip.id;
+  currentWavBlob = clip.blob;
+  currentWavUrl = clip.url;
+
+  currentClipTitle.textContent = `Aufnahme #${clip.id} (${clip.filename})`;
+  clipMetaEl.textContent = `${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB • 16 kHz WAV`;
+
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+
+  const arrayBuffer = await currentWavBlob.arrayBuffer();
+  currentAudioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+  emptyWaveformMessage.style.display = 'none';
+  btnPlay.disabled = false;
+  btnDownload.disabled = false;
+
+  const duration = currentAudioBuffer.duration;
+  totalTimeEl.textContent = formatTime(duration);
+  currentTimeEl.textContent = '0:00';
+  seekSlider.value = 0;
+  seekSlider.max = duration;
+
+  // Draw Waveform
+  const pcmFloat = currentAudioBuffer.getChannelData(0);
+  const pcm16 = new Int16Array(pcmFloat.length);
+  for (let i = 0; i < pcmFloat.length; ++i) {
+    pcm16[i] = pcmFloat[i] * 32767;
+  }
+  drawWaveform(pcm16);
+
+  renderClipsList();
+  startPlayback();
+}
+
+function renderClipsList() {
+  if (synchronizedClips.length === 0) {
+    clipsList.innerHTML = '<div class="no-clips-msg">Noch keine Aufnahmen synchronisiert. Klicke oben auf "WLAN Synchronisieren".</div>';
+    return;
+  }
+
+  clipsList.innerHTML = '';
+  synchronizedClips.forEach(clip => {
+    const isSelected = clip.id === currentActiveClipId;
+    const item = document.createElement('div');
+    item.className = `clip-item ${isSelected ? 'selected' : ''}`;
+    item.style.border = isSelected ? '1px solid var(--accent-cyan)' : '1px solid var(--border-color)';
+    item.innerHTML = `
+      <div class="clip-info" onclick="selectClipById(${clip.id})" style="cursor:pointer;flex:1;">
+        <span class="clip-title" style="${isSelected ? 'color:var(--accent-cyan);' : ''}">Aufnahme #${clip.id}</span>
+        <span class="clip-sub">${clip.duration.toFixed(1)}s • ${clip.sizeKb} KB • Synced ${clip.time}</span>
+      </div>
+      <div class="clip-actions">
+        <button class="btn-icon-small" onclick="selectClipById(${clip.id})">▶ Anhören</button>
+        <button class="btn-icon-small" onclick="downloadClipDirect(${clip.id})">⬇ WAV</button>
+      </div>
+    `;
+    clipsList.appendChild(item);
+  });
+}
+
+function selectClipById(id) {
+  const clip = synchronizedClips.find(c => c.id === id);
+  if (clip) selectClip(clip);
+}
+
+function downloadClipDirect(id) {
+  const clip = synchronizedClips.find(c => c.id === id);
+  if (!clip) return;
+  const a = document.createElement('a');
+  a.href = clip.url;
+  a.download = `clip_${clip.id}.wav`;
+  a.click();
+}
+
+async function clearDeviceFlashStorage() {
+  if (!confirm('Möchtest du wirklich ALLE gespeicherten Sprachaufnahmen vom 4MB Flash-Speicher des XIAO löschen?')) {
+    return;
+  }
+
+  const ip = wifiIpInput.value.trim() || '192.168.4.1';
+  try {
+    const res = await fetch(`http://${ip}/api/clear`, { method: 'POST' });
+    if (res.ok) {
+      alert('Der Flash-Speicher auf dem XIAO wurde vollständig geleert!');
+      flashStatus.textContent = '0 im Flash';
+      synchronizedClips = [];
+      renderClipsList();
+    } else {
+      throw new Error(`HTTP ${res.status}`);
+    }
+  } catch (err) {
+    alert(`Löschen fehlgeschlagen: ${err.message}\nVerbinde dich mit dem WLAN "XIAO-Audio-Hotspot".`);
+  }
+}
+
+function clearHistory() {
+  synchronizedClips = [];
+  renderClipsList();
 }
 
 // ============================================================================
@@ -428,8 +496,7 @@ function downloadCurrentClip() {
   if (!currentWavBlob) return;
   const a = document.createElement('a');
   a.href = currentWavUrl;
-  const dateStr = new Date().toISOString().slice(11, 19).replace(/:/g, '-');
-  a.download = `xiao_recording_${dateStr}.wav`;
+  a.download = `xiao_clip_${currentActiveClipId || 'rec'}.wav`;
   a.click();
 }
 
@@ -437,61 +504,4 @@ function formatTime(seconds) {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s < 10 ? '0' : ''}${s}`;
-}
-
-// ============================================================================
-// History Management
-// ============================================================================
-function addClipToHistory(blob, duration, ms = 50) {
-  const clip = {
-    id: Date.now(),
-    time: new Date().toLocaleTimeString(),
-    duration: duration.toFixed(1),
-    speed: ms,
-    blob: blob,
-    url: URL.createObjectURL(blob)
-  };
-  recordedClips.unshift(clip);
-  renderHistory();
-}
-
-function renderHistory() {
-  if (recordedClips.length === 0) {
-    clipsList.innerHTML = '<div class="no-clips-msg">Noch keine Aufnahmen empfangen.</div>';
-    return;
-  }
-
-  clipsList.innerHTML = '';
-  recordedClips.forEach(clip => {
-    const item = document.createElement('div');
-    item.className = 'clip-item';
-    item.innerHTML = `
-      <div class="clip-info">
-        <span class="clip-title">Aufnahme um ${clip.time}</span>
-        <span class="clip-sub">${clip.duration}s • WLAN (${clip.speed}ms) • 16 kHz WAV</span>
-      </div>
-      <div class="clip-actions">
-        <button class="btn-icon-small" onclick="playHistoryClip('${clip.url}')">▶ Play</button>
-        <button class="btn-icon-small" onclick="downloadHistoryClip('${clip.url}', '${clip.time}')">⬇ WAV</button>
-      </div>
-    `;
-    clipsList.appendChild(item);
-  });
-}
-
-function playHistoryClip(url) {
-  const audio = new Audio(url);
-  audio.play();
-}
-
-function downloadHistoryClip(url, time) {
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `recording_${time.replace(/:/g, '-')}.wav`;
-  a.click();
-}
-
-function clearHistory() {
-  recordedClips = [];
-  renderHistory();
 }

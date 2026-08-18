@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>XIAO ESP32C3 - Hybrid Voice Companion</title>
+  <title>XIAO ESP32C3 - Voice Companion & Sync Hub</title>
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,15 +15,15 @@
     <header class="app-header">
       <div class="brand">
         <div class="logo-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
             <line x1="12" y1="19" x2="12" y2="22"></line>
           </svg>
         </div>
         <div>
-          <h1>XIAO Voice Companion</h1>
-          <p class="subtitle">Hybrid BLE Signaling + High-Speed Wi-Fi Audio</p>
+          <h1>XIAO Voice Vault</h1>
+          <p class="subtitle">4MB Flash Zwischenspeicher & Wi-Fi Sync Hub</p>
         </div>
       </div>
 
@@ -34,7 +34,7 @@
               <path d="m7 7 10 10-5 5V2l5 5L7 17"></path>
             </svg>
           </span>
-          <span id="btnConnectText">Mit BLE verbinden</span>
+          <span id="btnConnectText">BLE Live-Signal</span>
         </button>
       </div>
     </header>
@@ -44,8 +44,8 @@
       <!-- Status & Device Card -->
       <section class="card status-card">
         <div class="card-header">
-          <h2>Gerätestatus & Verbindung</h2>
-          <span id="connectionBadge" class="badge badge-disconnected">BLE Getrennt</span>
+          <h2>Gerätestatus & Speicher</h2>
+          <span id="connectionBadge" class="badge badge-disconnected">BLE Standby</span>
         </div>
 
         <div class="status-hero">
@@ -60,24 +60,21 @@
           </div>
           <div class="status-texts">
             <h3 id="stateLabel">Bereit</h3>
-            <p id="stateDesc">Hau auf das Breadboard, um die Aufnahme zu starten. Das Audio wird in < 0.1s über WLAN übertragen.</p>
+            <p id="stateDesc">Hau auf das Breadboard. Alle Aufnahmen werden sicher im Flash-Speicher abgelegt.</p>
           </div>
         </div>
 
-        <!-- Wi-Fi Quick Download Bar -->
+        <!-- Wi-Fi Sync Bar -->
         <div class="wifi-bar">
           <div class="wifi-input-group">
-            <label for="wifiIpInput">XIAO WLAN-IP:</label>
+            <label for="wifiIpInput">XIAO IP:</label>
             <input type="text" id="wifiIpInput" value="192.168.4.1" placeholder="192.168.4.1">
           </div>
-          <button id="btnFetchWifi" class="btn-wifi-fetch" onclick="fetchAudioFromWifi(true)">
+          <button id="btnSyncWifi" class="btn-wifi-fetch" onclick="syncAllClipsFromWifi()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
-              <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
-              <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
-              <line x1="12" y1="20" x2="12.01" y2="20"></line>
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
             </svg>
-            <span>Von WLAN laden</span>
+            <span id="btnSyncText">WLAN Synchronisieren</span>
           </button>
         </div>
 
@@ -92,13 +89,13 @@
           </div>
 
           <div class="sensor-pill">
-            <span class="pill-label">WLAN-Hotspot</span>
-            <span class="pill-val">XIAO-Audio-Hotspot</span>
+            <span class="pill-label">Flash-Speicher</span>
+            <span id="flashStatus" class="pill-val">4 MB LittleFS</span>
           </div>
 
           <div class="sensor-pill">
-            <span class="pill-label">Audioqualität</span>
-            <span class="pill-val">16 kHz / 16-Bit WAV</span>
+            <span class="pill-label">WLAN-Hotspot</span>
+            <span class="pill-val">XIAO-Audio-Hotspot</span>
           </div>
         </div>
       </section>
@@ -106,8 +103,8 @@
       <!-- Player & Waveform Card -->
       <section class="card player-card">
         <div class="card-header">
-          <h2>Aktuelle Sprachaufnahme</h2>
-          <span id="clipMeta" class="meta-tag">Keine Aufnahme vorhanden</span>
+          <h2 id="currentClipTitle">Aktuelle Sprachaufnahme</h2>
+          <span id="clipMeta" class="meta-tag">Keine Aufnahme ausgewählt</span>
         </div>
 
         <div class="waveform-container">
@@ -121,7 +118,7 @@
               <path d="M18 5v13"></path>
               <path d="M22 10v3"></path>
             </svg>
-            <p>Hau auf das Breadboard zum Aufnehmen oder klicke "Von WLAN laden"!</p>
+            <p>Klicke auf "WLAN Synchronisieren" oder wähle unten eine Aufnahme!</p>
           </div>
         </div>
 
@@ -156,19 +153,22 @@
       <!-- Recordings Library Section -->
       <section class="card library-card">
         <div class="card-header">
-          <h2>Aufnahme-Verlauf</h2>
-          <button class="btn-text" onclick="clearHistory()">Verlauf leeren</button>
+          <h2>Synchronisierte Sprachaufnahmen</h2>
+          <div style="display:flex;gap:10px;">
+            <button class="btn-text" onclick="clearDeviceFlashStorage()" style="color:#f43f5e;">Flash auf ESP32 leeren</button>
+            <button class="btn-text" onclick="clearHistory()">Lokale Liste leeren</button>
+          </div>
         </div>
 
         <div id="clipsList" class="clips-list">
-          <div class="no-clips-msg">Noch keine Aufnahmen empfangen.</div>
+          <div class="no-clips-msg">Noch keine Aufnahmen synchronisiert. Klicke oben auf "WLAN Synchronisieren".</div>
         </div>
       </section>
     </main>
 
     <!-- Footer -->
     <footer class="app-footer">
-      <span>XIAO ESP32C3 Audio Companion &bull; Hybrid BLE + Wi-Fi Engine</span>
+      <span>XIAO ESP32C3 Audio Companion &bull; 4MB Flash Sync Engine</span>
     </footer>
   </div>
 

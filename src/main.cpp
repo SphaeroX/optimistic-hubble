@@ -5,24 +5,26 @@
 #include "i2s_mic_driver.h"
 #include "tap_detector.h"
 #include "audio_recorder.h"
+#include "storage_manager.h"
 #include "ble_manager.h"
 #include "wifi_server.h"
 
-// Global Modules
+// Global Hardware & Storage Modules
 static ImuDriver imu;
 static I2sMicDriver stereoMic;
 static TapDetector tapDetector(TAP_JERK_THRESHOLD_G, TAP_DEBOUNCE_MS);
 static AudioRecorder recorder(PIN_STATUS_LED);
+static StorageManager storage;
 static BleManager ble;
-static WifiServerManager wifiServer(recorder);
+static WifiServerManager wifiServer(storage);
 
 static unsigned long lastTelemetryTime = 0;
 static const unsigned long TELEMETRY_INTERVAL_MS = 100;
 
 void printBanner() {
     Serial.println(F("\n========================================================"));
-    Serial.println(F("  XIAO ESP32C3 - Hybrid BLE + Wi-Fi Voice Assistant"));
-    Serial.println(F("  Tap to Record -> Speak -> Tap to Send via High-Speed Wi-Fi"));
+    Serial.println(F("  XIAO ESP32C3 - Voice Assistant with 4MB Flash Storage"));
+    Serial.println(F("  Tap to Record -> Auto-Save to Flash -> Sync via Wi-Fi"));
     Serial.println(F("========================================================"));
 }
 
@@ -33,74 +35,95 @@ void setup() {
 
     printBanner();
 
-    // 1. Initialize I2C and IMU
-    Serial.println(F("[1/5] Starting I2C & Probing 6-Axis IMU..."));
+    // 1. Initialize I2C & IMU
+    Serial.println(F("[1/6] Probing 6-Axis IMU (LSM6DS3 / BMI160)..."));
     I2cScanner::begin(PIN_I2C_SDA, PIN_I2C_SCL, I2C_FREQUENCY);
     delay(50);
     bool imuOk = imu.begin();
     if (imuOk) {
         Serial.printf("  [PASS] Identified IMU: %s @ 0x%02X\n", imu.getChipName(), imu.getAddress());
     } else {
-        Serial.println(F("  [WARN] IMU not found! Tap detection might be inactive."));
+        Serial.println(F("  [WARN] IMU not found! Tap detection may be inactive."));
     }
 
     // 2. Initialize Stereo I2S Microphones
-    Serial.println(F("[2/5] Initializing Stereo I2S Microphones..."));
+    Serial.println(F("[2/6] Starting Stereo I2S Microphones (16 kHz)..."));
     bool micOk = stereoMic.begin(PIN_I2S_SCK, PIN_I2S_WS, PIN_I2S_SD, AUDIO_SAMPLE_RATE);
     if (micOk) {
-        Serial.println(F("  [PASS] I2S Driver started (16 kHz, 24/32-bit)."));
+        Serial.println(F("  [PASS] I2S Microphone Driver active."));
     } else {
-        Serial.println(F("  [FAIL] Failed to install I2S Driver!"));
+        Serial.println(F("  [FAIL] Failed to start I2S Driver!"));
     }
 
-    // 3. Initialize Audio Recorder & Status LED
-    Serial.println(F("[3/5] Initializing Audio Recorder & Status LED..."));
+    // 3. Initialize Persistent Flash Storage (LittleFS)
+    Serial.println(F("[3/6] Mounting 4MB Flash Storage (LittleFS)..."));
+    bool fsOk = storage.begin(true);
+    if (fsOk) {
+        Serial.printf("  [PASS] Flash Storage ready. Existing clips: %u | Free: %u KB\n",
+                      storage.getClipCount(), (storage.getTotalBytes() - storage.getUsedBytes()) / 1024);
+    } else {
+        Serial.println(F("  [FAIL] Could not mount LittleFS Flash Storage!"));
+    }
+
+    // 4. Initialize Audio Recorder & Status LED
+    Serial.println(F("[4/6] Initializing Audio Recorder & Status LED..."));
     bool recOk = recorder.begin();
     if (recOk) {
-        Serial.printf("  [PASS] Audio Buffer allocated (%u bytes for ~%u sec).\n", 
-                      recorder.getRecordedBytes(), AUDIO_MAX_SECONDS);
+        Serial.println(F("  [PASS] Audio Buffer initialized."));
         recorder.blinkLed(3, 80);
-    } else {
-        Serial.println(F("  [FAIL] Could not allocate Audio Buffer!"));
     }
 
-    // 4. Initialize Wi-Fi Hotspot & Web Server
-    Serial.println(F("[4/5] Starting Wi-Fi SoftAP & High-Speed Audio Server..."));
+    // 5. Initialize Wi-Fi Hotspot & Sync REST API
+    Serial.println(F("[5/6] Starting Wi-Fi Hotspot & Sync Server..."));
     bool wifiOk = wifiServer.begin(WIFI_AP_SSID, WIFI_AP_PASS, HTTP_SERVER_PORT);
     if (wifiOk) {
-        Serial.printf("  [PASS] Hotspot: \"%s\" (PW: %s) -> http://%s/audio.wav\n", 
+        Serial.printf("  [PASS] Hotspot \"%s\" (PW: %s) -> http://%s\n",
                       WIFI_AP_SSID, WIFI_AP_PASS, wifiServer.getIp().toString().c_str());
     }
 
-    // 5. Initialize BLE GATT Server (Signaling)
-    Serial.println(F("[5/5] Starting BLE GATT Server & Advertising..."));
+    // 6. Initialize BLE GATT Server
+    Serial.println(F("[6/6] Starting BLE GATT Server (Signaling)..."));
     bool bleOk = ble.begin(BLE_DEVICE_NAME);
     if (bleOk) {
-        Serial.println(F("  [PASS] BLE signaling active as \"XIAO-Audio-Recorder\"."));
+        Serial.println(F("  [PASS] BLE advertising active as \"XIAO-Audio-Recorder\"."));
     }
 
     Serial.println(F("\n========================================================"));
     Serial.println(F("  SYSTEM READY:"));
-    Serial.println(F("  1. Tap breadboard firmly to START recording (LED turns ON)."));
+    Serial.println(F("  1. Tap breadboard to START recording (LED turns ON)."));
     Serial.println(F("  2. Speak into microphone."));
-    Serial.println(F("  3. Tap breadboard again to STOP -> High-speed Wi-Fi stream available!"));
+    Serial.println(F("  3. Tap again to STOP -> Auto-saved to 4MB Flash storage!"));
+    Serial.println(F("  4. Open http://192.168.4.1 in any browser to listen & sync."));
     Serial.println(F("========================================================\n"));
 }
 
-void handleStopAndTransfer() {
+void handleStopAndSave() {
     recorder.stopRecording();
-    Serial.printf("\n[RECORD] Finished: %u samples (%.2f s, %u bytes)\n", 
-                  recorder.getRecordedSamples(), 
-                  recorder.getDurationSeconds(), 
-                  recorder.getRecordedBytes());
+    size_t pcmBytes = recorder.getRecordedBytes();
+    float duration = recorder.getDurationSeconds();
 
-    // Notify BLE client that clip is ready for instant Wi-Fi download
-    ble.updateState(STATE_DONE, recorder.getRecordedBytes(), recorder.getSampleRate());
-    Serial.println(F("[WIFI] New audio clip ready at http://192.168.4.1/audio.wav"));
+    Serial.printf("\n[RECORD] Finished: %u samples (%.2f s, %u bytes)\n", 
+                  recorder.getRecordedSamples(), duration, pcmBytes);
+
+    // Save directly to 4MB Flash (LittleFS) as standard WAV file
+    uint16_t newClipId = 0;
+    bool saved = storage.saveWavClip(recorder.getBuffer(), pcmBytes, recorder.getSampleRate(), &newClipId);
+
+    if (saved) {
+        size_t totalClips = storage.getClipCount();
+        Serial.printf("[STORAGE] Clip #%u saved! Total in Flash: %u (Free: %u KB)\n", 
+                      newClipId, totalClips, (storage.getTotalBytes() - storage.getUsedBytes()) / 1024);
+
+        // Notify BLE client: state=DONE, totalBytes=newClipId, sampleRate=totalClips
+        ble.updateState(STATE_DONE, newClipId, totalClips);
+    } else {
+        Serial.println(F("[STORAGE] Failed to save clip to Flash!"));
+        ble.updateState(STATE_IDLE);
+    }
 }
 
 void loop() {
-    // 1. Handle incoming Wi-Fi HTTP requests (e.g. /audio.wav downloads)
+    // 1. Handle incoming Wi-Fi requests (Download / Sync / Dashboard)
     wifiServer.handleClient();
 
     // 2. Process Active Recording
@@ -114,14 +137,13 @@ void loop() {
             if (tapDetector.update(imuData, &shock)) {
                 Serial.printf("\n[TAP DETECTED] Stop trigger! Shock: %.2f g\n", shock);
                 ble.notifyTap(shock);
-                handleStopAndTransfer();
+                handleStopAndSave();
                 return;
             }
         }
 
-        // If recording reached max time limit
         if (!stillRecording) {
-            handleStopAndTransfer();
+            handleStopAndSave();
             return;
         }
 
@@ -135,7 +157,7 @@ void loop() {
     if (imuOk) {
         float shock = 0.0f;
         if (tapDetector.update(imuData, &shock)) {
-            Serial.printf("\n[TAP DETECTED] Start trigger! Shock: %.2f g -> STARTING RECORDING...\n", shock);
+            Serial.printf("\n[TAP DETECTED] Start trigger! Shock: %.2f g -> RECORDING...\n", shock);
             ble.notifyTap(shock);
             ble.updateState(STATE_RECORDING);
             recorder.startRecording();
@@ -143,7 +165,7 @@ void loop() {
         }
     }
 
-    // 4. Periodic Telemetry (when Idle)
+    // 4. Periodic Telemetry
     unsigned long now = millis();
     if (now - lastTelemetryTime >= TELEMETRY_INTERVAL_MS) {
         lastTelemetryTime = now;
@@ -155,8 +177,9 @@ void loop() {
         I2sMicDriver::formatVuBar(vuL, sizeof(vuL), audio.leftRms, 50000.0f, 10);
         I2sMicDriver::formatVuBar(vuR, sizeof(vuR), audio.rightRms, 50000.0f, 10);
 
-        Serial.printf("[BLE: %s] [WIFI: 192.168.4.1] [MIC-L] %s RMS:%5.0f | [MIC-R] %s RMS:%5.0f\r",
-                      ble.isConnected() ? "CONNECTED   " : "DISCONNECTED",
+        Serial.printf("[BLE: %s] [FLASH: %u clips] [MIC-L] %s RMS:%5.0f | [MIC-R] %s RMS:%5.0f\r",
+                      ble.isConnected() ? "CONNECTED" : "STANDBY  ",
+                      storage.getClipCount(),
                       vuL, audio.leftRms,
                       vuR, audio.rightRms);
     }
