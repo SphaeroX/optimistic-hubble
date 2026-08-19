@@ -1,0 +1,583 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<export version="D">
+  <design>
+    <source>C:\Users\MGasc\Documents\antigravity\optimistic-hubble\hardware\generate_schematic.py</source>
+    <date>08/19/2026 04:13 PM</date>
+    <tool>SKiDL (2.3.0)</tool>
+  </design>
+  <components>
+    <comp ref="J1">
+      <value>"TYPE-C-16P"</value>
+      <footprint>Connector_USB:USB_C_Receptacle_HRO_TYPE-C-31-M-12</footprint>
+      <libsource lib="Connector" part=""USB_C_Receptacle_USB2.0_16P""/>
+    </comp>
+    <comp ref="R1">
+      <value>"5.1k_1%"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="R2">
+      <value>"5.1k_1%"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="R3">
+      <value>"1M"</value>
+      <footprint>Resistor_SMD:R_0805_2012Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="C1">
+      <value>"4.7nF_1kV"</value>
+      <footprint>Capacitor_SMD:C_0805_2012Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="U1">
+      <value>"USBLC6-2SC6"</value>
+      <footprint>Package_TO_SOT_SMD:SOT-23-6</footprint>
+      <libsource lib="Power_Protection" part=""USBLC6-2SC6""/>
+    </comp>
+    <comp ref="U2">
+      <value>"TP4056"</value>
+      <footprint>Package_SO:SOP-8-PP_3.9x4.9mm_P1.27mm_EP</footprint>
+      <libsource lib="Project_Symbols" part=""TP4056""/>
+    </comp>
+    <comp ref="C2">
+      <value>"10uF"</value>
+      <footprint>Capacitor_SMD:C_0805_2012Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="C3">
+      <value>"10uF"</value>
+      <footprint>Capacitor_SMD:C_0805_2012Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="R4">
+      <value>"2.4k_1%"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="R5">
+      <value>"1k"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="D1">
+      <value>"RED_CHRG"</value>
+      <footprint>LED_SMD:LED_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""LED""/>
+    </comp>
+    <comp ref="R6">
+      <value>"1k"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="D2">
+      <value>"GRN_FULL"</value>
+      <footprint>LED_SMD:LED_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""LED""/>
+    </comp>
+    <comp ref="J2">
+      <value>"JST-PH-2P-LiPo"</value>
+      <footprint>Connector_JST:JST_PH_S2B-PH-K_1x02_P2.00mm_Horizontal</footprint>
+      <libsource lib="Connector" part=""Conn_01x02_Pin""/>
+    </comp>
+    <comp ref="SW1">
+      <value>"POWER_SWITCH"</value>
+      <footprint>Button_Switch_SMD:SW_SPDT_PCM12</footprint>
+      <libsource lib="Switch" part=""SW_SPDT""/>
+    </comp>
+    <comp ref="Q1">
+      <value>"AO3401A_P-FET"</value>
+      <footprint>Package_TO_SOT_SMD:SOT-23</footprint>
+      <libsource lib="Transistor_FET" part=""AO3401A""/>
+    </comp>
+    <comp ref="R7">
+      <value>"100k"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="D3">
+      <value>"SS14_Schottky"</value>
+      <footprint>Diode_SMD:D_SOD-123</footprint>
+      <libsource lib="Device" part=""D_Schottky""/>
+    </comp>
+    <comp ref="U3">
+      <value>"AP2112K-3.3"</value>
+      <footprint>Package_TO_SOT_SMD:SOT-23-5</footprint>
+      <libsource lib="Regulator_Linear" part=""AP2112K-3.3""/>
+    </comp>
+    <comp ref="C4">
+      <value>"10uF"</value>
+      <footprint>Capacitor_SMD:C_0805_2012Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="C5">
+      <value>"10uF"</value>
+      <footprint>Capacitor_SMD:C_0805_2012Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="C6">
+      <value>"100nF"</value>
+      <footprint>Capacitor_SMD:C_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="R8">
+      <value>"100k_1%"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="R9">
+      <value>"100k_1%"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="C7">
+      <value>"100nF"</value>
+      <footprint>Capacitor_SMD:C_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="U4">
+      <value>"ESP32-C3-WROOM-02-N4"</value>
+      <footprint>RF_Module:ESP32-C3-WROOM-02</footprint>
+      <libsource lib="Project_Symbols" part=""ESP32-C3-WROOM-02""/>
+    </comp>
+    <comp ref="C8">
+      <value>"10uF"</value>
+      <footprint>Capacitor_SMD:C_0805_2012Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="C9">
+      <value>"100nF"</value>
+      <footprint>Capacitor_SMD:C_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="R10">
+      <value>"10k"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="C10">
+      <value>"1uF"</value>
+      <footprint>Capacitor_SMD:C_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="SW2">
+      <value>"RESET_BTN"</value>
+      <footprint>Button_Switch_SMD:SW_SPST_PTS645</footprint>
+      <libsource lib="Switch" part=""SW_Push""/>
+    </comp>
+    <comp ref="R11">
+      <value>"10k"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="SW3">
+      <value>"BOOT_BTN"</value>
+      <footprint>Button_Switch_SMD:SW_SPST_PTS645</footprint>
+      <libsource lib="Switch" part=""SW_Push""/>
+    </comp>
+    <comp ref="FB1">
+      <value>"600R_100MHz"</value>
+      <footprint>Resistor_SMD:R_0805_2012Metric</footprint>
+      <libsource lib="Device" part=""FerriteBead""/>
+    </comp>
+    <comp ref="C11">
+      <value>"10uF"</value>
+      <footprint>Capacitor_SMD:C_0805_2012Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="C12">
+      <value>"100nF"</value>
+      <footprint>Capacitor_SMD:C_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="MK1">
+      <value>"INMP441_LEFT"</value>
+      <footprint>Sensor_Audio:InvenSense_INMP441</footprint>
+      <libsource lib="Project_Symbols" part=""INMP441""/>
+    </comp>
+    <comp ref="C13">
+      <value>"100nF"</value>
+      <footprint>Capacitor_SMD:C_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="MK2">
+      <value>"INMP441_RIGHT"</value>
+      <footprint>Sensor_Audio:InvenSense_INMP441</footprint>
+      <libsource lib="Project_Symbols" part=""INMP441""/>
+    </comp>
+    <comp ref="C14">
+      <value>"100nF"</value>
+      <footprint>Capacitor_SMD:C_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="U5">
+      <value>"LSM6DS3TR-C"</value>
+      <footprint>Package_LGA:LGA-14_3x2.5mm_P0.5mm_LayoutBorder1x6y</footprint>
+      <libsource lib="Sensor_Motion" part=""LSM6DS3""/>
+    </comp>
+    <comp ref="C15">
+      <value>"1uF"</value>
+      <footprint>Capacitor_SMD:C_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="C16">
+      <value>"100nF"</value>
+      <footprint>Capacitor_SMD:C_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="C17">
+      <value>"100nF"</value>
+      <footprint>Capacitor_SMD:C_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="R12">
+      <value>"4.7k"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="R13">
+      <value>"4.7k"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="U6">
+      <value>"W25Q128JV_16MB"</value>
+      <footprint>Package_SO:SOIC-8_5.23x5.23mm_P1.27mm</footprint>
+      <libsource lib="Memory_Flash" part=""W25Q128JVS""/>
+    </comp>
+    <comp ref="C18">
+      <value>"100nF"</value>
+      <footprint>Capacitor_SMD:C_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""C""/>
+    </comp>
+    <comp ref="R14">
+      <value>"10k"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="R15">
+      <value>"10k"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="R16">
+      <value>"10k"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="R17">
+      <value>"330R"</value>
+      <footprint>Resistor_SMD:R_0805_2012Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="D4">
+      <value>"RED_RECORDING"</value>
+      <footprint>LED_SMD:LED_0805_2012Metric</footprint>
+      <libsource lib="Device" part=""LED""/>
+    </comp>
+    <comp ref="R18">
+      <value>"1k"</value>
+      <footprint>Resistor_SMD:R_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""R""/>
+    </comp>
+    <comp ref="D5">
+      <value>"BLU_3V3_PWR"</value>
+      <footprint>LED_SMD:LED_0603_1608Metric</footprint>
+      <libsource lib="Device" part=""LED""/>
+    </comp>
+    <comp ref="TP1">
+      <value>"TP_3V3"</value>
+      <footprint>TestPoint:TestPoint_Pad_D1.0mm_OD2.0mm</footprint>
+      <libsource lib="Connector" part=""TestPoint""/>
+    </comp>
+    <comp ref="TP2">
+      <value>"TP_GND"</value>
+      <footprint>TestPoint:TestPoint_Pad_D1.0mm_OD2.0mm</footprint>
+      <libsource lib="Connector" part=""TestPoint""/>
+    </comp>
+    <comp ref="TP3">
+      <value>"TP_EN"</value>
+      <footprint>TestPoint:TestPoint_Pad_D1.0mm_OD2.0mm</footprint>
+      <libsource lib="Connector" part=""TestPoint""/>
+    </comp>
+    <comp ref="TP4">
+      <value>"TP_IO9"</value>
+      <footprint>TestPoint:TestPoint_Pad_D1.0mm_OD2.0mm</footprint>
+      <libsource lib="Connector" part=""TestPoint""/>
+    </comp>
+    <comp ref="TP5">
+      <value>"TP_USB_DP"</value>
+      <footprint>TestPoint:TestPoint_Pad_D1.0mm_OD2.0mm</footprint>
+      <libsource lib="Connector" part=""TestPoint""/>
+    </comp>
+    <comp ref="TP6">
+      <value>"TP_USB_DN"</value>
+      <footprint>TestPoint:TestPoint_Pad_D1.0mm_OD2.0mm</footprint>
+      <libsource lib="Connector" part=""TestPoint""/>
+    </comp>
+    <comp ref="TP7">
+      <value>"TP_VBAT"</value>
+      <footprint>TestPoint:TestPoint_Pad_D1.0mm_OD2.0mm</footprint>
+      <libsource lib="Connector" part=""TestPoint""/>
+    </comp>
+  </components>
+  <nets>
+    <net code="0" name="VBUS">
+      <node ref="C2" pin="1"/>
+      <node ref="R6" pin="1"/>
+      <node ref="D3" pin="2"/>
+      <node ref="R5" pin="1"/>
+      <node ref="U2" pin="8"/>
+      <node ref="J1" pin="A4"/>
+      <node ref="J1" pin="A9"/>
+      <node ref="U1" pin="5"/>
+      <node ref="J1" pin="B4"/>
+      <node ref="J1" pin="B9"/>
+      <node ref="U2" pin="4"/>
+      <node ref="Q1" pin="1"/>
+      <node ref="R7" pin="1"/>
+    </net>
+    <net code="1" name="VBAT_RAW">
+      <node ref="U2" pin="5"/>
+      <node ref="C3" pin="1"/>
+      <node ref="SW1" pin="1"/>
+      <node ref="J2" pin="1"/>
+    </net>
+    <net code="2" name="VBAT">
+      <node ref="R8" pin="1"/>
+      <node ref="Q1" pin="2"/>
+      <node ref="TP7" pin="1"/>
+      <node ref="SW1" pin="2"/>
+    </net>
+    <net code="3" name="V_SYS">
+      <node ref="C4" pin="1"/>
+      <node ref="D3" pin="1"/>
+      <node ref="Q1" pin="3"/>
+      <node ref="U3" pin="3"/>
+      <node ref="U3" pin="1"/>
+    </net>
+    <net code="4" name="+3V3">
+      <node ref="C16" pin="1"/>
+      <node ref="R10" pin="1"/>
+      <node ref="C18" pin="1"/>
+      <node ref="U5" pin="5"/>
+      <node ref="C17" pin="1"/>
+      <node ref="C5" pin="1"/>
+      <node ref="R14" pin="1"/>
+      <node ref="R18" pin="1"/>
+      <node ref="FB1" pin="1"/>
+      <node ref="R12" pin="1"/>
+      <node ref="C6" pin="1"/>
+      <node ref="U4" pin="2"/>
+      <node ref="R15" pin="1"/>
+      <node ref="U5" pin="8"/>
+      <node ref="R11" pin="1"/>
+      <node ref="U5" pin="12"/>
+      <node ref="C8" pin="1"/>
+      <node ref="R16" pin="1"/>
+      <node ref="TP1" pin="1"/>
+      <node ref="R13" pin="1"/>
+      <node ref="C9" pin="1"/>
+      <node ref="U3" pin="5"/>
+      <node ref="C15" pin="1"/>
+      <node ref="U6" pin="8"/>
+    </net>
+    <net code="5" name="GND">
+      <node ref="U2" pin="1"/>
+      <node ref="R4" pin="2"/>
+      <node ref="U2" pin="3"/>
+      <node ref="D4" pin="1"/>
+      <node ref="R2" pin="2"/>
+      <node ref="C10" pin="2"/>
+      <node ref="C4" pin="2"/>
+      <node ref="SW3" pin="2"/>
+      <node ref="U4" pin="1"/>
+      <node ref="MK1" pin="1"/>
+      <node ref="C17" pin="2"/>
+      <node ref="C18" pin="2"/>
+      <node ref="C3" pin="2"/>
+      <node ref="C12" pin="2"/>
+      <node ref="R7" pin="2"/>
+      <node ref="MK2" pin="2"/>
+      <node ref="C14" pin="2"/>
+      <node ref="U1" pin="2"/>
+      <node ref="U4" pin="10"/>
+      <node ref="U4" pin="20"/>
+      <node ref="U5" pin="6"/>
+      <node ref="C6" pin="2"/>
+      <node ref="J1" pin="A1"/>
+      <node ref="U4" pin="21"/>
+      <node ref="R3" pin="2"/>
+      <node ref="SW2" pin="2"/>
+      <node ref="U5" pin="7"/>
+      <node ref="C13" pin="2"/>
+      <node ref="U6" pin="4"/>
+      <node ref="D5" pin="1"/>
+      <node ref="C9" pin="2"/>
+      <node ref="U3" pin="2"/>
+      <node ref="J1" pin="A12"/>
+      <node ref="U2" pin="9"/>
+      <node ref="J1" pin="B1"/>
+      <node ref="C8" pin="2"/>
+      <node ref="C1" pin="2"/>
+      <node ref="C16" pin="2"/>
+      <node ref="R9" pin="2"/>
+      <node ref="MK1" pin="2"/>
+      <node ref="J1" pin="B12"/>
+      <node ref="TP3" pin="1"/>
+      <node ref="C11" pin="2"/>
+      <node ref="R1" pin="2"/>
+      <node ref="C2" pin="2"/>
+      <node ref="J2" pin="2"/>
+      <node ref="TP2" pin="1"/>
+      <node ref="U5" pin="1"/>
+      <node ref="C15" pin="2"/>
+      <node ref="C5" pin="2"/>
+      <node ref="C7" pin="2"/>
+    </net>
+    <net code="6" name="USB_DP">
+      <node ref="J1" pin="A6"/>
+      <node ref="U4" pin="17"/>
+      <node ref="TP5" pin="1"/>
+      <node ref="J1" pin="B6"/>
+      <node ref="U1" pin="1"/>
+      <node ref="U1" pin="6"/>
+    </net>
+    <net code="7" name="USB_DN">
+      <node ref="U1" pin="4"/>
+      <node ref="J1" pin="B7"/>
+      <node ref="J1" pin="A7"/>
+      <node ref="U1" pin="3"/>
+      <node ref="U4" pin="16"/>
+      <node ref="TP6" pin="1"/>
+    </net>
+    <net code="8" name="I2S_SCK">
+      <node ref="MK1" pin="5"/>
+      <node ref="U4" pin="14"/>
+      <node ref="MK2" pin="5"/>
+    </net>
+    <net code="9" name="I2S_WS">
+      <node ref="U4" pin="15"/>
+      <node ref="MK2" pin="6"/>
+      <node ref="MK1" pin="6"/>
+    </net>
+    <net code="10" name="I2S_SD">
+      <node ref="MK1" pin="4"/>
+      <node ref="U4" pin="4"/>
+      <node ref="MK2" pin="4"/>
+    </net>
+    <net code="11" name="I2C_SCL">
+      <node ref="U4" pin="7"/>
+      <node ref="U5" pin="13"/>
+      <node ref="R12" pin="2"/>
+    </net>
+    <net code="12" name="I2C_SDA">
+      <node ref="U5" pin="14"/>
+      <node ref="U4" pin="6"/>
+      <node ref="R13" pin="2"/>
+    </net>
+    <net code="13" name="IMU_INT">
+      <node ref="U4" pin="13"/>
+      <node ref="U5" pin="4"/>
+    </net>
+    <net code="14" name="SPI_CS">
+      <node ref="U4" pin="5"/>
+      <node ref="R14" pin="2"/>
+      <node ref="U6" pin="1"/>
+    </net>
+    <net code="15" name="SPI_CLK">
+      <node ref="U6" pin="6"/>
+      <node ref="U4" pin="8"/>
+    </net>
+    <net code="16" name="SPI_MISO">
+      <node ref="U4" pin="18"/>
+      <node ref="U6" pin="2"/>
+    </net>
+    <net code="17" name="SPI_MOSI">
+      <node ref="U6" pin="5"/>
+      <node ref="U4" pin="19"/>
+    </net>
+    <net code="18" name="STATUS_LED">
+      <node ref="R17" pin="1"/>
+      <node ref="U4" pin="11"/>
+      <node ref="TP4" pin="1"/>
+    </net>
+    <net code="19" name="BATT_SENSE">
+      <node ref="R8" pin="2"/>
+      <node ref="C7" pin="1"/>
+      <node ref="U4" pin="12"/>
+      <node ref="R9" pin="1"/>
+    </net>
+    <net code="20" name="N$1">
+      <node ref="J1" pin="A5"/>
+      <node ref="R1" pin="1"/>
+    </net>
+    <net code="21" name="N$2">
+      <node ref="R2" pin="1"/>
+      <node ref="J1" pin="B5"/>
+    </net>
+    <net code="22" name="N$3">
+      <node ref="R3" pin="1"/>
+      <node ref="C1" pin="1"/>
+      <node ref="J1" pin="S1"/>
+    </net>
+    <net code="23" name="N$4">
+      <node ref="U2" pin="2"/>
+      <node ref="R4" pin="1"/>
+    </net>
+    <net code="24" name="N$5">
+      <node ref="R5" pin="2"/>
+      <node ref="D1" pin="2"/>
+    </net>
+    <net code="25" name="N$6">
+      <node ref="D1" pin="1"/>
+      <node ref="U2" pin="7"/>
+    </net>
+    <net code="26" name="N$7">
+      <node ref="D2" pin="2"/>
+      <node ref="R6" pin="2"/>
+    </net>
+    <net code="27" name="N$8">
+      <node ref="D2" pin="1"/>
+      <node ref="U2" pin="6"/>
+    </net>
+    <net code="28" name="N$9">
+      <node ref="C10" pin="1"/>
+      <node ref="R10" pin="2"/>
+      <node ref="SW2" pin="1"/>
+      <node ref="U4" pin="3"/>
+    </net>
+    <net code="29" name="N$10">
+      <node ref="U4" pin="9"/>
+      <node ref="SW3" pin="1"/>
+      <node ref="R11" pin="2"/>
+    </net>
+    <net code="30" name="+3V3_AUDIO">
+      <node ref="C11" pin="1"/>
+      <node ref="FB1" pin="2"/>
+      <node ref="MK2" pin="1"/>
+      <node ref="MK1" pin="3"/>
+      <node ref="C13" pin="1"/>
+      <node ref="MK2" pin="3"/>
+      <node ref="C14" pin="1"/>
+      <node ref="C12" pin="1"/>
+    </net>
+    <net code="31" name="N$11">
+      <node ref="U6" pin="3"/>
+      <node ref="R15" pin="2"/>
+    </net>
+    <net code="32" name="N$12">
+      <node ref="R16" pin="2"/>
+      <node ref="U6" pin="7"/>
+    </net>
+    <net code="33" name="N$13">
+      <node ref="R17" pin="2"/>
+      <node ref="D4" pin="2"/>
+    </net>
+    <net code="34" name="N$14">
+      <node ref="R18" pin="2"/>
+      <node ref="D5" pin="2"/>
+    </net>
+  </nets>
+</export>

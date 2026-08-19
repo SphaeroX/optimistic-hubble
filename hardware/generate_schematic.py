@@ -2,11 +2,14 @@
 """
 Main Schematic Generator & KiCad Export Pipeline for ESP32-C3 Voice Recorder.
 
-Generates:
-1. KiCad Netlist (.net) for direct import into KiCad PCB Editor (pcbnew).
-2. KiCad XML Netlist (.xml) for third-party BOM & Layout tools.
-3. KiCad 8 Schematic (.kicad_sch).
-4. Formatted Bill of Materials (BOM.csv) with component footprints, values, and designators.
+Generates a complete, ready-to-open KiCad 8 Project:
+1. xiao_voice_recorder.kicad_pro (KiCad Project file)
+2. xiao_voice_recorder.kicad_sch (Fully wired and labeled schematic)
+3. xiao_voice_recorder.kicad_pcb (PCB layout file)
+4. xiao_voice_recorder.net (KiCad Netlist)
+5. xiao_voice_recorder.xml (XML Netlist)
+6. xiao_voice_recorder_bom.csv (Formatted Bill of Materials)
+7. sym-lib-table & fp-lib-table (Library configuration)
 """
 
 import os
@@ -41,7 +44,7 @@ from hardware.modules.audio_mems import create_audio_mems
 from hardware.modules.imu_sensor import create_imu_sensor
 from hardware.modules.spi_storage import create_spi_storage
 from hardware.modules.ui_indicators import create_ui_indicators
-from hardware.sch_generator import generate_kicad8_schematic
+from hardware.kicad_project_generator import generate_kicad_project
 
 def build_circuit():
     """Builds the complete multi-subsystem circuit netlist."""
@@ -120,10 +123,11 @@ def build_circuit():
 def export_artifacts():
     """Generates and exports all KiCad files and documentation."""
     circuit = builtins.default_circuit
-    netlist_path = os.path.join(OUTPUT_DIR, "esp32c3_voice_device.net")
-    xml_path = os.path.join(OUTPUT_DIR, "esp32c3_voice_device.xml")
-    sch_path = os.path.join(OUTPUT_DIR, "esp32c3_voice_device.kicad_sch")
-    bom_path = os.path.join(OUTPUT_DIR, "esp32c3_voice_device_bom.csv")
+    project_name = "xiao_voice_recorder"
+    
+    netlist_path = os.path.join(OUTPUT_DIR, f"{project_name}.net")
+    xml_path = os.path.join(OUTPUT_DIR, f"{project_name}.xml")
+    bom_path = os.path.join(OUTPUT_DIR, f"{project_name}_bom.csv")
 
     print("\n[Exporting KiCad Netlist] ->", netlist_path)
     generate_netlist(file_=netlist_path)
@@ -131,15 +135,16 @@ def export_artifacts():
     print("[Exporting XML Netlist] ->", xml_path)
     generate_xml(file_=xml_path)
 
-    print("[Exporting KiCad 8 Schematic] ->", sch_path)
-    generate_kicad8_schematic(circuit, sch_path)
+    # Generate Complete KiCad 8 Project (.kicad_pro, .kicad_sch, .kicad_pcb, lib tables)
+    generate_kicad_project(circuit, project_name)
 
     # Generate Detailed CSV BOM
     print("[Exporting Custom BOM] ->", bom_path)
     export_custom_bom(bom_path, circuit)
 
     print("\n" + "=" * 70)
-    print("ALL HARDWARE ARTIFACTS GENERATED SUCCESSFULLY!")
+    print("ALL HARDWARE PROJECT ARTIFACTS GENERATED SUCCESSFULLY!")
+    print(f"KiCad Project: {os.path.join(OUTPUT_DIR, f'{project_name}.kicad_pro')}")
     print(f"Output directory: {OUTPUT_DIR}")
     print("=" * 70)
 

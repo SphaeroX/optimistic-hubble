@@ -9,3 +9,5 @@ __pycache__/
 test_skidl.net
 hardware/.venv/
 .venv/
+*.kicad_prl
+*-backups/
