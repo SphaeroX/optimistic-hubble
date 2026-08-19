@@ -11,3 +11,5 @@ hardware/.venv/
 .venv/
 *.kicad_prl
 *-backups/
+~*.lck
+*.lck
