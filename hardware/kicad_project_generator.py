@@ -31,13 +31,11 @@ def extract_lib_symbol(sym_filepath, symbol_name):
     with open(sym_filepath, "r", encoding="utf-8", errors="ignore") as f:
         content = f.read()
 
-    # Find start of symbol
     start_str = f'(symbol "{symbol_name}"'
     sym_start = content.find(start_str)
     if sym_start == -1:
         return None
 
-    # Balance parentheses to get complete block
     depth = 0
     sym_end = -1
     for i in range(sym_start, len(content)):
@@ -79,6 +77,52 @@ def parse_symbol_pins(sym_text):
             "length": float(length) if length else 2.54,
         }
     return pins
+
+def get_symbol_and_pins_with_ancestors(lib_name, sym_name, visited=None):
+    """
+    Recursively resolves a symbol and any parent/ancestor symbols it extends,
+    collecting all symbol S-expressions in topological dependency order and merged pins.
+    """
+    if visited is None:
+        visited = set()
+
+    key = f"{lib_name}:{sym_name}"
+    if key in visited:
+        return [], {}
+    visited.add(key)
+
+    sym_file = os.path.join(KICAD_SYMBOLS_DIR, f"{lib_name}.kicad_sym")
+    if not os.path.exists(sym_file):
+        sym_file = os.path.join(CUSTOM_SYMBOLS_DIR, f"{lib_name}.kicad_sym")
+
+    sym_text = extract_lib_symbol(sym_file, sym_name)
+    if not sym_text:
+        for fn in os.listdir(KICAD_SYMBOLS_DIR):
+            if fn.endswith(".kicad_sym"):
+                t = extract_lib_symbol(os.path.join(KICAD_SYMBOLS_DIR, fn), sym_name)
+                if t:
+                    sym_text = t
+                    sym_file = os.path.join(KICAD_SYMBOLS_DIR, fn)
+                    break
+
+    if not sym_text:
+        return [], {}
+
+    symbols_list = []
+    pins = {}
+
+    extends_match = re.search(r'\(extends\s+"([^"]+)"\)', sym_text)
+    if extends_match:
+        parent_name = extends_match.group(1)
+        p_syms, p_pins = get_symbol_and_pins_with_ancestors(lib_name, parent_name, visited)
+        symbols_list.extend(p_syms)
+        pins.update(p_pins)
+
+    symbols_list.append(sym_text)
+    direct_pins = parse_symbol_pins(sym_text)
+    pins.update(direct_pins)
+
+    return symbols_list, pins
 
 def generate_kicad_project(circuit, output_dir=KICAD_OUTPUT_DIR, project_name="xiao_voice_recorder"):
     """
@@ -237,7 +281,7 @@ def build_initial_pcb(project_name, pcb_path):
 
 def build_complete_schematic(circuit, sch_path):
     """
-    Builds a fully wired, annotated, and sectioned KiCad 8 schematic.
+    Builds a fully wired, annotated, and sectioned KiCad 8 schematic with all parent/child symbols.
     """
     sch_lines = [
         '(kicad_sch',
@@ -258,34 +302,28 @@ def build_complete_schematic(circuit, sch_path):
 
     sym_cache = {}
     sym_pin_cache = {}
+    embedded_symbols = []
 
     for part in circuit.parts:
         lib_name = getattr(part, 'lib', None) or getattr(part, 'library', 'Device')
         sym_name = getattr(part, 'name', part.ref)
 
         key = f"{lib_name}:{sym_name}"
-        if key not in sym_cache:
-            sym_text = None
-            if str(lib_name) == "Project_Symbols" or "Project_Symbols" in str(getattr(part, 'origin_lib', '')):
-                custom_sym_file = os.path.join(CUSTOM_SYMBOLS_DIR, "Project_Symbols.kicad_sym")
-                sym_text = extract_lib_symbol(custom_sym_file, sym_name)
+        if key not in sym_pin_cache:
+            syms_chain, pins = get_symbol_and_pins_with_ancestors(lib_name, sym_name)
+            sym_pin_cache[key] = pins
             
-            if not sym_text:
-                cand_file = os.path.join(KICAD_SYMBOLS_DIR, f"{lib_name}.kicad_sym")
-                if os.path.exists(cand_file):
-                    sym_text = extract_lib_symbol(cand_file, sym_name)
-            
-            if not sym_text:
-                for fn in os.listdir(KICAD_SYMBOLS_DIR):
-                    if fn.endswith(".kicad_sym"):
-                        sym_text = extract_lib_symbol(os.path.join(KICAD_SYMBOLS_DIR, fn), sym_name)
-                        if sym_text:
-                            break
+            for s_txt in syms_chain:
+                # Extract symbol identifier to avoid duplicates
+                sym_id_match = re.search(r'\(symbol "([^"]+)"', s_txt)
+                if sym_id_match:
+                    s_id = sym_id_match.group(1)
+                    if s_id not in sym_cache:
+                        sym_cache[s_id] = True
+                        embedded_symbols.append(s_txt)
 
-            if sym_text:
-                sym_cache[key] = sym_text
-                sym_pin_cache[key] = parse_symbol_pins(sym_text)
-                sch_lines.append(sym_text)
+    for s_txt in embedded_symbols:
+        sch_lines.append(s_txt)
 
     sch_lines.append('  )') # Close lib_symbols
 
