@@ -1,0 +1,16 @@
+{
+  "version": "2.1.0",
+  "docType": "project",
+  "title": "xiao_voice_recorder",
+  "description": "ESP32-C3 Dual-Mic Voice Assistant & Active Noise Filtering PCB",
+  "schematics": [
+    {
+      "title": "Sheet_1",
+      "file": "xiao_voice_recorder.kicad_sch"
+    }
+  ],
+  "pcb": {
+    "title": "PCB_1",
+    "file": "xiao_voice_recorder.kicad_pcb"
+  }
+}

@@ -15,12 +15,16 @@ os.environ["KICAD_SYMBOL_DIR"] = KICAD_SYMBOLS_DIR
 os.environ["KICAD8_FOOTPRINT_DIR"] = KICAD_FOOTPRINTS_DIR
 os.environ["KICAD_FOOTPRINT_DIR"] = KICAD_FOOTPRINTS_DIR
 
-# Base hardware directory
+# Base hardware directories
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CUSTOM_SYMBOLS_DIR = os.path.join(BASE_DIR, "symbols")
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+KICAD_OUTPUT_DIR = os.path.join(OUTPUT_DIR, "kicad")
+EASYEDA_OUTPUT_DIR = os.path.join(OUTPUT_DIR, "easyeda")
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(KICAD_OUTPUT_DIR, exist_ok=True)
+os.makedirs(EASYEDA_OUTPUT_DIR, exist_ok=True)
 
 # Standard SMD Footprints (KiCad 8 naming convention)
 FOOTPRINTS = {

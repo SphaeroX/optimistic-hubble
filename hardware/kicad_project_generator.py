@@ -17,7 +17,7 @@ import json
 from hardware.config import (
     KICAD_SYMBOLS_DIR,
     CUSTOM_SYMBOLS_DIR,
-    OUTPUT_DIR,
+    KICAD_OUTPUT_DIR,
     FOOTPRINTS,
 )
 
@@ -80,15 +80,16 @@ def parse_symbol_pins(sym_text):
         }
     return pins
 
-def generate_kicad_project(circuit, project_name="xiao_voice_recorder"):
+def generate_kicad_project(circuit, output_dir=KICAD_OUTPUT_DIR, project_name="xiao_voice_recorder"):
     """
-    Generates all KiCad 8 project files.
+    Generates all KiCad 8 project files in output_dir.
     """
-    pro_path = os.path.join(OUTPUT_DIR, f"{project_name}.kicad_pro")
-    sch_path = os.path.join(OUTPUT_DIR, f"{project_name}.kicad_sch")
-    pcb_path = os.path.join(OUTPUT_DIR, f"{project_name}.kicad_pcb")
-    sym_table_path = os.path.join(OUTPUT_DIR, "sym-lib-table")
-    fp_table_path = os.path.join(OUTPUT_DIR, "fp-lib-table")
+    os.makedirs(output_dir, exist_ok=True)
+    pro_path = os.path.join(output_dir, f"{project_name}.kicad_pro")
+    sch_path = os.path.join(output_dir, f"{project_name}.kicad_sch")
+    pcb_path = os.path.join(output_dir, f"{project_name}.kicad_pcb")
+    sym_table_path = os.path.join(output_dir, "sym-lib-table")
+    fp_table_path = os.path.join(output_dir, "fp-lib-table")
 
     # 1. Generate .kicad_pro
     pro_data = {
@@ -124,7 +125,7 @@ def generate_kicad_project(circuit, project_name="xiao_voice_recorder"):
     # 2. Generate sym-lib-table & fp-lib-table
     rel_custom_sym = os.path.relpath(
         os.path.join(CUSTOM_SYMBOLS_DIR, "Project_Symbols.kicad_sym"),
-        OUTPUT_DIR
+        output_dir
     ).replace("\\", "/")
     
     sym_table_content = f"""(sym_lib_table
@@ -255,8 +256,6 @@ def build_complete_schematic(circuit, sch_path):
         '  (lib_symbols'
     ]
 
-    # Map of part library search
-    # Collect all unique (lib_name, sym_name) used by parts
     sym_cache = {}
     sym_pin_cache = {}
 
@@ -264,7 +263,6 @@ def build_complete_schematic(circuit, sch_path):
         lib_name = getattr(part, 'lib', None) or getattr(part, 'library', 'Device')
         sym_name = getattr(part, 'name', part.ref)
 
-        # Check in Project_Symbols or standard KiCad library
         key = f"{lib_name}:{sym_name}"
         if key not in sym_cache:
             sym_text = None
@@ -273,13 +271,11 @@ def build_complete_schematic(circuit, sch_path):
                 sym_text = extract_lib_symbol(custom_sym_file, sym_name)
             
             if not sym_text:
-                # Try in standard KiCad symbols
                 cand_file = os.path.join(KICAD_SYMBOLS_DIR, f"{lib_name}.kicad_sym")
                 if os.path.exists(cand_file):
                     sym_text = extract_lib_symbol(cand_file, sym_name)
             
             if not sym_text:
-                # Search across all symbols in standard dir
                 for fn in os.listdir(KICAD_SYMBOLS_DIR):
                     if fn.endswith(".kicad_sym"):
                         sym_text = extract_lib_symbol(os.path.join(KICAD_SYMBOLS_DIR, fn), sym_name)
@@ -287,7 +283,6 @@ def build_complete_schematic(circuit, sch_path):
                             break
 
             if sym_text:
-                # Prepend lib_name to symbol identifier if needed
                 sym_cache[key] = sym_text
                 sym_pin_cache[key] = parse_symbol_pins(sym_text)
                 sch_lines.append(sym_text)
@@ -295,7 +290,6 @@ def build_complete_schematic(circuit, sch_path):
     sch_lines.append('  )') # Close lib_symbols
 
     # Functional Layout Blocks on A3 Page (420 x 297 mm)
-    # Define bounding boxes and section header banners
     blocks = [
         {"title": "1. POWER MANAGEMENT & BATTERY CHARGER (USB-C, TP4056, POWER-PATH, 3.3V LDO)", "x": 20, "y": 20, "w": 180, "h": 125},
         {"title": "2. ESP32-C3 CORE MICROCONTROLLER (WROOM-02, RESET, BOOT, USB D+/D-)", "x": 215, "y": 20, "w": 185, "h": 125},
@@ -306,16 +300,11 @@ def build_complete_schematic(circuit, sch_path):
     ]
 
     for b in blocks:
-        # Bounding box
         bx, by, bw, bh = b["x"], b["y"], b["w"], b["h"]
         sch_lines.append(f'  (polyline (pts (xy {bx} {by}) (xy {bx+bw} {by}) (xy {bx+bw} {by+bh}) (xy {bx} {by+bh}) (xy {bx} {by})) (stroke (width 0.3) (type dash)) (uuid "{uuid.uuid4()}"))')
-        # Title text
         sch_lines.append(f'  (text "{b["title"]}" (at {bx+3} {by+5} 0) (effects (font (size 2.0 2.0) (bold yes)) (justify left)) (uuid "{uuid.uuid4()}"))')
 
-    # Classify components into their designated visual block positions
     wires_and_labels = []
-    
-    # Track placed coordinates for each part
     placed_positions = assign_component_positions(circuit.parts)
 
     for part, (px, py) in placed_positions.items():
@@ -349,44 +338,38 @@ def build_complete_schematic(circuit, sch_path):
             p_uuid = str(uuid.uuid4())
             sch_lines.append(f'    (pin "{pnum}" (uuid "{p_uuid}"))')
 
-            # Calculate actual pin connection point in schematic coordinates
-            # Note: in KiCad schematic coordinate system, +Y is downwards!
             p_info = pins_info.get(pnum)
             if p_info:
-                # Pin relative offset
                 pin_dx = p_info["x"]
-                pin_dy = -p_info["y"] # Inverted Y in symbol definitions
+                pin_dy = -p_info["y"]
                 pin_ang = p_info["angle"]
                 pin_len = p_info["length"]
             else:
-                # Fallback for standard 2-pin passives (vertical)
                 pin_dx = 0.0
                 pin_dy = -3.81 if pnum == '1' else 3.81
                 pin_ang = 270 if pnum == '1' else 90
                 pin_len = 2.54
 
-            # Attachment point on the symbol
             conn_x = px + pin_dx
             conn_y = py + pin_dy
 
-            # Stub direction based on pin angle
             stub_len = 5.08
-            if pin_ang == 0:     # Pin pointing Left, wire extends Left
+            if pin_ang == 0:
                 stub_x = conn_x - stub_len
                 stub_y = conn_y
                 lbl_rot = 180
                 lbl_just = "right"
-            elif pin_ang == 180: # Pin pointing Right, wire extends Right
+            elif pin_ang == 180:
                 stub_x = conn_x + stub_len
                 stub_y = conn_y
                 lbl_rot = 0
                 lbl_just = "left"
-            elif pin_ang == 90:  # Pin pointing Down, wire extends Down
+            elif pin_ang == 90:
                 stub_x = conn_x
                 stub_y = conn_y + stub_len
                 lbl_rot = 270
                 lbl_just = "right"
-            elif pin_ang == 270: # Pin pointing Up, wire extends Up
+            elif pin_ang == 270:
                 stub_x = conn_x
                 stub_y = conn_y - stub_len
                 lbl_rot = 90
@@ -397,41 +380,30 @@ def build_complete_schematic(circuit, sch_path):
                 lbl_rot = 0
                 lbl_just = "left"
 
-            # Check net connection
             net = pin.net
             if net and net.name and not net.name.startswith("N$") and not net.name.startswith("NC"):
                 net_name = net.name
                 wire_uuid = str(uuid.uuid4())
                 lbl_uuid = str(uuid.uuid4())
 
-                # Add Wire Stub
                 wires_and_labels.append(
                     f'  (wire (pts (xy {conn_x:.2f} {conn_y:.2f}) (xy {stub_x:.2f} {stub_y:.2f})) (stroke (width 0) (type default)) (uuid "{wire_uuid}"))'
                 )
-
-                # Add Net Label at stub endpoint
                 wires_and_labels.append(
                     f'  (label "{net_name}" (at {stub_x:.2f} {stub_y:.2f} {lbl_rot}) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify {lbl_just})) (uuid "{lbl_uuid}"))'
                 )
 
-        sch_lines.append('  )') # Close symbol instance
+        sch_lines.append('  )')
 
-    # Append all wires and net labels
     sch_lines.extend(wires_and_labels)
-    sch_lines.append(')') # Close kicad_sch
+    sch_lines.append(')')
 
     with open(sch_path, "w", encoding="utf-8") as f:
         f.write("\n".join(sch_lines) + "\n")
     print(f"[KiCad Schematic File] -> {sch_path}")
 
 def assign_component_positions(parts):
-    """
-    Assigns logical X, Y schematic coordinates for all components
-    inside their respective functional subsystem boxes.
-    """
     positions = {}
-    
-    # Subsystem buckets
     pmu_parts = []
     mcu_parts = []
     audio_parts = []
@@ -456,22 +428,11 @@ def assign_component_positions(parts):
         else:
             pmu_parts.append(p)
 
-    # Layout PMU Block (X: 30 - 190, Y: 35 - 135)
     layout_grid(pmu_parts, positions, start_x=35, start_y=40, cols=4, dx=42, dy=28)
-
-    # Layout MCU Block (X: 230 - 390, Y: 35 - 135)
     layout_grid(mcu_parts, positions, start_x=230, start_y=45, cols=3, dx=55, dy=32)
-
-    # Layout Audio Block (X: 30 - 130, Y: 170 - 265)
     layout_grid(audio_parts, positions, start_x=35, start_y=175, cols=3, dx=36, dy=28)
-
-    # Layout IMU Block (X: 160 - 225, Y: 170 - 265)
     layout_grid(imu_parts, positions, start_x=160, start_y=175, cols=2, dx=36, dy=28)
-
-    # Layout Storage Block (X: 255 - 315, Y: 170 - 265)
     layout_grid(storage_parts, positions, start_x=255, start_y=175, cols=2, dx=36, dy=28)
-
-    # Layout UI Block (X: 345 - 395, Y: 170 - 265)
     layout_grid(ui_parts, positions, start_x=345, start_y=175, cols=2, dx=26, dy=22)
 
     return positions

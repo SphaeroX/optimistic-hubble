@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
 """
-Main Schematic Generator & KiCad Export Pipeline for ESP32-C3 Voice Recorder.
+Main Schematic Generator & Dual-Export Pipeline for KiCad & EasyEDA.
 
-Generates a complete, ready-to-open KiCad 8 Project:
-1. xiao_voice_recorder.kicad_pro (KiCad Project file)
-2. xiao_voice_recorder.kicad_sch (Fully wired and labeled schematic)
-3. xiao_voice_recorder.kicad_pcb (PCB layout file)
-4. xiao_voice_recorder.net (KiCad Netlist)
-5. xiao_voice_recorder.xml (XML Netlist)
-6. xiao_voice_recorder_bom.csv (Formatted Bill of Materials)
-7. sym-lib-table & fp-lib-table (Library configuration)
+Generates:
+1. hardware/output/kicad/
+   - xiao_voice_recorder.kicad_pro (KiCad 8 Project)
+   - xiao_voice_recorder.kicad_sch (Fully wired and labeled schematic)
+   - xiao_voice_recorder.kicad_pcb (PCB layout)
+   - xiao_voice_recorder.net (KiCad Netlist)
+   - xiao_voice_recorder.xml (XML Netlist)
+   - xiao_voice_recorder_bom.csv (KiCad BOM)
+   - sym-lib-table & fp-lib-table (Libraries)
+
+2. hardware/output/easyeda/
+   - xiao_voice_recorder_easyeda_import.zip (1-Click EasyEDA Online Import Archive)
+   - xiao_voice_recorder_easyeda.json (EasyEDA Standard JSON Schematic)
+   - xiao_voice_recorder.epro (EasyEDA Pro Project)
+   - xiao_voice_recorder_jlcpcb_bom.csv (SMT Assembly BOM with LCSC C-Numbers)
+   - README_EASYEDA_IMPORT.md (Step-by-Step Import Instructions)
 """
 
 import os
@@ -26,6 +34,8 @@ from hardware.config import (
     KICAD_SYMBOLS_DIR,
     CUSTOM_SYMBOLS_DIR,
     OUTPUT_DIR,
+    KICAD_OUTPUT_DIR,
+    EASYEDA_OUTPUT_DIR,
     FOOTPRINTS,
 )
 
@@ -45,6 +55,7 @@ from hardware.modules.imu_sensor import create_imu_sensor
 from hardware.modules.spi_storage import create_spi_storage
 from hardware.modules.ui_indicators import create_ui_indicators
 from hardware.kicad_project_generator import generate_kicad_project
+from hardware.easyeda_generator import generate_easyeda_output
 
 def build_circuit():
     """Builds the complete multi-subsystem circuit netlist."""
@@ -121,31 +132,44 @@ def build_circuit():
     return nets
 
 def export_artifacts():
-    """Generates and exports all KiCad files and documentation."""
+    """Generates and exports all KiCad and EasyEDA files."""
     circuit = builtins.default_circuit
     project_name = "xiao_voice_recorder"
     
-    netlist_path = os.path.join(OUTPUT_DIR, f"{project_name}.net")
-    xml_path = os.path.join(OUTPUT_DIR, f"{project_name}.xml")
-    bom_path = os.path.join(OUTPUT_DIR, f"{project_name}_bom.csv")
+    # -------------------------------------------------------------------------
+    # 1. Generate KiCad Project Files (hardware/output/kicad/)
+    # -------------------------------------------------------------------------
+    print("\n" + "=" * 30 + " 1. KICAD 8 OUTPUT " + "=" * 30)
+    netlist_path = os.path.join(KICAD_OUTPUT_DIR, f"{project_name}.net")
+    xml_path = os.path.join(KICAD_OUTPUT_DIR, f"{project_name}.xml")
+    bom_path = os.path.join(KICAD_OUTPUT_DIR, f"{project_name}_bom.csv")
 
-    print("\n[Exporting KiCad Netlist] ->", netlist_path)
+    print("[KiCad Netlist] ->", netlist_path)
     generate_netlist(file_=netlist_path)
 
-    print("[Exporting XML Netlist] ->", xml_path)
+    print("[KiCad XML Netlist] ->", xml_path)
     generate_xml(file_=xml_path)
 
-    # Generate Complete KiCad 8 Project (.kicad_pro, .kicad_sch, .kicad_pcb, lib tables)
-    generate_kicad_project(circuit, project_name)
+    generate_kicad_project(circuit, output_dir=KICAD_OUTPUT_DIR, project_name=project_name)
 
-    # Generate Detailed CSV BOM
-    print("[Exporting Custom BOM] ->", bom_path)
+    print("[KiCad BOM] ->", bom_path)
     export_custom_bom(bom_path, circuit)
+
+    # -------------------------------------------------------------------------
+    # 2. Generate EasyEDA Output Files (hardware/output/easyeda/)
+    # -------------------------------------------------------------------------
+    print("\n" + "=" * 30 + " 2. EASYEDA OUTPUT " + "=" * 30)
+    generate_easyeda_output(
+        circuit=circuit,
+        kicad_dir=KICAD_OUTPUT_DIR,
+        easyeda_dir=EASYEDA_OUTPUT_DIR,
+        project_name=project_name
+    )
 
     print("\n" + "=" * 70)
     print("ALL HARDWARE PROJECT ARTIFACTS GENERATED SUCCESSFULLY!")
-    print(f"KiCad Project: {os.path.join(OUTPUT_DIR, f'{project_name}.kicad_pro')}")
-    print(f"Output directory: {OUTPUT_DIR}")
+    print(f"KiCad Project Folder:   {KICAD_OUTPUT_DIR}")
+    print(f"EasyEDA Project Folder: {EASYEDA_OUTPUT_DIR}")
     print("=" * 70)
 
 def export_custom_bom(filepath, circuit):
