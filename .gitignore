@@ -1,4 +1,11 @@
 .pio
 .vscode
 .idea
+__pycache__/
 *.pyc
+*.log
+*.erc
+*_sklib.py
+test_skidl.net
+hardware/.venv/
+.venv/
