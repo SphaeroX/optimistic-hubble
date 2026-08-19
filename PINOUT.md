@@ -30,6 +30,13 @@ This document describes the complete breadboard wiring for connecting **two I2S 
 | | **L/R** | **3V3** | - | 🔴 Red | **Tied to 3.3V: Configures Mic 2 as RIGHT Channel** |
 | **Status LED (Recording Indicator)** | Anode (+) | **D10** | GPIO 10 | 🔴 Red | Long leg of LED connected to D10 |
 | | Kathode (-) | **GND** (via Resistor) | - | ⚫ Black | Short leg connected via 220Ω–330Ω resistor to GND |
+| **Optional: W25Q128 SPI-Flash (16 MB)** | VCC | **3V3** | - | 🔴 Red | 3.3V Power Rail |
+| | GND | **GND** | - | ⚫ Black | Common Ground |
+| | /CS (Chip Select) | **D3** | GPIO 5 | ⚪ White | SPI Chip Select |
+| | CLK / SCK | **D6** | GPIO 8 | 🟤 Brown | Hardware SPI Clock |
+| | DO / MISO | **D8** | GPIO 20 | 🟢 Green | Hardware SPI MISO |
+| | DI / MOSI | **D9** | GPIO 21 | 🟡 Yellow | Hardware SPI MOSI |
+| | /HOLD & /WP | **3V3** | - | 🔴 Red | Tied to 3.3V (or 10k Pull-Up) |
 
 ---
 
@@ -66,16 +73,16 @@ This document describes the complete breadboard wiring for connecting **two I2S 
 ## 3. XIAO ESP32C3 Pinout Diagram
 
 ```
-                       +-------------------+
-                       |   [USB-C Port]    |
-        (GPIO 2)  D0  [ ]                 [ ]  5V       (USB 5V Out)
-        (GPIO 3)  D1  [ ]                 [ ]  GND      (Ground Bus)
-        (GPIO 4)  D2  [ ]                 [ ]  3V3      (3.3V Power Bus)
-        (GPIO 5)  D3  [ ]                 [ ]  D10 / LED (GPIO 10 -> Status LED)
-  (SDA) (GPIO 6)  D4  [ ]                 [ ]  D9       (GPIO 21)
-  (SCL) (GPIO 7)  D5  [ ]                 [ ]  D8       (GPIO 20)
-        (GPIO 8)  D6  [ ]                 [ ]  D7       (GPIO 9 - Boot)
-                       +-------------------+
+                              +-------------------+
+                              |   [USB-C Port]    |
+       (I2S SCK) (GPIO 2) D0 [ ]                 [ ] 5V       (USB 5V Out)
+       (I2S WS)  (GPIO 3) D1 [ ]                 [ ] GND      (Ground Bus)
+       (I2S SD)  (GPIO 4) D2 [ ]                 [ ] 3V3      (3.3V Power Bus)
+       (SPI CS)  (GPIO 5) D3 [ ]                 [ ] D10 / LED (GPIO 10 -> Status LED)
+ (I2C SDA)       (GPIO 6) D4 [ ]                 [ ] D9       (GPIO 21 -> SPI MOSI)
+ (I2C SCL)       (GPIO 7) D5 [ ]                 [ ] D8       (GPIO 20 -> SPI MISO)
+ (SPI SCK)       (GPIO 8) D6 [ ]                 [ ] D7       (GPIO 9 - Boot Button)
+                              +-------------------+
 ```
 
 ---

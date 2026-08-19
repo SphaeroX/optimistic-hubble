@@ -38,6 +38,30 @@ An embedded voice recording and signal processing platform built for the **Seeed
 | **Status LED (Recording Light)**| Anode (+) | **D10** | GPIO 10 | Long leg of LED to D10 |
 | | Kathode (-) | **GND** (via Resistor) | - | Short leg via 220Ω–330Ω resistor to GND |
 
+### Optional Storage Expansion: W25Q128 SPI-Flash (16 MB)
+
+To extend the continuous recording time from ~4 minutes up to **~35 minutes**, an external 16 MB SPI-Flash chip (**Winbond W25Q128JV / W25Q128FV**) can be connected to the remaining free hardware pins:
+
+| W25Q128 Pin | Function | XIAO ESP32C3 Pin | ESP32-C3 GPIO | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **VCC** | 3.3V Power | **3V3** | - | 3.3V Power Rail |
+| **GND** | Ground | **GND** | - | Common Ground Rail |
+| **CS / /CS** | Chip Select | **D3** | GPIO 5 | SPI Slave Select |
+| **CLK / SCK** | SPI Clock | **D6** | GPIO 8 | Hardware SPI Clock |
+| **DO / MISO** | Data Out (MISO) | **D8** | GPIO 20 | Hardware SPI MISO |
+| **DI / MOSI** | Data In (MOSI) | **D9** | GPIO 21 | Hardware SPI MOSI |
+| **/HOLD & /WP** | Hold & Write Protect | **3V3** | - | Tied to 3.3V (or via 10k pull-up) |
+
+#### Storage Capacity & Recording Time Comparison
+
+| Storage Medium | Usable Capacity | Audio Format & Bitrate | Max. Recording Time | Capacity Gain |
+| :--- | :--- | :--- | :--- | :--- |
+| **Internal Flash (Default)** | ~1.92 MB (LittleFS) | 16 kHz Mono ADPCM (8 KB/s) | **~4.1 minutes** (~245 s) | 1× (Baseline) |
+| **W25Q128 SPI-Flash (Expanded)** | **16 MB** (~15.5–16 MB net) | 16 kHz Mono ADPCM (8 KB/s) | **~35.0 minutes** (~2,097 s) | **8.5× Increase** |
+| *W25Q128 (Uncompressed)* | 16 MB | 16 kHz 16-Bit PCM (32 KB/s) | **~8.5 minutes** (~524 s) | 2.1× |
+| *W25Q128 (Telephony)* | 16 MB | 8 kHz Mono ADPCM (4 KB/s) | **~70.0 minutes** (~4,194 s) | 17× (> 1 hour) |
+| *W25Q256 (32 MB Optional)* | 32 MB | 16 kHz Mono ADPCM (8 KB/s) | **~70.0 minutes** (~4,194 s) | 17× |
+
 > Detailed diagrams and notes are available in [PINOUT.md](file:///c:/Users/MGasc/Documents/antigravity/optimistic-hubble/PINOUT.md).
 
 ---
