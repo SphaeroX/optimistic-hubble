@@ -21,10 +21,9 @@ from hardware.config import (
     FOOTPRINTS,
 )
 
-def extract_lib_symbol(sym_filepath, symbol_name):
+def extract_raw_symbol(sym_filepath, symbol_name):
     """
-    Extracts the full raw (symbol "...") definition from a .kicad_sym file
-    to embed inside (lib_symbols ...) in .kicad_sch.
+    Extracts the full raw (symbol "...") definition from a .kicad_sym file.
     """
     if not os.path.exists(sym_filepath):
         return None
@@ -50,6 +49,80 @@ def extract_lib_symbol(sym_filepath, symbol_name):
     if sym_end != -1:
         return content[sym_start:sym_end]
     return None
+
+def flatten_and_resolve_symbol(lib_name, sym_name):
+    """
+    Returns a completely standalone, self-contained KiCad 8 symbol S-expression.
+    If the symbol extends a parent, it inherits the parent's graphic bodies and pins
+    while keeping the child's properties, removing (extends ...) entirely.
+    """
+    sym_file = os.path.join(KICAD_SYMBOLS_DIR, f"{lib_name}.kicad_sym")
+    if not os.path.exists(sym_file):
+        sym_file = os.path.join(CUSTOM_SYMBOLS_DIR, f"{lib_name}.kicad_sym")
+    
+    sym_text = extract_raw_symbol(sym_file, sym_name)
+    if not sym_text:
+        for fn in os.listdir(KICAD_SYMBOLS_DIR):
+            if fn.endswith(".kicad_sym"):
+                t = extract_raw_symbol(os.path.join(KICAD_SYMBOLS_DIR, fn), sym_name)
+                if t:
+                    sym_text = t
+                    sym_file = os.path.join(KICAD_SYMBOLS_DIR, fn)
+                    break
+
+    if not sym_text:
+        return None, {}
+
+    extends_match = re.search(r'\(extends\s+"([^"]+)"\)', sym_text)
+    if not extends_match:
+        # Already standalone
+        sym_text_mod = re.sub(r'\(symbol\s+"[^"]+"', f'(symbol "{lib_name}:{sym_name}"', sym_text, count=1)
+        pins = parse_symbol_pins(sym_text_mod)
+        return sym_text_mod, pins
+
+    # Symbol extends a parent
+    parent_name = extends_match.group(1)
+    parent_text = extract_raw_symbol(sym_file, parent_name)
+    if not parent_text:
+        for fn in os.listdir(KICAD_SYMBOLS_DIR):
+            if fn.endswith(".kicad_sym"):
+                t = extract_raw_symbol(os.path.join(KICAD_SYMBOLS_DIR, fn), parent_name)
+                if t:
+                    parent_text = t
+                    break
+
+    if not parent_text:
+        sym_text_mod = re.sub(r'\(symbol\s+"[^"]+"', f'(symbol "{lib_name}:{sym_name}"', sym_text, count=1)
+        return sym_text_mod, parse_symbol_pins(sym_text)
+
+    # Extract parent sub-symbols (graphics & pins)
+    sub_syms_matches = re.finditer(
+        r'\(symbol\s+"' + re.escape(parent_name) + r'_(\d+_\d+)"(.*?)\n\t\t\)',
+        parent_text,
+        re.DOTALL
+    )
+    
+    flattened_sub_syms = []
+    for m in sub_syms_matches:
+        sub_id = m.group(1)
+        sub_body = m.group(2)
+        flattened_sub_syms.append(f'\t\t(symbol "{lib_name}:{sym_name}_{sub_id}"{sub_body}\n\t\t)')
+
+    # Build standalone child symbol
+    child_clean = re.sub(r'\(extends\s+"[^"]+"\)\s*', '', sym_text)
+    child_clean = re.sub(r'\(symbol\s+"[^"]+"', f'(symbol "{lib_name}:{sym_name}"', child_clean, count=1)
+    
+    child_clean = child_clean.rstrip()
+    if child_clean.endswith(')'):
+        child_clean = child_clean[:-1].rstrip()
+
+    if not re.search(r'\(symbol\s+"[^"]+_\d+_\d+"', child_clean):
+        for ss in flattened_sub_syms:
+            child_clean += f"\n{ss}"
+
+    child_clean += "\n\t)"
+    pins = parse_symbol_pins(child_clean)
+    return child_clean, pins
 
 def parse_symbol_pins(sym_text):
     """
@@ -77,52 +150,6 @@ def parse_symbol_pins(sym_text):
             "length": float(length) if length else 2.54,
         }
     return pins
-
-def get_symbol_and_pins_with_ancestors(lib_name, sym_name, visited=None):
-    """
-    Recursively resolves a symbol and any parent/ancestor symbols it extends,
-    collecting all symbol S-expressions in topological dependency order and merged pins.
-    """
-    if visited is None:
-        visited = set()
-
-    key = f"{lib_name}:{sym_name}"
-    if key in visited:
-        return [], {}
-    visited.add(key)
-
-    sym_file = os.path.join(KICAD_SYMBOLS_DIR, f"{lib_name}.kicad_sym")
-    if not os.path.exists(sym_file):
-        sym_file = os.path.join(CUSTOM_SYMBOLS_DIR, f"{lib_name}.kicad_sym")
-
-    sym_text = extract_lib_symbol(sym_file, sym_name)
-    if not sym_text:
-        for fn in os.listdir(KICAD_SYMBOLS_DIR):
-            if fn.endswith(".kicad_sym"):
-                t = extract_lib_symbol(os.path.join(KICAD_SYMBOLS_DIR, fn), sym_name)
-                if t:
-                    sym_text = t
-                    sym_file = os.path.join(KICAD_SYMBOLS_DIR, fn)
-                    break
-
-    if not sym_text:
-        return [], {}
-
-    symbols_list = []
-    pins = {}
-
-    extends_match = re.search(r'\(extends\s+"([^"]+)"\)', sym_text)
-    if extends_match:
-        parent_name = extends_match.group(1)
-        p_syms, p_pins = get_symbol_and_pins_with_ancestors(lib_name, parent_name, visited)
-        symbols_list.extend(p_syms)
-        pins.update(p_pins)
-
-    symbols_list.append(sym_text)
-    direct_pins = parse_symbol_pins(sym_text)
-    pins.update(direct_pins)
-
-    return symbols_list, pins
 
 def generate_kicad_project(circuit, output_dir=KICAD_OUTPUT_DIR, project_name="xiao_voice_recorder"):
     """
@@ -187,7 +214,7 @@ def generate_kicad_project(circuit, output_dir=KICAD_OUTPUT_DIR, project_name="x
     with open(fp_table_path, "w", encoding="utf-8") as f:
         f.write(fp_table_content)
 
-    # 3. Generate Complete .kicad_sch with Embedded Symbols, Wires, and Net Labels
+    # 3. Generate Complete .kicad_sch with Flattened Self-Contained Symbols
     build_complete_schematic(circuit, sch_path)
 
     # 4. Generate Initial .kicad_pcb
@@ -281,7 +308,7 @@ def build_initial_pcb(project_name, pcb_path):
 
 def build_complete_schematic(circuit, sch_path):
     """
-    Builds a fully wired, annotated, and sectioned KiCad 8 schematic with all parent/child symbols.
+    Builds a fully wired, annotated, and sectioned KiCad 8 schematic with flattened self-contained symbols.
     """
     sch_lines = [
         '(kicad_sch',
@@ -300,27 +327,21 @@ def build_complete_schematic(circuit, sch_path):
         '  (lib_symbols'
     ]
 
-    sym_cache = {}
     sym_pin_cache = {}
     embedded_symbols = []
+    seen_symbols = set()
 
     for part in circuit.parts:
         lib_name = getattr(part, 'lib', None) or getattr(part, 'library', 'Device')
         sym_name = getattr(part, 'name', part.ref)
-
         key = f"{lib_name}:{sym_name}"
-        if key not in sym_pin_cache:
-            syms_chain, pins = get_symbol_and_pins_with_ancestors(lib_name, sym_name)
+
+        if key not in seen_symbols:
+            seen_symbols.add(key)
+            flat_sym, pins = flatten_and_resolve_symbol(lib_name, sym_name)
             sym_pin_cache[key] = pins
-            
-            for s_txt in syms_chain:
-                # Extract symbol identifier to avoid duplicates
-                sym_id_match = re.search(r'\(symbol "([^"]+)"', s_txt)
-                if sym_id_match:
-                    s_id = sym_id_match.group(1)
-                    if s_id not in sym_cache:
-                        sym_cache[s_id] = True
-                        embedded_symbols.append(s_txt)
+            if flat_sym:
+                embedded_symbols.append(flat_sym)
 
     for s_txt in embedded_symbols:
         sch_lines.append(s_txt)
