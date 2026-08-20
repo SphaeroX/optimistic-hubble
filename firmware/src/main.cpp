@@ -48,7 +48,7 @@ void startActiveRecording() {
     imu.setPowerMode(true);
 
     // 3. Start Recording Clip
-    uint16_t nextId = storage.getClipCount() + 1;
+    uint16_t nextId = storage.getNextClipId();
     recorder.startRecording(nextId);
     ble.updateState(STATE_RECORDING);
 
@@ -61,6 +61,7 @@ void handleStopAndSave() {
     // Stop I2S to save microphone power
     stereoMic.stop();
 
+    storage.refresh();
     size_t totalClips = storage.getClipCount();
     uint16_t clipId = recorder.getCurrentClipId();
 
@@ -82,8 +83,9 @@ void setup() {
     printBanner();
     Serial.printf("[SYSTEM] Wake-up Cause: %s\n", power.getWakeupReasonString());
 
-    // Configure Boot Button pin
+    // Configure Hardware Pins
     pinMode(PIN_BOOT_BTN, INPUT_PULLUP);
+    pinMode(PIN_IMU_INT, INPUT_PULLDOWN);
 
     // 2. Initialize I2C & IMU
     I2cScanner::begin(PIN_I2C_SDA, PIN_I2C_SCL, I2C_FREQUENCY);

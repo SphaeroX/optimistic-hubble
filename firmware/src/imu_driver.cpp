@@ -114,6 +114,11 @@ bool ImuDriver::tryInitLsm6ds(uint8_t addr) {
     }
 
     _chipId = id;
+    // Clear any previous interrupt configuration
+    writeRegister(LSM6DS_REG_TAP_CFG, 0x00);
+    writeRegister(LSM6DS_REG_MD1_CFG, 0x00);
+    writeRegister(LSM6DS_REG_CTRL6_C, 0x00); // High-performance mode
+
     // Set Accel: 104 Hz ODR, +/- 2g (0x40)
     writeRegister(LSM6DS_REG_CTRL1_XL, 0x40);
     delay(10);
@@ -264,8 +269,8 @@ bool ImuDriver::configureLowPowerWakeup(float thresholdG) {
         writeRegister(LSM6DS_REG_WAKE_UP_THS, ths);
         writeRegister(LSM6DS_REG_WAKE_UP_DUR, 0x00); // Instant pulse
 
-        // 4. Enable interrupt logic and route to INT1
-        writeRegister(LSM6DS_REG_TAP_CFG, 0x80); // INTERRUPTS_ENABLE = 1
+        // 4. Enable interrupt logic (latched mode) and route to INT1
+        writeRegister(LSM6DS_REG_TAP_CFG, 0x81); // INTERRUPTS_ENABLE = 1, LIR = 1 (latched interrupt)
         writeRegister(LSM6DS_REG_MD1_CFG, 0x20); // INT1_WU = 1 (Wake-Up routed to INT1)
 
         Serial.printf("[IMU] LSM6DS configured for Low-Power Wake-up (~6 uA). Threshold: %.2f g (reg=0x%02X)\n", 
@@ -328,18 +333,23 @@ bool ImuDriver::setPowerMode(bool active) {
     if (active) {
         // Restore high-performance 104 Hz sampling mode for active operation
         if (_type == IMU_TYPE_LSM6DS) {
+            writeRegister(LSM6DS_REG_TAP_CFG, 0x00);
+            writeRegister(LSM6DS_REG_MD1_CFG, 0x00);
+            writeRegister(LSM6DS_REG_CTRL6_C, 0x00); // High-performance mode
             writeRegister(LSM6DS_REG_CTRL1_XL, 0x40); // 104 Hz, +/- 2g
             delay(10);
             writeRegister(LSM6DS_REG_CTRL2_G, 0x4C);  // 104 Hz Gyro
             delay(10);
             return true;
         } else if (_type == IMU_TYPE_BMI160) {
+            writeRegister(BMI160_REG_INT_EN_0, 0x00);
             writeRegister(BMI160_REG_CMD, 0x11); // Accel normal mode
             delay(10);
             writeRegister(BMI160_REG_CMD, 0x15); // Gyro normal mode
             delay(50);
             return true;
         } else if (_type == IMU_TYPE_MPU6050) {
+            writeRegister(MPU_REG_INT_ENABLE, 0x00);
             writeRegister(MPU_REG_PWR_MGMT_1, 0x00);
             writeRegister(MPU_REG_PWR_MGMT_2, 0x00);
             delay(10);

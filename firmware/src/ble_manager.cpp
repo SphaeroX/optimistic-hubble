@@ -34,54 +34,59 @@ BleCommand BleManager::getPendingCommand() {
 }
 
 bool BleManager::begin(const char* deviceName) {
-    NimBLEDevice::init(deviceName);
-    NimBLEDevice::setPower(ESP_PWR_LVL_P9); // +9 dBm for strong stable signal
+    if (!NimBLEDevice::getInitialized()) {
+        NimBLEDevice::init(deviceName);
+        NimBLEDevice::setPower(ESP_PWR_LVL_P9); // +9 dBm for strong stable signal
 
-    _pServer = NimBLEDevice::createServer();
-    _pServer->setCallbacks(this);
+        _pServer = NimBLEDevice::createServer();
+        _pServer->setCallbacks(this);
 
-    _pService = _pServer->createService(BLE_SERVICE_UUID);
+        _pService = _pServer->createService(BLE_SERVICE_UUID);
 
-    // State / Control Characteristic: Read, Write, Notify
-    _pCharState = _pService->createCharacteristic(
-        BLE_CHAR_STATE_UUID,
-        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY
-    );
-    _pCharState->setCallbacks(this);
+        // State / Control Characteristic: Read, Write, Notify
+        _pCharState = _pService->createCharacteristic(
+            BLE_CHAR_STATE_UUID,
+            NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY
+        );
+        _pCharState->setCallbacks(this);
 
-    // Audio Data Stream Characteristic: Notify
-    _pCharAudio = _pService->createCharacteristic(
-        BLE_CHAR_AUDIO_UUID,
-        NIMBLE_PROPERTY::NOTIFY
-    );
+        // Audio Data Stream Characteristic: Notify
+        _pCharAudio = _pService->createCharacteristic(
+            BLE_CHAR_AUDIO_UUID,
+            NIMBLE_PROPERTY::NOTIFY
+        );
 
-    // Tap Event Characteristic: Notify
-    _pCharTap = _pService->createCharacteristic(
-        BLE_CHAR_TAP_UUID,
-        NIMBLE_PROPERTY::NOTIFY
-    );
+        // Tap Event Characteristic: Notify
+        _pCharTap = _pService->createCharacteristic(
+            BLE_CHAR_TAP_UUID,
+            NIMBLE_PROPERTY::NOTIFY
+        );
 
-    // Command Characteristic: Write
-    _pCharCmd = _pService->createCharacteristic(
-        BLE_CHAR_CMD_UUID,
-        NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
-    );
-    _pCharCmd->setCallbacks(this);
+        // Command Characteristic: Write
+        _pCharCmd = _pService->createCharacteristic(
+            BLE_CHAR_CMD_UUID,
+            NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
+        );
+        _pCharCmd->setCallbacks(this);
 
-    // Set initial values
-    uint8_t initPayload[7] = {0, 0, 0, 0, 0, (uint8_t)(AUDIO_SAMPLE_RATE & 0xFF), (uint8_t)((AUDIO_SAMPLE_RATE >> 8) & 0xFF)};
-    _pCharState->setValue(initPayload, sizeof(initPayload));
+        // Set initial values
+        uint8_t initPayload[7] = {0, 0, 0, 0, 0, (uint8_t)(AUDIO_SAMPLE_RATE & 0xFF), (uint8_t)((AUDIO_SAMPLE_RATE >> 8) & 0xFF)};
+        _pCharState->setValue(initPayload, sizeof(initPayload));
 
-    _pService->start();
+        _pService->start();
 
-    // Configure Advertising for maximum Windows compatibility
+        // Configure Advertising for maximum Windows compatibility
+        NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
+        pAdvertising->addServiceUUID(BLE_SERVICE_UUID);
+        pAdvertising->setScanResponse(true);
+        pAdvertising->setMinPreferred(0x10); // ~20ms interval
+        pAdvertising->setMaxPreferred(0x20); // ~40ms interval
+    }
+
     NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(BLE_SERVICE_UUID);
-    pAdvertising->setScanResponse(true);
-    pAdvertising->setMinPreferred(0x10); // ~20ms interval
-    pAdvertising->setMaxPreferred(0x20); // ~40ms interval
-    
-    pAdvertising->start();
+    if (pAdvertising) {
+        pAdvertising->start();
+    }
     Serial.printf("[BLE] Server active. Advertising as \"%s\"...\n", deviceName);
 
     return true;
@@ -89,16 +94,12 @@ bool BleManager::begin(const char* deviceName) {
 
 bool BleManager::stop() {
     if (NimBLEDevice::getInitialized()) {
-        NimBLEDevice::getAdvertising()->stop();
-        NimBLEDevice::deinit(true);
+        NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
+        if (pAdvertising) {
+            pAdvertising->stop();
+        }
     }
     _connected = false;
-    _pServer = nullptr;
-    _pService = nullptr;
-    _pCharState = nullptr;
-    _pCharAudio = nullptr;
-    _pCharTap = nullptr;
-    _pCharCmd = nullptr;
     return true;
 }
 

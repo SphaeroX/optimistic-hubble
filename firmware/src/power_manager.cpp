@@ -76,11 +76,11 @@ void PowerManager::enterDeepSleep(ImuDriver& imu, float shockThresholdG) {
     delay(20);
 
     // 4. Configure ESP32-C3 RTC GPIO wakeup on IMU INT pin (XIAO D3 = GPIO 5, Active High)
+    pinMode(PIN_IMU_INT, INPUT_PULLDOWN);
     esp_deep_sleep_enable_gpio_wakeup(1ULL << PIN_IMU_INT, ESP_GPIO_WAKEUP_GPIO_HIGH);
 
-    // Also enable Boot button wakeup (GPIO 9, Active Low)
-    esp_deep_sleep_enable_gpio_wakeup(1ULL << PIN_BOOT_BTN, ESP_GPIO_WAKEUP_GPIO_LOW);
-
     // 5. Enter Deep Sleep (draws ~5-8 uA)
+    Serial.println(F("[POWER] Going to deep sleep now..."));
+    Serial.flush();
     esp_deep_sleep_start();
 }

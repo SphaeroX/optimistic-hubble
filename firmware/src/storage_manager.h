@@ -24,6 +24,8 @@ public:
     bool clearAll();
 
     size_t getClipCount();
+    uint16_t getNextClipId() const { return _nextClipId; }
+    void refresh() { scanExistingClips(); }
     size_t getUsedBytes();
     size_t getTotalBytes();
 
