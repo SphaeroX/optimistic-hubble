@@ -43,7 +43,7 @@
 // ============================================================================
 // Tap & Shock Detection Parameters
 // ============================================================================
-#define TAP_JERK_THRESHOLD_G    1.3f   // Shock delta acceleration threshold in g
+#define TAP_JERK_THRESHOLD_G    0.8f   // Shock delta acceleration threshold in g
 #define TAP_DEBOUNCE_MS         500    // Minimum time between tap triggers (ms)
 
 // ============================================================================
@@ -73,6 +73,9 @@ enum DeviceState : uint8_t {
     STATE_SLEEPING = 5
 };
 
+// Minimum free LittleFS Flash storage margin to prevent overflow (e.g., 24 KB)
+#define MIN_FREE_STORAGE_BYTES  24576UL
+
 // Remote Control Commands (via BLE)
 enum BleCommand : uint8_t {
     CMD_NONE = 0,
@@ -80,5 +83,7 @@ enum BleCommand : uint8_t {
     CMD_STOP_WIFI = 2,
     CMD_ENTER_SLEEP = 3,
     CMD_START_RECORDING = 4,
-    CMD_STOP_RECORDING = 5
+    CMD_STOP_RECORDING = 5,
+    CMD_CLEAR_STORAGE = 6
 };
+

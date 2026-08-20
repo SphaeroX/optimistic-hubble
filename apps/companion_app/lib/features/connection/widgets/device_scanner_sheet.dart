@@ -127,15 +127,17 @@ class DeviceScannerSheet extends StatelessWidget {
                           style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
                         ),
                         trailing: ElevatedButton(
-                          onPressed: () {
-                            bleService.connect(dev);
-                            Navigator.of(context).pop();
-                          },
+                          onPressed: bleService.isConnecting
+                              ? null
+                              : () {
+                                  bleService.connect(dev);
+                                  Navigator.of(context).pop();
+                                },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: dev.isXiaoDevice ? AppTheme.primaryCyan : AppTheme.cardDark,
                             foregroundColor: dev.isXiaoDevice ? Colors.black : Colors.white,
                           ),
-                          child: const Text('Connect'),
+                          child: Text(bleService.isConnecting && bleService.connectedDevice?.id == dev.id ? 'Connecting...' : 'Connect'),
                         ),
                       );
                     },

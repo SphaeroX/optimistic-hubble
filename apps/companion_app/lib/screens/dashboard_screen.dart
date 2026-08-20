@@ -91,10 +91,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Text(
                       isConnected
                           ? (widget.bleService.connectedDevice?.name ?? 'Connected')
-                          : 'Disconnected (No Device)',
+                          : (widget.bleService.isConnecting ? 'Connecting...' : 'Disconnected (No Device)'),
                       style: TextStyle(
                         fontSize: 11,
-                        color: isConnected ? AppTheme.accentGreen : AppTheme.textMuted,
+                        color: isConnected
+                            ? AppTheme.accentGreen
+                            : (widget.bleService.isConnecting ? AppTheme.accentOrange : AppTheme.textMuted),
                       ),
                     ),
                   ],
@@ -113,25 +115,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                 child: ActionChip(
-                  avatar: Icon(
-                    isConnected ? Icons.bluetooth_connected : Icons.bluetooth_searching,
-                    size: 16,
-                    color: isConnected ? AppTheme.accentGreen : AppTheme.primaryCyan,
-                  ),
+                  avatar: widget.bleService.isConnecting
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentOrange),
+                        )
+                      : Icon(
+                          isConnected ? Icons.bluetooth_connected : Icons.bluetooth_searching,
+                          size: 16,
+                          color: isConnected ? AppTheme.accentGreen : AppTheme.primaryCyan,
+                        ),
                   label: Text(
-                    isConnected ? 'Connected' : 'Scan BLE',
+                    isConnected ? 'Connected' : (widget.bleService.isConnecting ? 'Connecting...' : 'Scan BLE'),
                     style: TextStyle(
-                      color: isConnected ? AppTheme.accentGreen : AppTheme.primaryCyan,
+                      color: isConnected
+                          ? AppTheme.accentGreen
+                          : (widget.bleService.isConnecting ? AppTheme.accentOrange : AppTheme.primaryCyan),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   backgroundColor: AppTheme.cardDark,
                   side: BorderSide(
-                    color: isConnected ? AppTheme.accentGreen : AppTheme.primaryCyan,
+                    color: isConnected
+                        ? AppTheme.accentGreen
+                        : (widget.bleService.isConnecting ? AppTheme.accentOrange : AppTheme.primaryCyan),
                   ),
                   onPressed: isConnected
                       ? () => widget.bleService.disconnect()
-                      : _openDeviceScanner,
+                      : (widget.bleService.isConnecting ? null : _openDeviceScanner),
                 ),
               ),
               const SizedBox(width: 8),

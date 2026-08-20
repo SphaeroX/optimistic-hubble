@@ -110,6 +110,13 @@ bool AudioRecorder::startRecording(uint16_t clipId) {
         stopRecording();
     }
 
+    size_t freeFlash = LittleFS.totalBytes() - LittleFS.usedBytes();
+    if (freeFlash < MIN_FREE_STORAGE_BYTES) {
+        Serial.printf("[RECORDER] Error: Flash full! Free: %u B < limit %u B\n", (unsigned int)freeFlash, (unsigned int)MIN_FREE_STORAGE_BYTES);
+        blinkLed(4, 50);
+        return false;
+    }
+
     _currentClipId = clipId;
     _totalCompressedBytesWritten = 0;
     _totalSamplesRecorded = 0;
@@ -208,7 +215,7 @@ bool AudioRecorder::processRecording(I2sMicDriver& mic) {
 
     // Safety checks: Flash limit or 5-minute timeout
     size_t freeFlash = LittleFS.totalBytes() - LittleFS.usedBytes();
-    if (freeFlash < 20480 || (millis() - _recordStartTime >= 300000UL)) {
+    if (freeFlash < MIN_FREE_STORAGE_BYTES || (millis() - _recordStartTime >= 300000UL)) {
         Serial.println(F("[RECORDER] Storage limit reached. Stopping."));
         stopRecording();
         return false;

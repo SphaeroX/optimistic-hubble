@@ -56,7 +56,8 @@ enum BleCommand {
   stopWifi(2),
   enterSleep(3),
   startRecording(4),
-  stopRecording(5);
+  stopRecording(5),
+  clearStorage(6);
 
   final int rawValue;
   const BleCommand(this.rawValue);

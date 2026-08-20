@@ -138,6 +138,7 @@ class _SettingsTabState extends State<SettingsTab> {
                     ),
                     ElevatedButton.icon(
                       onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
                         final confirmed = await showDialog<bool>(
                           context: context,
                           builder: (ctx) => AlertDialog(
@@ -154,7 +155,13 @@ class _SettingsTabState extends State<SettingsTab> {
                           ),
                         );
                         if (confirmed == true) {
+                          widget.bleService.sendCommand(BleCommand.clearStorage);
                           await widget.syncManager.clearDeviceStorage();
+                          if (mounted) {
+                            messenger.showSnackBar(
+                              const SnackBar(content: Text('Flash format command sent successfully.')),
+                            );
+                          }
                         }
                       },
                       icon: const Icon(Icons.delete_forever, color: Colors.white),

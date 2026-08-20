@@ -220,6 +220,9 @@ class BleConnectionService extends ChangeNotifier {
         _deviceState = DeviceState.sleeping;
         _statusMessage = 'Device entering deep sleep';
         break;
+      case BleCommand.clearStorage:
+        _statusMessage = 'Flash storage cleared';
+        break;
       case BleCommand.none:
         break;
     }

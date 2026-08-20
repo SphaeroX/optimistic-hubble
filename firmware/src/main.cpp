@@ -19,6 +19,7 @@ static StorageManager storage;
 static BleManager ble;
 static WifiServerManager wifiServer(storage);
 static PowerManager power;
+static uint16_t totalTapEvents = 0;
 
 static unsigned long lastTelemetryTime = 0;
 static const unsigned long TELEMETRY_INTERVAL_MS = 250;
@@ -148,6 +149,7 @@ void loop() {
             if (imu.readSensorData(imuData)) {
                 float shock = 0.0f;
                 if (tapDetector.update(imuData, &shock)) {
+                    totalTapEvents++;
                     Serial.printf("\n[TAP DETECTED] Stop trigger! Shock: %.2f g\n", shock);
                     ble.notifyTap(shock);
                     handleStopAndSave();
@@ -202,6 +204,13 @@ void loop() {
                 handleStopAndSave();
                 return;
 
+            case CMD_CLEAR_STORAGE:
+                Serial.println(F("[BLE CMD] Clearing all audio clips from Flash..."));
+                storage.clearAll();
+                storage.refresh();
+                ble.updateState(STATE_IDLE);
+                break;
+
             default:
                 break;
         }
@@ -247,6 +256,7 @@ void loop() {
         if (imu.readSensorData(imuData)) {
             float shock = 0.0f;
             if (tapDetector.update(imuData, &shock)) {
+                totalTapEvents++;
                 Serial.printf("\n[TAP DETECTED] Start trigger! Shock: %.2f g -> RECORDING...\n", shock);
                 ble.notifyTap(shock);
                 startActiveRecording();
@@ -266,7 +276,7 @@ void loop() {
         }
     }
 
-    // 7. Periodic Telemetry
+    // 7. Periodic Telemetry (Serial + BLE Real-Time Stream)
     if (now - lastTelemetryTime >= TELEMETRY_INTERVAL_MS) {
         lastTelemetryTime = now;
 
@@ -275,5 +285,36 @@ void loop() {
                       wifiServer.isActive() ? "ACTIVE " : "OFF    ",
                       storage.getClipCount(),
                       (unsigned int)(millis() / 1000));
+
+        if (ble.isConnected()) {
+            ImuMetricData imuMetrics{};
+            bool hasImu = imu.readSensorData(imuMetrics);
+            float mag = hasImu 
+                ? sqrtf(imuMetrics.accelX_g * imuMetrics.accelX_g + 
+                        imuMetrics.accelY_g * imuMetrics.accelY_g + 
+                        imuMetrics.accelZ_g * imuMetrics.accelZ_g)
+                : 1.0f;
+
+            DeviceState curState = recorder.isRecording() ? STATE_RECORDING : 
+                                   (wifiServer.isActive() ? STATE_WIFI_ACTIVE : STATE_IDLE);
+
+            ble.sendTelemetry(
+                curState,
+                recorder.isRecording() ? recorder.getRecordedBytes() : 0,
+                AUDIO_SAMPLE_RATE,
+                4180, // 4.18V USB-C / LiPo nominal
+                98,   // 98%
+                true, // USB Powered
+                ESP.getFreeHeap(),
+                storage.getUsedBytes(),
+                storage.getTotalBytes(),
+                storage.getClipCount(),
+                (int16_t)(imuMetrics.accelX_g * 1000.0f),
+                (int16_t)(imuMetrics.accelY_g * 1000.0f),
+                (int16_t)(imuMetrics.accelZ_g * 1000.0f),
+                (uint16_t)(mag * 1000.0f),
+                totalTapEvents
+            );
+        }
     }
 }

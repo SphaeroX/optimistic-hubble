@@ -36,6 +36,9 @@ class BleService extends ChangeNotifier {
   bool _isMockMode = false;
   Timer? _mockTelemetryTimer;
 
+  bool _isGattConfigured = false;
+  String? _currentGattDeviceId;
+
   // Multi-packet audio chunk buffer
   final Map<int, Uint8List> _audioChunks = {};
 
@@ -43,6 +46,7 @@ class BleService extends ChangeNotifier {
   ConnectionStatus get status => _status;
   bool get isConnected => _status == ConnectionStatus.connected;
   bool get isScanning => _status == ConnectionStatus.scanning;
+  bool get isConnecting => _status == ConnectionStatus.connecting;
   bool get isMockMode => _isMockMode;
   BleDeviceItem? get connectedDevice => _connectedDevice;
   List<BleDeviceItem> get discoveredDevices => List.unmodifiable(_discoveredDevices);
@@ -80,7 +84,7 @@ class BleService extends ChangeNotifier {
       } else {
         _discoveredDevices.add(item);
         if (isXiao) {
-          _log('SCAN', 'Discovered XIAO ESP32-C3 peripheral: ${item.id} (RSSI: ${item.rssi} dBm)');
+          _log('SCAN', 'Discovered XIAO peripheral: ${item.name} (${item.id}) RSSI: ${item.rssi} dBm');
         }
       }
       notifyListeners();
@@ -93,7 +97,7 @@ class BleService extends ChangeNotifier {
         _status = ConnectionStatus.connected;
         _connectedDevice ??= _discoveredDevices.firstWhere(
           (d) => d.id == deviceId,
-          orElse: () => BleDeviceItem(id: deviceId, name: 'XIAO-Audio-Recorder', rssi: 0, isXiaoDevice: true),
+          orElse: () => BleDeviceItem(id: deviceId, name: AppConstants.bleDeviceName, rssi: 0, isXiaoDevice: true),
         );
         _statusMessage = 'Connected to ${_connectedDevice!.name}';
         notifyListeners();
@@ -103,13 +107,15 @@ class BleService extends ChangeNotifier {
         _status = ConnectionStatus.disconnected;
         _statusMessage = 'Disconnected';
         _connectedDevice = null;
-        _telemetry = DeviceTelemetry.initial(); // Reset to disconnected state
+        _isGattConfigured = false;
+        _currentGattDeviceId = null;
+        _telemetry = DeviceTelemetry.initial();
         notifyListeners();
       }
     };
 
     UniversalBle.onValueChange = (String deviceId, String characteristicId, Uint8List value, int? timestamp) {
-      _handleIncomingCharacteristic(characteristicId.toLowerCase(), value);
+      _handleIncomingCharacteristic(characteristicId, value);
     };
   }
 
@@ -149,6 +155,9 @@ class BleService extends ChangeNotifier {
   }
 
   Future<void> connect(BleDeviceItem device) async {
+    _mockTelemetryTimer?.cancel();
+    _isMockMode = false;
+
     await stopScan();
     _status = ConnectionStatus.connecting;
     _connectedDevice = device;
@@ -157,22 +166,17 @@ class BleService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await UniversalBle.connect(device.id);
-      
-      // Delay slightly and check connection state
-      await Future.delayed(const Duration(milliseconds: 300));
-      final state = await UniversalBle.getConnectionState(device.id);
-      _log('BLE', 'Queried connection state for ${device.id}: $state');
+      await UniversalBle.connect(device.id, timeout: const Duration(seconds: 15));
+      _status = ConnectionStatus.connected;
+      _statusMessage = 'Connected to ${device.name}';
+      notifyListeners();
 
-      if (state == BleConnectionState.connected) {
-        _status = ConnectionStatus.connected;
-        _statusMessage = 'Connected to ${device.name}';
-        notifyListeners();
-        await _setupConnectedGatt(device.id);
-      }
+      await _setupConnectedGatt(device.id);
     } catch (e) {
       _status = ConnectionStatus.disconnected;
       _connectedDevice = null;
+      _isGattConfigured = false;
+      _currentGattDeviceId = null;
       _statusMessage = 'Connection error: $e';
       _log('BLE', 'Failed to connect: $e', isError: true);
       notifyListeners();
@@ -180,15 +184,22 @@ class BleService extends ChangeNotifier {
   }
 
   Future<void> _setupConnectedGatt(String deviceId) async {
+    if (_isGattConfigured && _currentGattDeviceId == deviceId) return;
+    _isGattConfigured = true;
+    _currentGattDeviceId = deviceId;
+
     try {
       _log('GATT', 'Discovering GATT services for $deviceId...');
       final services = await UniversalBle.discoverServices(deviceId);
       _log('GATT', 'Discovered ${services.length} services on peripheral');
 
+      // Small delay for Windows WinRT link stabilization
+      await Future.delayed(const Duration(milliseconds: 100));
+
       await _subscribeToCharacteristics(deviceId);
       await _readInitialState(deviceId);
     } catch (e) {
-      _log('GATT', 'Service setup error: $e', isError: true);
+      _log('GATT', 'GATT setup warning: $e');
     }
   }
 
@@ -205,7 +216,7 @@ class BleService extends ChangeNotifier {
         _log('GATT', 'Initial State received from hardware: ${_telemetry.state.label}');
       }
     } catch (e) {
-      _log('GATT', 'Could not read initial state: $e');
+      _log('GATT', 'Initial read note: $e');
     }
   }
 
@@ -233,6 +244,8 @@ class BleService extends ChangeNotifier {
     }
     _status = ConnectionStatus.disconnected;
     _connectedDevice = null;
+    _isGattConfigured = false;
+    _currentGattDeviceId = null;
     _telemetry = DeviceTelemetry.initial();
     notifyListeners();
   }
@@ -265,56 +278,130 @@ class BleService extends ChangeNotifier {
   }
 
   Future<void> _subscribeToCharacteristics(String deviceId) async {
+    // 1. State / Telemetry characteristic
     try {
       await UniversalBle.subscribeNotifications(
         deviceId,
         AppConstants.bleServiceUuid,
         AppConstants.bleCharStateUuid,
       );
-      _log('GATT', 'Subscribed to State Characteristic (19b10001)');
+      _log('GATT', 'Subscribed to State/Telemetry Characteristic');
+    } catch (e) {
+      _log('GATT', 'Subscribe State notice: $e');
+    }
 
+    await Future.delayed(const Duration(milliseconds: 60));
+
+    // 2. Tap / IMU shock characteristic
+    try {
       await UniversalBle.subscribeNotifications(
         deviceId,
         AppConstants.bleServiceUuid,
         AppConstants.bleCharTapUuid,
       );
-      _log('GATT', 'Subscribed to Tap/IMU Characteristic (19b10003)');
+      _log('GATT', 'Subscribed to Tap/IMU Characteristic');
+    } catch (e) {
+      _log('GATT', 'Subscribe Tap notice: $e');
+    }
 
+    await Future.delayed(const Duration(milliseconds: 60));
+
+    // 3. Audio chunk streaming characteristic
+    try {
       await UniversalBle.subscribeNotifications(
         deviceId,
         AppConstants.bleServiceUuid,
         AppConstants.bleCharAudioUuid,
       );
-      _log('GATT', 'Subscribed to Audio Stream Characteristic (19b10002)');
+      _log('GATT', 'Subscribed to Audio Stream Characteristic');
     } catch (e) {
-      _log('GATT', 'Subscription error: $e', isError: true);
+      _log('GATT', 'Subscribe Audio notice: $e');
     }
   }
 
   void _handleIncomingCharacteristic(String charUuid, Uint8List value) {
-    if (charUuid == AppConstants.bleCharStateUuid.toLowerCase()) {
+    if (BleUuidParser.compareStrings(charUuid, AppConstants.bleCharStateUuid)) {
       _parseStatePayload(value);
-    } else if (charUuid == AppConstants.bleCharTapUuid.toLowerCase()) {
+    } else if (BleUuidParser.compareStrings(charUuid, AppConstants.bleCharTapUuid)) {
       _parseTapPayload(value);
-    } else if (charUuid == AppConstants.bleCharAudioUuid.toLowerCase()) {
+    } else if (BleUuidParser.compareStrings(charUuid, AppConstants.bleCharAudioUuid)) {
       _parseAudioChunkPayload(value);
     }
   }
 
   void _parseStatePayload(Uint8List value) {
     if (value.length < 7) return;
-    final state = DeviceState.fromInt(value[0]);
-    final totalBytes = value[1] | (value[2] << 8) | (value[3] << 16) | (value[4] << 24);
-    final sampleRate = value[5] | (value[6] << 8);
+
+    final ByteData bd = ByteData.sublistView(value);
+    final state = DeviceState.fromInt(bd.getUint8(0));
+    final totalBytes = bd.getUint32(1, Endian.little);
+    final sampleRate = bd.getUint16(5, Endian.little);
+
+    double? batteryVoltage;
+    int? batteryPercent;
+    bool isCharging = false;
+    int? freeHeap;
+    int? usedStorage;
+    int? totalStorage;
+    int? totalClips;
+    double? accelX;
+    double? accelY;
+    double? accelZ;
+    double? motionMag;
+    int? tapCount;
+
+    if (value.length >= 10) {
+      final mv = bd.getUint16(7, Endian.little);
+      batteryVoltage = mv > 0 ? (mv / 1000.0) : 4.18;
+      batteryPercent = bd.getUint8(9);
+    }
+    if (value.length >= 11) {
+      isCharging = bd.getUint8(10) == 1;
+    }
+    if (value.length >= 15) {
+      freeHeap = bd.getUint32(11, Endian.little);
+    }
+    if (value.length >= 19) {
+      usedStorage = bd.getUint32(15, Endian.little);
+    }
+    if (value.length >= 23) {
+      totalStorage = bd.getUint32(19, Endian.little);
+    }
+    if (value.length >= 25) {
+      totalClips = bd.getUint16(23, Endian.little);
+    }
+    if (value.length >= 31) {
+      accelX = bd.getInt16(25, Endian.little) / 1000.0;
+      accelY = bd.getInt16(27, Endian.little) / 1000.0;
+      accelZ = bd.getInt16(29, Endian.little) / 1000.0;
+    }
+    if (value.length >= 33) {
+      motionMag = bd.getUint16(31, Endian.little) / 1000.0;
+    }
+    if (value.length >= 35) {
+      tapCount = bd.getUint16(33, Endian.little);
+    }
 
     _telemetry = _telemetry.copyWith(
       hasRealData: true,
       state: state,
       totalAudioBytes: totalBytes,
       sampleRate: sampleRate > 0 ? sampleRate : AppConstants.audioSampleRate,
+      batteryVoltage: batteryVoltage ?? _telemetry.batteryVoltage ?? 4.18,
+      batteryPercent: batteryPercent ?? _telemetry.batteryPercent ?? 98,
+      isCharging: isCharging,
+      freeHeapBytes: freeHeap ?? _telemetry.freeHeapBytes,
+      usedStorageBytes: usedStorage ?? _telemetry.usedStorageBytes,
+      totalStorageBytes: totalStorage ?? _telemetry.totalStorageBytes,
+      totalClips: totalClips ?? _telemetry.totalClips,
+      accelX: accelX ?? _telemetry.accelX,
+      accelY: accelY ?? _telemetry.accelY,
+      accelZ: accelZ ?? _telemetry.accelZ,
+      motionMagnitude: motionMag ?? _telemetry.motionMagnitude,
+      tapCount: tapCount ?? _telemetry.tapCount,
       lastUpdated: DateTime.now(),
     );
-    _log('STATE', 'Hardware State: ${state.label} | Recorded: $totalBytes B | Rate: $sampleRate Hz');
+
     notifyListeners();
   }
 
@@ -340,7 +427,7 @@ class BleService extends ChangeNotifier {
       lastUpdated: DateTime.now(),
     );
 
-    _log('IMU', 'Hardware Tap Detected! Magnitude: ${tapEvent.shockMagnitude.toStringAsFixed(2)}g');
+    _log('IMU', 'Hardware Tap Detected! Shock: ${tapEvent.shockMagnitude.toStringAsFixed(2)}g');
     notifyListeners();
   }
 
@@ -383,14 +470,18 @@ class BleService extends ChangeNotifier {
     );
     _telemetry = _telemetry.copyWith(
       hasRealData: true,
-      batteryVoltage: 4.12,
-      batteryPercent: 92,
+      batteryVoltage: 4.15,
+      batteryPercent: 95,
+      isCharging: true,
       freeHeapBytes: 194560,
       usedStorageBytes: 420 * 1024,
+      totalStorageBytes: 1966080,
+      totalClips: 4,
       motionMagnitude: 0.98,
       accelX: 0.02,
       accelY: 0.05,
       accelZ: 0.98,
+      tapCount: 0,
       lastUpdated: DateTime.now(),
     );
     _statusMessage = 'Connected (Simulated Hardware)';
@@ -403,7 +494,7 @@ class BleService extends ChangeNotifier {
         return;
       }
       _telemetry = _telemetry.copyWith(
-        batteryVoltage: 4.10 + (timer.tick % 5) * 0.01,
+        batteryVoltage: 4.12 + (timer.tick % 5) * 0.01,
         freeHeapBytes: 194560 - (timer.tick * 64) % 4096,
         lastUpdated: DateTime.now(),
       );
@@ -467,9 +558,15 @@ class BleService extends ChangeNotifier {
         _statusMessage = 'Deep Sleep (<10µA)';
         _log('MOCK', 'State -> SLEEPING (Deep sleep active)');
         break;
+      case BleCommand.clearStorage:
+        _telemetry = _telemetry.copyWith(usedStorageBytes: 0, totalClips: 0);
+        _statusMessage = 'Flash Storage Cleared';
+        _log('MOCK', 'Flash storage cleared');
+        break;
       case BleCommand.none:
         break;
     }
     notifyListeners();
   }
 }
+

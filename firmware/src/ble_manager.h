@@ -12,6 +12,23 @@ public:
     bool isConnected() const { return _connected; }
     
     void updateState(DeviceState state, uint32_t totalAudioBytes = 0, uint16_t sampleRate = AUDIO_SAMPLE_RATE);
+    void sendTelemetry(
+        DeviceState state,
+        uint32_t totalAudioBytes,
+        uint16_t sampleRate,
+        uint16_t batteryMilliVolts,
+        uint8_t batteryPercent,
+        bool isCharging,
+        uint32_t freeHeapBytes,
+        uint32_t usedStorageBytes,
+        uint32_t totalStorageBytes,
+        uint16_t totalClips,
+        int16_t accelX_mg,
+        int16_t accelY_mg,
+        int16_t accelZ_mg,
+        uint16_t motionMagnitude_mg,
+        uint16_t tapCount
+    );
     void notifyTap(float shockMagnitude);
     bool transmitAudio(const uint8_t* audioData, size_t totalBytes, uint16_t sampleRate);
 

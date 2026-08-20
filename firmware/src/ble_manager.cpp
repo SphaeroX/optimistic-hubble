@@ -122,6 +122,69 @@ void BleManager::updateState(DeviceState state, uint32_t totalAudioBytes, uint16
     }
 }
 
+void BleManager::sendTelemetry(
+    DeviceState state,
+    uint32_t totalAudioBytes,
+    uint16_t sampleRate,
+    uint16_t batteryMilliVolts,
+    uint8_t batteryPercent,
+    bool isCharging,
+    uint32_t freeHeapBytes,
+    uint32_t usedStorageBytes,
+    uint32_t totalStorageBytes,
+    uint16_t totalClips,
+    int16_t accelX_mg,
+    int16_t accelY_mg,
+    int16_t accelZ_mg,
+    uint16_t motionMagnitude_mg,
+    uint16_t tapCount
+) {
+    _currentState = state;
+    if (_pCharState == nullptr) return;
+
+    uint8_t payload[35];
+    payload[0] = (uint8_t)state;
+    payload[1] = (uint8_t)(totalAudioBytes & 0xFF);
+    payload[2] = (uint8_t)((totalAudioBytes >> 8) & 0xFF);
+    payload[3] = (uint8_t)((totalAudioBytes >> 16) & 0xFF);
+    payload[4] = (uint8_t)((totalAudioBytes >> 24) & 0xFF);
+    payload[5] = (uint8_t)(sampleRate & 0xFF);
+    payload[6] = (uint8_t)((sampleRate >> 8) & 0xFF);
+    payload[7] = (uint8_t)(batteryMilliVolts & 0xFF);
+    payload[8] = (uint8_t)((batteryMilliVolts >> 8) & 0xFF);
+    payload[9] = batteryPercent;
+    payload[10] = isCharging ? 1 : 0;
+    payload[11] = (uint8_t)(freeHeapBytes & 0xFF);
+    payload[12] = (uint8_t)((freeHeapBytes >> 8) & 0xFF);
+    payload[13] = (uint8_t)((freeHeapBytes >> 16) & 0xFF);
+    payload[14] = (uint8_t)((freeHeapBytes >> 24) & 0xFF);
+    payload[15] = (uint8_t)(usedStorageBytes & 0xFF);
+    payload[16] = (uint8_t)((usedStorageBytes >> 8) & 0xFF);
+    payload[17] = (uint8_t)((usedStorageBytes >> 16) & 0xFF);
+    payload[18] = (uint8_t)((usedStorageBytes >> 24) & 0xFF);
+    payload[19] = (uint8_t)(totalStorageBytes & 0xFF);
+    payload[20] = (uint8_t)((totalStorageBytes >> 8) & 0xFF);
+    payload[21] = (uint8_t)((totalStorageBytes >> 16) & 0xFF);
+    payload[22] = (uint8_t)((totalStorageBytes >> 24) & 0xFF);
+    payload[23] = (uint8_t)(totalClips & 0xFF);
+    payload[24] = (uint8_t)((totalClips >> 8) & 0xFF);
+    payload[25] = (uint8_t)(accelX_mg & 0xFF);
+    payload[26] = (uint8_t)((accelX_mg >> 8) & 0xFF);
+    payload[27] = (uint8_t)(accelY_mg & 0xFF);
+    payload[28] = (uint8_t)((accelY_mg >> 8) & 0xFF);
+    payload[29] = (uint8_t)(accelZ_mg & 0xFF);
+    payload[30] = (uint8_t)((accelZ_mg >> 8) & 0xFF);
+    payload[31] = (uint8_t)(motionMagnitude_mg & 0xFF);
+    payload[32] = (uint8_t)((motionMagnitude_mg >> 8) & 0xFF);
+    payload[33] = (uint8_t)(tapCount & 0xFF);
+    payload[34] = (uint8_t)((tapCount >> 8) & 0xFF);
+
+    _pCharState->setValue(payload, sizeof(payload));
+    if (_connected) {
+        _pCharState->notify();
+    }
+}
+
 void BleManager::notifyTap(float shockMagnitude) {
     if (_pCharTap == nullptr || !_connected) return;
 
