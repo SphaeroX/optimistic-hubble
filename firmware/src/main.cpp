@@ -31,8 +31,8 @@ static bool lastButtonState = HIGH;
 
 void printBanner() {
     Serial.println(F("\n========================================================"));
-    Serial.println(F("  XIAO ESP32C3 - Ultra-Low-Power Audio Vault (< 10 uA)"));
-    Serial.println(F("  IMA-ADPCM 4:1 (8 KB/s) &bull; Deep Sleep Shock Wakeup"));
+    Serial.println(F("  XIAO ESP32C3 - Audio Vault (Active Debugging Mode)"));
+    Serial.println(F("  IMA-ADPCM 4:1 (8 KB/s) &bull; Continuous Standby & IMU Tap"));
     Serial.println(F("========================================================"));
 }
 
@@ -255,7 +255,7 @@ void loop() {
         }
     }
 
-    // 6. Automatic Deep Sleep Transition (< 10 uA)
+    // 6. Automatic Deep Sleep Transition (Disabled for Debugging)
     if (ENABLE_DEEP_SLEEP_AUTO && !wifiServer.isActive() && !ble.isConnected()) {
         if (power.isIdleTimeoutExpired(INACTIVITY_SLEEP_TIMEOUT_MS)) {
             Serial.printf("[POWER] Inactivity timeout (%u s) expired with no clients. Entering Deep Sleep...\n",
@@ -270,11 +270,10 @@ void loop() {
     if (now - lastTelemetryTime >= TELEMETRY_INTERVAL_MS) {
         lastTelemetryTime = now;
 
-        Serial.printf("[BLE: %s] [WIFI: %s] [FLASH: %u clips] [IDLE: %u/%u s]\r",
+        Serial.printf("[BLE: %s] [WIFI: %s] [FLASH: %u clips] [UPTIME: %u s]\r",
                       ble.isConnected() ? "ONLINE " : "STANDBY",
                       wifiServer.isActive() ? "ACTIVE " : "OFF    ",
                       storage.getClipCount(),
-                      (unsigned int)(power.getInactivityMs() / 1000),
-                      (unsigned int)(INACTIVITY_SLEEP_TIMEOUT_MS / 1000));
+                      (unsigned int)(millis() / 1000));
     }
 }

@@ -29,10 +29,10 @@
 // ============================================================================
 // Ultra-Low-Power & Deep Sleep Parameters
 // ============================================================================
-#define INACTIVITY_SLEEP_TIMEOUT_MS  15000UL  // 15 seconds of idle inactivity -> Enter Deep Sleep (< 10 uA)
+#define INACTIVITY_SLEEP_TIMEOUT_MS  15000UL  // 15 seconds of idle inactivity
 #define WIFI_INACTIVITY_TIMEOUT_MS   120000UL // 2 minutes of idle Wi-Fi -> Stop SoftAP to save ~150 mA
-#define IMU_WAKEUP_THRESHOLD_G       1.4f     // Hardware shock acceleration threshold for deep sleep wakeup
-#define ENABLE_DEEP_SLEEP_AUTO       true     // Automatically sleep when idle
+#define IMU_WAKEUP_THRESHOLD_G       1.4f     // Hardware shock acceleration threshold
+#define ENABLE_DEEP_SLEEP_AUTO       false    // Deep Sleep disabled for active debugging
 
 // ============================================================================
 // Audio Recording & Preamp Parameters
