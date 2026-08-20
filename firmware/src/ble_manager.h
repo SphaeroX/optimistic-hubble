@@ -42,8 +42,11 @@ public:
 
     // NimBLE Characteristic Callbacks
     void onWrite(NimBLECharacteristic* pCharacteristic) override;
+    void onWrite(NimBLECharacteristic* pCharacteristic, ble_gap_conn_desc* desc) override;
 
 private:
+    void handleCharacteristicWrite(NimBLECharacteristic* pCharacteristic);
+
     NimBLEServer* _pServer;
     NimBLEService* _pService;
     NimBLECharacteristic* _pCharState;

@@ -174,38 +174,42 @@ void loop() {
 
         switch (cmd) {
             case CMD_START_WIFI:
+                Serial.printf("\n[BLE CMD] Start Wi-Fi Hotspot requested! (Current SoftAP: %s)\n",
+                              wifiServer.isActive() ? "ALREADY RUNNING" : "STARTING");
                 if (!wifiServer.isActive()) {
-                    Serial.println(F("[BLE CMD] Starting Wi-Fi Hotspot on-demand..."));
                     wifiServer.begin(WIFI_AP_SSID, WIFI_AP_PASS, HTTP_SERVER_PORT);
-                    ble.updateState(STATE_WIFI_ACTIVE);
                 }
+                ble.updateState(STATE_WIFI_ACTIVE);
                 break;
 
             case CMD_STOP_WIFI:
+                Serial.printf("\n[BLE CMD] Stop Wi-Fi Hotspot requested! (Current SoftAP: %s)\n",
+                              wifiServer.isActive() ? "ACTIVE" : "ALREADY OFF");
                 if (wifiServer.isActive()) {
-                    Serial.println(F("[BLE CMD] Stopping Wi-Fi Hotspot..."));
                     wifiServer.stop();
-                    ble.updateState(STATE_IDLE);
                 }
+                ble.updateState(STATE_IDLE);
                 break;
 
             case CMD_ENTER_SLEEP:
-                Serial.println(F("[BLE CMD] Entering Deep Sleep upon user request..."));
+                Serial.println(F("\n[BLE CMD] Entering Deep Sleep upon user request..."));
                 ble.updateState(STATE_SLEEPING);
                 delay(100);
                 power.enterDeepSleep(imu, IMU_WAKEUP_THRESHOLD_G);
                 return;
 
             case CMD_START_RECORDING:
+                Serial.println(F("\n[BLE CMD] Start Recording requested..."));
                 startActiveRecording();
                 return;
 
             case CMD_STOP_RECORDING:
+                Serial.println(F("\n[BLE CMD] Stop Recording requested..."));
                 handleStopAndSave();
                 return;
 
             case CMD_CLEAR_STORAGE:
-                Serial.println(F("[BLE CMD] Clearing all audio clips from Flash..."));
+                Serial.println(F("\n[BLE CMD] Clearing all audio clips from Flash..."));
                 storage.clearAll();
                 storage.refresh();
                 ble.updateState(STATE_IDLE);
@@ -280,11 +284,15 @@ void loop() {
     if (now - lastTelemetryTime >= TELEMETRY_INTERVAL_MS) {
         lastTelemetryTime = now;
 
-        Serial.printf("[BLE: %s] [WIFI: %s] [FLASH: %u clips] [UPTIME: %u s]\r",
-                      ble.isConnected() ? "ONLINE " : "STANDBY",
-                      wifiServer.isActive() ? "ACTIVE " : "OFF    ",
-                      storage.getClipCount(),
-                      (unsigned int)(millis() / 1000));
+        static unsigned long lastSerialPrintTime = 0;
+        if (now - lastSerialPrintTime >= 1000) {
+            lastSerialPrintTime = now;
+            Serial.printf("[STATUS] BLE: %s | Wi-Fi AP: %s | Flash: %u clips | Uptime: %u s\n",
+                          ble.isConnected() ? "ONLINE " : "STANDBY",
+                          wifiServer.isActive() ? "ACTIVE " : "OFF    ",
+                          storage.getClipCount(),
+                          (unsigned int)(millis() / 1000));
+        }
 
         if (ble.isConnected()) {
             ImuMetricData imuMetrics{};

@@ -17,14 +17,27 @@ void BleManager::onDisconnect(NimBLEServer* pServer) {
 }
 
 void BleManager::onWrite(NimBLECharacteristic* pCharacteristic) {
-    if (pCharacteristic == _pCharCmd || pCharacteristic == _pCharState) {
-        std::string val = pCharacteristic->getValue();
-        if (!val.empty()) {
-            uint8_t cmdByte = (uint8_t)val[0];
-            _pendingCmd = (BleCommand)cmdByte;
-            Serial.printf("[BLE] Command received: %u\n", cmdByte);
-        }
-    }
+    handleCharacteristicWrite(pCharacteristic);
+}
+
+void BleManager::onWrite(NimBLECharacteristic* pCharacteristic, ble_gap_conn_desc* desc) {
+    (void)desc;
+    handleCharacteristicWrite(pCharacteristic);
+}
+
+void BleManager::handleCharacteristicWrite(NimBLECharacteristic* pCharacteristic) {
+    if (!pCharacteristic) return;
+
+    NimBLEAttValue val = pCharacteristic->getValue();
+    if (val.size() == 0) return;
+
+    const uint8_t* data = val.data();
+    if (!data) return;
+
+    uint8_t cmdByte = data[0];
+    _pendingCmd = (BleCommand)cmdByte;
+    Serial.printf("\n[BLE] >>> Command received: %u (from characteristic: %s) <<<\n",
+                  cmdByte, pCharacteristic->getUUID().toString().c_str());
 }
 
 BleCommand BleManager::getPendingCommand() {

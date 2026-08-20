@@ -263,17 +263,53 @@ class BleService extends ChangeNotifier {
       return;
     }
 
+    final bytes = Uint8List.fromList([cmd.rawValue]);
+    bool success = false;
+
+    // 1. Try write to Command Characteristic (with response)
     try {
-      final bytes = Uint8List.fromList([cmd.rawValue]);
       await UniversalBle.write(
         _connectedDevice!.id,
         AppConstants.bleServiceUuid,
         AppConstants.bleCharCmdUuid,
         bytes,
+        withoutResponse: false,
       );
+      success = true;
+    } catch (_) {
+      // 2. Fallback: Try write without response
+      try {
+        await UniversalBle.write(
+          _connectedDevice!.id,
+          AppConstants.bleServiceUuid,
+          AppConstants.bleCharCmdUuid,
+          bytes,
+          withoutResponse: true,
+        );
+        success = true;
+      } catch (_) {
+        // 3. Fallback: Try write to State Characteristic
+        try {
+          await UniversalBle.write(
+            _connectedDevice!.id,
+            AppConstants.bleServiceUuid,
+            AppConstants.bleCharStateUuid,
+            bytes,
+            withoutResponse: false,
+          );
+          success = true;
+        } catch (e3) {
+          _log('CMD', 'Failed to send command ${cmd.name}: $e3', isError: true);
+        }
+      }
+    }
+
+    if (success) {
       _log('CMD', 'Command ${cmd.name} transmitted successfully to hardware');
-    } catch (e) {
-      _log('CMD', 'Failed to send command ${cmd.name}: $e', isError: true);
+      if (cmd == BleCommand.startWifi) {
+        _statusMessage = 'Starting Wi-Fi Hotspot on hardware...';
+        notifyListeners();
+      }
     }
   }
 
