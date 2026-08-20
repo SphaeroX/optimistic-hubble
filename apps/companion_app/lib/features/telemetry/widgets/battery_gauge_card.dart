@@ -10,12 +10,17 @@ class BatteryGaugeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final percent = telemetry.batteryPercent;
-    final color = percent > 50
-        ? AppTheme.accentGreen
-        : percent > 20
-            ? AppTheme.accentOrange
-            : AppTheme.accentRed;
+    final hasData = telemetry.hasRealData && telemetry.batteryPercent != null;
+    final percent = telemetry.batteryPercent ?? 0;
+    final voltage = telemetry.batteryVoltage;
+
+    final color = hasData
+        ? (percent > 50
+            ? AppTheme.accentGreen
+            : percent > 20
+                ? AppTheme.accentOrange
+                : AppTheme.accentRed)
+        : AppTheme.textMuted;
 
     return Card(
       child: Padding(
@@ -41,7 +46,7 @@ class BatteryGaugeCard extends StatelessWidget {
                   ],
                 ),
                 Text(
-                  Formatters.formatVoltage(telemetry.batteryVoltage),
+                  hasData && voltage != null ? Formatters.formatVoltage(voltage) : '-- V',
                   style: const TextStyle(
                     color: AppTheme.textMuted,
                     fontWeight: FontWeight.w600,
@@ -57,7 +62,7 @@ class BatteryGaugeCard extends StatelessWidget {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(6),
                     child: LinearProgressIndicator(
-                      value: percent / 100.0,
+                      value: hasData ? (percent / 100.0) : 0.0,
                       minHeight: 12,
                       backgroundColor: const Color(0xFF243248),
                       valueColor: AlwaysStoppedAnimation<Color>(color),
@@ -66,7 +71,7 @@ class BatteryGaugeCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 14),
                 Text(
-                  '$percent%',
+                  hasData ? '$percent%' : '--%',
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 18,
@@ -77,7 +82,9 @@ class BatteryGaugeCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              telemetry.isCharging ? 'Status: Charging via USB-C' : 'Status: Operating on LiPo Battery',
+              hasData
+                  ? (telemetry.isCharging ? 'Status: Charging via USB-C' : 'Status: Operating on LiPo Battery')
+                  : 'Status: Offline (Connect XIAO ESP32-C3 via BLE to read power telemetry)',
               style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
             ),
           ],

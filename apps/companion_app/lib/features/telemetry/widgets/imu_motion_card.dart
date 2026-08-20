@@ -9,6 +9,8 @@ class ImuMotionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasData = telemetry.hasRealData;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -39,9 +41,9 @@ class ImuMotionCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildAxisIndicator('X-Axis', telemetry.accelX),
-                _buildAxisIndicator('Y-Axis', telemetry.accelY),
-                _buildAxisIndicator('Z-Axis', telemetry.accelZ),
+                _buildAxisIndicator('X-Axis', telemetry.accelX, hasData),
+                _buildAxisIndicator('Y-Axis', telemetry.accelY, hasData),
+                _buildAxisIndicator('Z-Axis', telemetry.accelZ, hasData),
               ],
             ),
             const SizedBox(height: 12),
@@ -53,7 +55,9 @@ class ImuMotionCard extends StatelessWidget {
                   style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
                 ),
                 Text(
-                  '${telemetry.motionMagnitude.toStringAsFixed(2)} g',
+                  hasData && telemetry.motionMagnitude != null
+                      ? '${telemetry.motionMagnitude!.toStringAsFixed(2)} g'
+                      : '-- g',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     color: AppTheme.primaryCyan,
@@ -67,7 +71,7 @@ class ImuMotionCard extends StatelessWidget {
     );
   }
 
-  Widget _buildAxisIndicator(String label, double value) {
+  Widget _buildAxisIndicator(String label, double? value, bool hasData) {
     return Column(
       children: [
         Text(
@@ -83,7 +87,7 @@ class ImuMotionCard extends StatelessWidget {
             border: Border.all(color: const Color(0xFF2E3E58)),
           ),
           child: Text(
-            '${value >= 0 ? "+" : ""}${value.toStringAsFixed(2)}g',
+            hasData && value != null ? '${value >= 0 ? "+" : ""}${value.toStringAsFixed(2)}g' : '--',
             style: const TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 13,

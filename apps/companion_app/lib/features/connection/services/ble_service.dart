@@ -86,19 +86,26 @@ class BleService extends ChangeNotifier {
       notifyListeners();
     };
 
-    UniversalBle.onConnectionChange = (String deviceId, bool isConnected, String? error) {
+    UniversalBle.onConnectionChange = (String deviceId, bool isConnected, String? error) async {
+      _log('BLE', 'Connection Callback for $deviceId: connected=$isConnected ${error != null ? "error=$error" : ""}');
+
       if (isConnected) {
         _status = ConnectionStatus.connected;
-        _statusMessage = 'Connected to ${_connectedDevice?.name ?? deviceId}';
-        _log('BLE', 'Connected to $deviceId. Discovering GATT services...');
-        _subscribeToCharacteristics(deviceId);
+        _connectedDevice ??= _discoveredDevices.firstWhere(
+          (d) => d.id == deviceId,
+          orElse: () => BleDeviceItem(id: deviceId, name: 'XIAO-Audio-Recorder', rssi: 0, isXiaoDevice: true),
+        );
+        _statusMessage = 'Connected to ${_connectedDevice!.name}';
+        notifyListeners();
+
+        await _setupConnectedGatt(deviceId);
       } else {
         _status = ConnectionStatus.disconnected;
         _statusMessage = 'Disconnected';
-        _log('BLE', 'Disconnected from $deviceId ${error != null ? "($error)" : ""}', isError: error != null);
         _connectedDevice = null;
+        _telemetry = DeviceTelemetry.initial(); // Reset to disconnected state
+        notifyListeners();
       }
-      notifyListeners();
     };
 
     UniversalBle.onValueChange = (String deviceId, String characteristicId, Uint8List value, int? timestamp) {
@@ -151,6 +158,18 @@ class BleService extends ChangeNotifier {
 
     try {
       await UniversalBle.connect(device.id);
+      
+      // Delay slightly and check connection state
+      await Future.delayed(const Duration(milliseconds: 300));
+      final state = await UniversalBle.getConnectionState(device.id);
+      _log('BLE', 'Queried connection state for ${device.id}: $state');
+
+      if (state == BleConnectionState.connected) {
+        _status = ConnectionStatus.connected;
+        _statusMessage = 'Connected to ${device.name}';
+        notifyListeners();
+        await _setupConnectedGatt(device.id);
+      }
     } catch (e) {
       _status = ConnectionStatus.disconnected;
       _connectedDevice = null;
@@ -160,12 +179,43 @@ class BleService extends ChangeNotifier {
     }
   }
 
+  Future<void> _setupConnectedGatt(String deviceId) async {
+    try {
+      _log('GATT', 'Discovering GATT services for $deviceId...');
+      final services = await UniversalBle.discoverServices(deviceId);
+      _log('GATT', 'Discovered ${services.length} services on peripheral');
+
+      await _subscribeToCharacteristics(deviceId);
+      await _readInitialState(deviceId);
+    } catch (e) {
+      _log('GATT', 'Service setup error: $e', isError: true);
+    }
+  }
+
+  Future<void> _readInitialState(String deviceId) async {
+    try {
+      _log('GATT', 'Reading initial State Characteristic...');
+      final val = await UniversalBle.read(
+        deviceId,
+        AppConstants.bleServiceUuid,
+        AppConstants.bleCharStateUuid,
+      );
+      if (val.isNotEmpty) {
+        _parseStatePayload(val);
+        _log('GATT', 'Initial State received from hardware: ${_telemetry.state.label}');
+      }
+    } catch (e) {
+      _log('GATT', 'Could not read initial state: $e');
+    }
+  }
+
   Future<void> disconnect() async {
     _mockTelemetryTimer?.cancel();
     if (_isMockMode) {
       _isMockMode = false;
       _status = ConnectionStatus.disconnected;
       _connectedDevice = null;
+      _telemetry = DeviceTelemetry.initial();
       _statusMessage = 'Disconnected';
       _log('MOCK', 'Simulated device disconnected');
       notifyListeners();
@@ -183,14 +233,20 @@ class BleService extends ChangeNotifier {
     }
     _status = ConnectionStatus.disconnected;
     _connectedDevice = null;
+    _telemetry = DeviceTelemetry.initial();
     notifyListeners();
   }
 
   Future<void> sendCommand(BleCommand cmd) async {
     _log('CMD', 'Sending BLE Command: ${cmd.name} (Code: ${cmd.rawValue})');
 
-    if (_isMockMode || !isConnected || _connectedDevice == null) {
+    if (_isMockMode) {
       _simulateCommand(cmd);
+      return;
+    }
+
+    if (!isConnected || _connectedDevice == null) {
+      _log('CMD', 'Cannot send command: No device connected', isError: true);
       return;
     }
 
@@ -202,7 +258,7 @@ class BleService extends ChangeNotifier {
         AppConstants.bleCharCmdUuid,
         bytes,
       );
-      _log('CMD', 'Command ${cmd.name} transmitted successfully');
+      _log('CMD', 'Command ${cmd.name} transmitted successfully to hardware');
     } catch (e) {
       _log('CMD', 'Failed to send command ${cmd.name}: $e', isError: true);
     }
@@ -210,9 +266,6 @@ class BleService extends ChangeNotifier {
 
   Future<void> _subscribeToCharacteristics(String deviceId) async {
     try {
-      final services = await UniversalBle.discoverServices(deviceId);
-      _log('GATT', 'Discovered ${services.length} services on peripheral');
-
       await UniversalBle.subscribeNotifications(
         deviceId,
         AppConstants.bleServiceUuid,
@@ -255,12 +308,13 @@ class BleService extends ChangeNotifier {
     final sampleRate = value[5] | (value[6] << 8);
 
     _telemetry = _telemetry.copyWith(
+      hasRealData: true,
       state: state,
       totalAudioBytes: totalBytes,
       sampleRate: sampleRate > 0 ? sampleRate : AppConstants.audioSampleRate,
       lastUpdated: DateTime.now(),
     );
-    _log('STATE', 'Device State: ${state.label} | Recorded: $totalBytes B | Rate: $sampleRate Hz');
+    _log('STATE', 'Hardware State: ${state.label} | Recorded: $totalBytes B | Rate: $sampleRate Hz');
     notifyListeners();
   }
 
@@ -280,6 +334,7 @@ class BleService extends ChangeNotifier {
     if (_tapHistory.length > 50) _tapHistory.removeLast();
 
     _telemetry = _telemetry.copyWith(
+      hasRealData: true,
       tapCount: newCount,
       motionMagnitude: tapEvent.shockMagnitude,
       lastUpdated: DateTime.now(),
@@ -315,7 +370,7 @@ class BleService extends ChangeNotifier {
   }
 
   // ==========================================================================
-  // Simulation Mode (for PC Testing without hardware)
+  // Simulation Mode (Only enabled when explicitly clicked by user)
   // ==========================================================================
   void enableMockMode() {
     _isMockMode = true;
@@ -326,7 +381,18 @@ class BleService extends ChangeNotifier {
       rssi: -38,
       isXiaoDevice: true,
     );
-    _telemetry = DeviceTelemetry.initial();
+    _telemetry = _telemetry.copyWith(
+      hasRealData: true,
+      batteryVoltage: 4.12,
+      batteryPercent: 92,
+      freeHeapBytes: 194560,
+      usedStorageBytes: 420 * 1024,
+      motionMagnitude: 0.98,
+      accelX: 0.02,
+      accelY: 0.05,
+      accelZ: 0.98,
+      lastUpdated: DateTime.now(),
+    );
     _statusMessage = 'Connected (Simulated Hardware)';
     _log('MOCK', 'Enabled Hardware Simulation Mode for PC Testing');
 
@@ -356,6 +422,7 @@ class BleService extends ChangeNotifier {
     );
     _tapHistory.insert(0, event);
     _telemetry = _telemetry.copyWith(
+      hasRealData: true,
       tapCount: newCount,
       motionMagnitude: event.shockMagnitude,
       lastUpdated: DateTime.now(),
@@ -398,7 +465,7 @@ class BleService extends ChangeNotifier {
       case BleCommand.enterSleep:
         _telemetry = _telemetry.copyWith(state: DeviceState.sleeping);
         _statusMessage = 'Deep Sleep (<10µA)';
-        _log('MOCK', 'State -> SLEEPING (Deep sleep active, awaiting IMU tap wakeup)');
+        _log('MOCK', 'State -> SLEEPING (Deep sleep active)');
         break;
       case BleCommand.none:
         break;

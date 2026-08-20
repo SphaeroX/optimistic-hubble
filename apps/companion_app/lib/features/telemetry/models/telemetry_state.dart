@@ -1,53 +1,57 @@
 class TelemetryState {
-  final double batteryVoltage;
-  final int batteryPercent;
+  final bool hasRealData;
+  final double? batteryVoltage;
+  final int? batteryPercent;
   final bool isCharging;
-  final int freeHeapBytes;
+  final int? freeHeapBytes;
   final int totalHeapBytes;
-  final int usedStorageBytes;
+  final int? usedStorageBytes;
   final int totalStorageBytes;
-  final double accelX;
-  final double accelY;
-  final double accelZ;
-  final double motionMagnitude;
+  final double? accelX;
+  final double? accelY;
+  final double? accelZ;
+  final double? motionMagnitude;
   final int tapCount;
-  final DateTime lastUpdated;
+  final DateTime? lastUpdated;
 
   TelemetryState({
-    required this.batteryVoltage,
-    required this.batteryPercent,
-    required this.isCharging,
-    required this.freeHeapBytes,
-    required this.totalHeapBytes,
-    required this.usedStorageBytes,
-    required this.totalStorageBytes,
-    required this.accelX,
-    required this.accelY,
-    required this.accelZ,
-    required this.motionMagnitude,
+    this.hasRealData = false,
+    this.batteryVoltage,
+    this.batteryPercent,
+    this.isCharging = false,
+    this.freeHeapBytes,
+    this.totalHeapBytes = 327680,
+    this.usedStorageBytes,
+    this.totalStorageBytes = 1966080,
+    this.accelX,
+    this.accelY,
+    this.accelZ,
+    this.motionMagnitude,
     required this.tapCount,
-    required this.lastUpdated,
+    this.lastUpdated,
   });
 
   factory TelemetryState.initial() {
     return TelemetryState(
-      batteryVoltage: 4.12,
-      batteryPercent: 92,
+      hasRealData: false,
+      batteryVoltage: null,
+      batteryPercent: null,
       isCharging: false,
-      freeHeapBytes: 185320,
+      freeHeapBytes: null,
       totalHeapBytes: 327680,
-      usedStorageBytes: 420 * 1024,
-      totalStorageBytes: 1920 * 1024,
-      accelX: 0.02,
-      accelY: 0.05,
-      accelZ: 0.98,
-      motionMagnitude: 0.98,
+      usedStorageBytes: null,
+      totalStorageBytes: 1966080,
+      accelX: null,
+      accelY: null,
+      accelZ: null,
+      motionMagnitude: null,
       tapCount: 0,
-      lastUpdated: DateTime.now(),
+      lastUpdated: null,
     );
   }
 
   TelemetryState copyWith({
+    bool? hasRealData,
     double? batteryVoltage,
     int? batteryPercent,
     bool? isCharging,
@@ -63,6 +67,7 @@ class TelemetryState {
     DateTime? lastUpdated,
   }) {
     return TelemetryState(
+      hasRealData: hasRealData ?? this.hasRealData,
       batteryVoltage: batteryVoltage ?? this.batteryVoltage,
       batteryPercent: batteryPercent ?? this.batteryPercent,
       isCharging: isCharging ?? this.isCharging,

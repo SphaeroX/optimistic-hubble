@@ -1,67 +1,71 @@
 import '../../../core/constants/app_constants.dart';
 
 class DeviceTelemetry {
+  final bool hasRealData;
   final DeviceState state;
   final int totalAudioBytes;
   final int sampleRate;
-  final double batteryVoltage;
-  final int batteryPercent;
+  final double? batteryVoltage;
+  final int? batteryPercent;
   final bool isCharging;
-  final int freeHeapBytes;
-  final int totalHeapBytes;
-  final int usedStorageBytes;
-  final int totalStorageBytes;
+  final int? freeHeapBytes;
+  final int? totalHeapBytes;
+  final int? usedStorageBytes;
+  final int? totalStorageBytes;
   final int totalClips;
-  final double accelX;
-  final double accelY;
-  final double accelZ;
-  final double motionMagnitude;
+  final double? accelX;
+  final double? accelY;
+  final double? accelZ;
+  final double? motionMagnitude;
   final int tapCount;
-  final DateTime lastUpdated;
+  final DateTime? lastUpdated;
 
   DeviceTelemetry({
+    this.hasRealData = false,
     required this.state,
     required this.totalAudioBytes,
     required this.sampleRate,
-    required this.batteryVoltage,
-    required this.batteryPercent,
-    required this.isCharging,
-    required this.freeHeapBytes,
-    required this.totalHeapBytes,
-    required this.usedStorageBytes,
-    required this.totalStorageBytes,
+    this.batteryVoltage,
+    this.batteryPercent,
+    this.isCharging = false,
+    this.freeHeapBytes,
+    this.totalHeapBytes,
+    this.usedStorageBytes,
+    this.totalStorageBytes,
     required this.totalClips,
-    required this.accelX,
-    required this.accelY,
-    required this.accelZ,
-    required this.motionMagnitude,
+    this.accelX,
+    this.accelY,
+    this.accelZ,
+    this.motionMagnitude,
     required this.tapCount,
-    required this.lastUpdated,
+    this.lastUpdated,
   });
 
   factory DeviceTelemetry.initial() {
     return DeviceTelemetry(
+      hasRealData: false,
       state: DeviceState.idle,
       totalAudioBytes: 0,
       sampleRate: AppConstants.audioSampleRate,
-      batteryVoltage: 4.15,
-      batteryPercent: 95,
+      batteryVoltage: null,
+      batteryPercent: null,
       isCharging: false,
-      freeHeapBytes: 194560,
+      freeHeapBytes: null,
       totalHeapBytes: 327680,
-      usedStorageBytes: 0,
-      totalStorageBytes: 1966080, // ~1.92 MB LittleFS partition
+      usedStorageBytes: null,
+      totalStorageBytes: 1966080,
       totalClips: 0,
-      accelX: 0.01,
-      accelY: 0.02,
-      accelZ: 0.99,
-      motionMagnitude: 0.99,
+      accelX: null,
+      accelY: null,
+      accelZ: null,
+      motionMagnitude: null,
       tapCount: 0,
-      lastUpdated: DateTime.now(),
+      lastUpdated: null,
     );
   }
 
   DeviceTelemetry copyWith({
+    bool? hasRealData,
     DeviceState? state,
     int? totalAudioBytes,
     int? sampleRate,
@@ -81,6 +85,7 @@ class DeviceTelemetry {
     DateTime? lastUpdated,
   }) {
     return DeviceTelemetry(
+      hasRealData: hasRealData ?? this.hasRealData,
       state: state ?? this.state,
       totalAudioBytes: totalAudioBytes ?? this.totalAudioBytes,
       sampleRate: sampleRate ?? this.sampleRate,

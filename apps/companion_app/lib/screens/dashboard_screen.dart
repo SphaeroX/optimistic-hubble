@@ -61,7 +61,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (context, _) {
         final isConnected = widget.bleService.isConnected;
         final devState = widget.bleService.telemetry.state;
-        final isRecording = devState == DeviceState.recording;
+        final isRecording = isConnected && devState == DeviceState.recording;
         final isPlayingAudio = widget.syncManager.audioPlayer.isPlaying;
 
         return Scaffold(
@@ -71,12 +71,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: (isRecording ? AppTheme.accentRed : AppTheme.primaryCyan).withAlpha(40),
+                    color: (isRecording ? AppTheme.accentRed : (isConnected ? AppTheme.primaryCyan : AppTheme.cardDark)).withAlpha(50),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
                     isRecording ? Icons.fiber_manual_record : Icons.graphic_eq,
-                    color: isRecording ? AppTheme.accentRed : AppTheme.primaryCyan,
+                    color: isRecording ? AppTheme.accentRed : (isConnected ? AppTheme.primaryCyan : AppTheme.textMuted),
                     size: 20,
                   ),
                 ),
@@ -91,7 +91,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Text(
                       isConnected
                           ? (widget.bleService.connectedDevice?.name ?? 'Connected')
-                          : 'Disconnected',
+                          : 'Disconnected (No Device)',
                       style: TextStyle(
                         fontSize: 11,
                         color: isConnected ? AppTheme.accentGreen : AppTheme.textMuted,
@@ -166,7 +166,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: IndexedStack(
                   index: _currentTabIndex,
                   children: [
-                    _buildLiveMonitorTab(isRecording, isPlayingAudio),
+                    _buildLiveMonitorTab(isConnected, isRecording, isPlayingAudio),
                     _buildRecordingsTab(),
                     SettingsTab(bleService: widget.bleService, syncManager: widget.syncManager),
                   ],
@@ -202,19 +202,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildLiveMonitorTab(bool isRecording, bool isPlayingAudio) {
+  Widget _buildLiveMonitorTab(bool isConnected, bool isRecording, bool isPlayingAudio) {
     final devState = widget.bleService.telemetry.state;
     final telem = widget.bleService.telemetry;
 
-    // Convert to TelemetryState for existing widget compatibility
     final uiTelemetry = TelemetryState(
+      hasRealData: isConnected && telem.hasRealData,
       batteryVoltage: telem.batteryVoltage,
       batteryPercent: telem.batteryPercent,
       isCharging: telem.isCharging,
       freeHeapBytes: telem.freeHeapBytes,
-      totalHeapBytes: telem.totalHeapBytes,
+      totalHeapBytes: telem.totalHeapBytes ?? 327680,
       usedStorageBytes: telem.usedStorageBytes,
-      totalStorageBytes: telem.totalStorageBytes,
+      totalStorageBytes: telem.totalStorageBytes ?? 1966080,
       accelX: telem.accelX,
       accelY: telem.accelY,
       accelZ: telem.accelZ,
@@ -245,12 +245,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: (isRecording ? AppTheme.accentRed : AppTheme.primaryCyan).withAlpha(40),
+                        color: (isRecording ? AppTheme.accentRed : (isConnected ? AppTheme.primaryCyan : AppTheme.textMuted)).withAlpha(40),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        isRecording ? Icons.fiber_manual_record : Icons.sensors,
-                        color: isRecording ? AppTheme.accentRed : AppTheme.primaryCyan,
+                        isRecording ? Icons.fiber_manual_record : (isConnected ? Icons.sensors : Icons.sensors_off),
+                        color: isRecording ? AppTheme.accentRed : (isConnected ? AppTheme.primaryCyan : AppTheme.textMuted),
                         size: 26,
                       ),
                     ),
@@ -260,7 +260,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            devState.label,
+                            isConnected ? devState.label : 'Device Offline',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -269,24 +269,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            isRecording
-                                ? 'Recording: ${Formatters.formatBytes(telem.totalAudioBytes)} captured @ 16kHz'
-                                : devState.description,
+                            !isConnected
+                                ? 'Click "Scan BLE" in the top right to connect your XIAO ESP32-C3'
+                                : (isRecording
+                                    ? 'Recording active: ${Formatters.formatBytes(telem.totalAudioBytes)} captured @ 16kHz'
+                                    : devState.description),
                             style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
                           ),
                         ],
                       ),
                     ),
                     ElevatedButton.icon(
-                      onPressed: () {
-                        if (isRecording) {
-                          widget.bleService.sendCommand(BleCommand.stopRecording);
-                        } else {
-                          widget.bleService.sendCommand(BleCommand.startRecording);
-                        }
-                      },
-                      icon: Icon(isRecording ? Icons.stop : Icons.mic),
-                      label: Text(isRecording ? 'Stop' : 'Record'),
+                      onPressed: !isConnected
+                          ? _openDeviceScanner
+                          : () {
+                              if (isRecording) {
+                                widget.bleService.sendCommand(BleCommand.stopRecording);
+                              } else {
+                                widget.bleService.sendCommand(BleCommand.startRecording);
+                              }
+                            },
+                      icon: Icon(!isConnected ? Icons.bluetooth : (isRecording ? Icons.stop : Icons.mic)),
+                      label: Text(!isConnected ? 'Connect' : (isRecording ? 'Stop' : 'Record')),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: isRecording ? AppTheme.accentRed : AppTheme.primaryCyan,
                         foregroundColor: Colors.black,
@@ -325,6 +329,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildRecordingsTab() {
     final clips = widget.syncManager.clips;
     final isSyncing = widget.syncManager.isSyncing;
+    final errorMsg = widget.syncManager.errorMessage;
 
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -337,11 +342,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Audio Clips on Device',
+                  'Recordings (WAV Audio)',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  '${clips.length} recordings stored in LittleFS Flash',
+                  '${clips.length} recordings available locally / on device',
                   style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
               ],
@@ -355,6 +360,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         const SizedBox(height: 16),
 
+        // Error message banner if any
+        if (errorMsg != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.accentRed.withAlpha(30),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.accentRed),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.wifi_off, color: AppTheme.accentRed, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    errorMsg,
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+
         // Progress Banner
         SyncProgressBanner(
           isSyncing: isSyncing,
@@ -367,10 +397,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Container(
             padding: const EdgeInsets.symmetric(vertical: 60),
             child: const Center(
-              child: Text(
-                'No recordings yet.\nTap "Record" or double-tap the XIAO sensor.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppTheme.textMuted),
+              child: Column(
+                children: [
+                  Icon(Icons.mic_none, size: 48, color: AppTheme.textMuted),
+                  SizedBox(height: 12),
+                  Text(
+                    'No recordings stored yet.\n\n1. Connect via BLE to record directly.\n2. Or turn on Wi-Fi Hotspot and click "Wi-Fi Fast Sync" to pull clips from Flash.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                  ),
+                ],
               ),
             ),
           )

@@ -10,8 +10,13 @@ class MemoryStorageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final storageFraction = telemetry.totalStorageBytes > 0
-        ? telemetry.usedStorageBytes / telemetry.totalStorageBytes
+    final hasData = telemetry.hasRealData;
+    final usedStorage = telemetry.usedStorageBytes ?? 0;
+    final totalStorage = telemetry.totalStorageBytes;
+    final freeHeap = telemetry.freeHeapBytes;
+
+    final storageFraction = (hasData && totalStorage > 0)
+        ? usedStorage / totalStorage
         : 0.0;
 
     return Card(
@@ -38,7 +43,9 @@ class MemoryStorageCard extends StatelessWidget {
               children: [
                 const Text('Flash Storage Used:', style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
                 Text(
-                  '${Formatters.formatBytes(telemetry.usedStorageBytes)} / ${Formatters.formatBytes(telemetry.totalStorageBytes)}',
+                  hasData
+                      ? '${Formatters.formatBytes(usedStorage)} / ${Formatters.formatBytes(totalStorage)}'
+                      : '-- / --',
                   style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                 ),
               ],
@@ -61,10 +68,10 @@ class MemoryStorageCard extends StatelessWidget {
               children: [
                 const Text('Free RAM Heap:', style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
                 Text(
-                  Formatters.formatBytes(telemetry.freeHeapBytes),
-                  style: const TextStyle(
+                  hasData && freeHeap != null ? Formatters.formatBytes(freeHeap) : '-- KB',
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
-                    color: AppTheme.accentGreen,
+                    color: hasData ? AppTheme.accentGreen : AppTheme.textMuted,
                     fontSize: 13,
                   ),
                 ),
