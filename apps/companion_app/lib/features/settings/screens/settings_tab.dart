@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../connection/services/ble_connection_service.dart';
-import '../../recordings/services/audio_sync_service.dart';
+import '../../../core/utils/storage_manager.dart';
+import '../../connection/services/ble_service.dart';
+import '../../recordings/services/recording_sync_manager.dart';
 
 class SettingsTab extends StatefulWidget {
-  final BleConnectionService bleService;
-  final AudioSyncService syncService;
+  final BleService bleService;
+  final RecordingSyncManager syncManager;
 
   const SettingsTab({
     super.key,
     required this.bleService,
-    required this.syncService,
+    required this.syncManager,
   });
 
   @override
@@ -19,9 +20,17 @@ class SettingsTab extends StatefulWidget {
 }
 
 class _SettingsTabState extends State<SettingsTab> {
-  final TextEditingController _ssidController = TextEditingController(text: AppConstants.defaultApSsid);
-  final TextEditingController _passController = TextEditingController(text: AppConstants.defaultApPassword);
-  final TextEditingController _ipController = TextEditingController(text: AppConstants.defaultDeviceIp);
+  late final TextEditingController _ssidController;
+  late final TextEditingController _passController;
+  late final TextEditingController _ipController;
+
+  @override
+  void initState() {
+    super.initState();
+    _ssidController = TextEditingController(text: AppConstants.defaultApSsid);
+    _passController = TextEditingController(text: AppConstants.defaultApPassword);
+    _ipController = TextEditingController(text: widget.syncManager.deviceIp);
+  }
 
   @override
   void dispose() {
@@ -36,7 +45,7 @@ class _SettingsTabState extends State<SettingsTab> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        // Wi-Fi AP & Transfer Config
+        // Wi-Fi SoftAP Sync Config
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -81,7 +90,7 @@ class _SettingsTabState extends State<SettingsTab> {
                     prefixIcon: Icon(Icons.network_ping),
                   ),
                   onChanged: (val) {
-                    widget.syncService.updateEndpoint(val.trim(), AppConstants.defaultHttpPort);
+                    widget.syncManager.updateEndpoint(val.trim(), AppConstants.defaultHttpPort);
                   },
                 ),
               ],
@@ -145,16 +154,48 @@ class _SettingsTabState extends State<SettingsTab> {
                           ),
                         );
                         if (confirmed == true) {
-                          await widget.syncService.clearDeviceStorage();
+                          await widget.syncManager.clearDeviceStorage();
                         }
                       },
                       icon: const Icon(Icons.delete_forever, color: Colors.white),
                       label: const Text('Format Flash Memory', style: TextStyle(color: Colors.white)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.accentRed,
-                      ),
+                      style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accentRed),
                     ),
                   ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Local Storage Folder
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.folder, color: AppTheme.primaryCyan, size: 22),
+                    SizedBox(width: 8),
+                    Text(
+                      'Local Storage & Recordings',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Downloaded recordings are automatically converted to standard Linear 16-bit PCM WAV and stored in your Documents directory.',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: () => LocalStorageManager.openInFileManager(),
+                  icon: const Icon(Icons.folder_open),
+                  label: const Text('Open Local Recordings Folder'),
                 ),
               ],
             ),

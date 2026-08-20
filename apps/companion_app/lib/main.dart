@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'core/audio/native_audio_player.dart';
 import 'core/constants/app_constants.dart';
 import 'core/theme/app_theme.dart';
-import 'features/connection/services/ble_connection_service.dart';
-import 'features/recordings/services/audio_sync_service.dart';
+import 'features/connection/services/ble_service.dart';
+import 'features/recordings/services/recording_sync_manager.dart';
 import 'screens/dashboard_screen.dart';
 
 void main() {
@@ -18,20 +19,23 @@ class XiaoCompanionApp extends StatefulWidget {
 }
 
 class _XiaoCompanionAppState extends State<XiaoCompanionApp> {
-  late final BleConnectionService _bleService;
-  late final AudioSyncService _syncService;
+  late final BleService _bleService;
+  late final NativeAudioPlayer _audioPlayer;
+  late final RecordingSyncManager _syncManager;
 
   @override
   void initState() {
     super.initState();
-    _bleService = BleConnectionService();
-    _syncService = AudioSyncService();
+    _bleService = BleService();
+    _audioPlayer = NativeAudioPlayer();
+    _syncManager = RecordingSyncManager(audioPlayer: _audioPlayer);
   }
 
   @override
   void dispose() {
     _bleService.dispose();
-    _syncService.dispose();
+    _syncManager.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -45,7 +49,7 @@ class _XiaoCompanionAppState extends State<XiaoCompanionApp> {
       darkTheme: AppTheme.darkTheme,
       home: DashboardScreen(
         bleService: _bleService,
-        syncService: _syncService,
+        syncManager: _syncManager,
       ),
     );
   }

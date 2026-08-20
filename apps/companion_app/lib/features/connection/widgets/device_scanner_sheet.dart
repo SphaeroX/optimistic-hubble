@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
-import '../services/ble_connection_service.dart';
+import '../services/ble_service.dart';
 
 class DeviceScannerSheet extends StatelessWidget {
-  final BleConnectionService bleService;
+  final BleService bleService;
 
   const DeviceScannerSheet({super.key, required this.bleService});
 
@@ -43,7 +43,7 @@ class DeviceScannerSheet extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    'Available Devices',
+                    'Available BLE Peripherals',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -89,8 +89,10 @@ class DeviceScannerSheet extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 40),
                   child: Center(
                     child: Text(
-                      isScanning ? 'Searching for nearby Xiao ESP32-C3...' : 'No devices found. Tap refresh or use simulation.',
-                      style: const TextStyle(color: AppTheme.textMuted),
+                      isScanning
+                          ? 'Searching for nearby Xiao ESP32-C3...\n(Service UUID: 19b10000-e8f2-537e-4f6c-d104768a1214)'
+                          : 'No devices found. Tap refresh or use simulation.',
+                      style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
                       textAlign: TextAlign.center,
                     ),
                   ),
