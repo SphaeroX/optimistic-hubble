@@ -1,9 +1,77 @@
 #include "wifi_server.h"
 #include "config.h"
 
+// Custom RequestHandler to catch any unhandled routes and avoid ESP32 WebServer's
+// default "request handler not found" error log before notFound fallback.
+class CatchAllRequestHandler : public RequestHandler {
+public:
+    CatchAllRequestHandler(WifiServerManager& manager) : _manager(manager) {}
+
+    bool canHandle(HTTPMethod method, String uri) override {
+        (void)method;
+        (void)uri;
+        return true; // Handle all remaining routes
+    }
+
+    bool handle(WebServer& server, HTTPMethod requestMethod, String requestUri) override {
+        (void)server;
+        (void)requestMethod;
+        (void)requestUri;
+        _manager.handleCatchAll();
+        return true;
+    }
+
+private:
+    WifiServerManager& _manager;
+};
+
 WifiServerManager::WifiServerManager(StorageManager& storageRef)
     : _storage(storageRef), _server(HTTP_SERVER_PORT), _ssid(WIFI_AP_SSID), _pass(WIFI_AP_PASS),
-      _active(false), _lastRequestTime(0) {}
+      _active(false), _routesConfigured(false), _lastRequestTime(0) {}
+
+void WifiServerManager::setupRoutes() {
+    if (_routesConfigured) return;
+
+    _server.enableCORS(true);
+
+    // Register WebServer API & Dashboard Routes
+    _server.on("/", HTTP_GET, [this]() { notifyActivity(); handleRoot(); });
+    _server.on("/api/clips", HTTP_GET, [this]() { notifyActivity(); handleApiClips(); });
+    _server.on("/api/download", HTTP_GET, [this]() { notifyActivity(); handleApiDownload(); });
+    _server.on("/api/clear", HTTP_GET, [this]() { notifyActivity(); handleApiClear(); });
+    _server.on("/api/clear", HTTP_POST, [this]() { notifyActivity(); handleApiClear(); });
+    _server.on("/api/status", HTTP_GET, [this]() { notifyActivity(); handleStatus(); });
+
+    // Explicit CORS Preflight (OPTIONS)
+    _server.on("/", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
+    _server.on("/api/clips", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
+    _server.on("/api/download", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
+    _server.on("/api/clear", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
+    _server.on("/api/status", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
+
+    // Favicon & Browser Icons (204 No Content to avoid 302 redirect loops)
+    _server.on("/favicon.ico", HTTP_ANY, [this]() { notifyActivity(); handleFavicon(); });
+    _server.on("/apple-touch-icon.png", HTTP_ANY, [this]() { notifyActivity(); handleFavicon(); });
+    _server.on("/apple-touch-icon-precomposed.png", HTTP_ANY, [this]() { notifyActivity(); handleFavicon(); });
+
+    // Captive Portal probes
+    _server.on("/generate_204", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
+    _server.on("/gen_204", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
+    _server.on("/hotspot-detect.html", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
+    _server.on("/canonical.html", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
+    _server.on("/ncsi.txt", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
+    _server.on("/connecttest.txt", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
+    _server.on("/success.txt", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
+    _server.on("/mobile/status.txt", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
+    _server.on("/check_network_status.txt", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
+
+    // Catch-All Handler to satisfy WebServer::_currentHandler and avoid "request handler not found" errors
+    _server.addHandler(new CatchAllRequestHandler(*this));
+
+    _server.onNotFound([this]() { handleCatchAll(); });
+
+    _routesConfigured = true;
+}
 
 bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port) {
     if (_active) return true;
@@ -39,26 +107,12 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
     Serial.printf("[WIFI AP ACTIVE] Web Dashboard: http://%s\n", WiFi.softAPIP().toString().c_str());
     Serial.println(F("--------------------------------------------------"));
 
-    // Register WebServer Routes
-    _server.on("/", HTTP_GET, [this]() { notifyActivity(); handleRoot(); });
-    _server.on("/api/clips", HTTP_GET, [this]() { notifyActivity(); handleApiClips(); });
-    _server.on("/api/download", HTTP_GET, [this]() { notifyActivity(); handleApiDownload(); });
-    _server.on("/api/clear", HTTP_GET, [this]() { notifyActivity(); handleApiClear(); });
-    _server.on("/api/clear", HTTP_POST, [this]() { notifyActivity(); handleApiClear(); });
-    _server.on("/api/status", HTTP_GET, [this]() { notifyActivity(); handleStatus(); });
+    // Ensure routes are registered once
+    setupRoutes();
 
-    // Captive Portal probes
-    _server.on("/generate_204", HTTP_GET, [this]() { handleCaptivePortal(); });
-    _server.on("/gen_204", HTTP_GET, [this]() { handleCaptivePortal(); });
-    _server.on("/hotspot-detect.html", HTTP_GET, [this]() { handleCaptivePortal(); });
-    _server.on("/ncsi.txt", HTTP_GET, [this]() { handleCaptivePortal(); });
-    _server.on("/connecttest.txt", HTTP_GET, [this]() { handleCaptivePortal(); });
-
-    _server.onNotFound([this]() { handleOptions(); });
-
-    _server.begin();
+    _server.begin(port);
     _active = true;
-    Serial.println(F("[HTTP] Sync Server & Captive Portal listening on port 80."));
+    Serial.printf("[HTTP] Sync Server & Captive Portal listening on port %u.\n", port);
     return true;
 }
 
@@ -98,21 +152,53 @@ void WifiServerManager::handleClient() {
     _server.handleClient();
 }
 
+bool WifiServerManager::isLocalIp(const String& host) const {
+    IPAddress apIp = WiFi.softAPIP();
+    String apIpStr = apIp.toString();
+    if (host.length() == 0) return true;
+    if (host == apIpStr || host.startsWith(apIpStr + ":") || host == "localhost" || host.startsWith("localhost:")) {
+        return true;
+    }
+    return false;
+}
+
+void WifiServerManager::handleCatchAll() {
+    notifyActivity();
+    if (_server.method() == HTTP_OPTIONS) {
+        handleOptions();
+        return;
+    }
+
+    String host = _server.hostHeader();
+    if (!isLocalIp(host)) {
+        handleCaptivePortal();
+        return;
+    }
+
+    handleNotFound();
+}
+
+void WifiServerManager::handleFavicon() {
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
+    _server.send(204, "image/x-icon", "");
+}
+
 void WifiServerManager::handleCaptivePortal() {
     _server.sendHeader("Location", "http://192.168.4.1/", true);
     _server.send(302, "text/plain", "");
 }
 
 void WifiServerManager::handleOptions() {
-    String method = _server.method() == HTTP_OPTIONS ? "OPTIONS" : "UNKNOWN";
-    if (method == "OPTIONS") {
-        _server.sendHeader("Access-Control-Allow-Origin", "*");
-        _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE");
-        _server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-        _server.send(204);
-    } else {
-        handleCaptivePortal();
-    }
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
+    _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE");
+    _server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+    _server.send(204);
+}
+
+void WifiServerManager::handleNotFound() {
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
+    String message = "404 Not Found: " + _server.uri();
+    _server.send(404, "text/plain", message);
 }
 
 void WifiServerManager::handleStatus() {

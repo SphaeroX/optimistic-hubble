@@ -22,6 +22,8 @@ public:
     IPAddress getIp() const { return WiFi.softAPIP(); }
     const char* getSsid() const { return _ssid; }
 
+    void handleCatchAll();
+
 private:
     StorageManager& _storage;
     WebServer _server;
@@ -29,13 +31,18 @@ private:
     const char* _ssid;
     const char* _pass;
     bool _active;
+    bool _routesConfigured;
     unsigned long _lastRequestTime;
 
+    void setupRoutes();
     void handleRoot();
     void handleApiClips();
     void handleApiDownload();
     void handleApiClear();
     void handleStatus();
     void handleOptions();
+    void handleFavicon();
     void handleCaptivePortal();
+    void handleNotFound();
+    bool isLocalIp(const String& host) const;
 };
