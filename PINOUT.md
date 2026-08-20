@@ -16,6 +16,7 @@ This document describes the complete breadboard wiring for connecting **two I2S 
 | | SCL | **D5** | GPIO 7 | 🟡 Yellow | Hardware I2C Clock (SCL) |
 | | SDA | **D4** | GPIO 6 | 🟢 Green | Hardware I2C Data (SDA) |
 | | SDO / SA0 | **GND** | - | ⚫ Black | Sets I2C Address: `0x6A` (LSM6DS3) / `0x68` (BMI160) |
+| | **INT1 (Shock Interrupt)** | **D3** | **GPIO 5** | ⚪ White | **RTC GPIO Wake-Up Line: Wakes ESP32-C3 from Deep Sleep (< 10 µA)!** |
 | **Mic 1 (Left Channel)** | VDD / 3V3 | **3V3** | - | 🔴 Red | 3.3V Power |
 | | GND | **GND** | - | ⚫ Black | Ground |
 | | SD / DOUT | **D2** | GPIO 4 | 🟣 Purple | Shared I2S Serial Data In |
@@ -30,9 +31,10 @@ This document describes the complete breadboard wiring for connecting **two I2S 
 | | **L/R** | **3V3** | - | 🔴 Red | **Tied to 3.3V: Configures Mic 2 as RIGHT Channel** |
 | **Status LED (Recording Indicator)** | Anode (+) | **D10** | GPIO 10 | 🔴 Red | Long leg of LED connected to D10 |
 | | Kathode (-) | **GND** (via Resistor) | - | ⚫ Black | Short leg connected via 220Ω–330Ω resistor to GND |
+| **Manual Control / Toggle** | Boot Switch / Pushbutton | **D7** | GPIO 9 | - | **Press to toggle Wi-Fi Hotspot ON/OFF or wake up** |
 | **Optional: W25Q128 SPI-Flash (16 MB)** | VCC | **3V3** | - | 🔴 Red | 3.3V Power Rail |
 | | GND | **GND** | - | ⚫ Black | Common Ground |
-| | /CS (Chip Select) | **D3** | GPIO 5 | ⚪ White | SPI Chip Select |
+| | /CS (Chip Select) | **D3** (or D8) | GPIO 5 / 20 | ⚪ White | SPI Chip Select |
 | | CLK / SCK | **D6** | GPIO 8 | 🟤 Brown | Hardware SPI Clock |
 | | DO / MISO | **D8** | GPIO 20 | 🟢 Green | Hardware SPI MISO |
 | | DI / MOSI | **D9** | GPIO 21 | 🟡 Yellow | Hardware SPI MOSI |

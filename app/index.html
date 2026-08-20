@@ -64,17 +64,23 @@
           </div>
         </div>
 
-        <!-- Wi-Fi Sync Bar -->
-        <div class="wifi-bar">
+        <!-- Wi-Fi Sync & Power Management Controls -->
+        <div class="wifi-bar" style="flex-wrap:wrap;gap:8px;">
           <div class="wifi-input-group">
             <label for="wifiIpInput">XIAO IP:</label>
             <input type="text" id="wifiIpInput" value="192.168.4.1" placeholder="192.168.4.1">
           </div>
+          <button id="btnToggleWifi" class="btn-secondary" onclick="toggleWifiViaBle()" style="font-size:0.82rem;">
+            📡 WLAN Einschalten
+          </button>
           <button id="btnSyncWifi" class="btn-wifi-fetch" onclick="syncAllClipsFromWifi()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
             </svg>
             <span id="btnSyncText">WLAN Synchronisieren</span>
+          </button>
+          <button id="btnSleep" class="btn-secondary" onclick="enterSleepViaBle()" title="ESP32 sofort in Ultra-Low-Power Deep Sleep (< 10 uA) versetzen" style="font-size:0.82rem;background:#1e293b;">
+            😴 Deep Sleep
           </button>
         </div>
 
@@ -89,13 +95,13 @@
           </div>
 
           <div class="sensor-pill">
-            <span class="pill-label">Rauschfilter (DSP)</span>
-            <span class="pill-val" style="color:var(--accent-emerald);">Hardware Aktiv</span>
+            <span class="pill-label">Stromspar-Modus</span>
+            <span id="powerModeVal" class="pill-val" style="color:var(--accent-emerald);">Deep Sleep (< 10 µA)</span>
           </div>
 
           <div class="sensor-pill">
             <span class="pill-label">Speichereffizienz</span>
-            <span class="pill-val" style="color:var(--accent-cyan);">8 KB/s (Mono)</span>
+            <span class="pill-val" style="color:var(--accent-cyan);">8 KB/s (Mono ADPCM)</span>
           </div>
         </div>
       </section>

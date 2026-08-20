@@ -2,7 +2,8 @@
 
 BleManager::BleManager()
     : _pServer(nullptr), _pService(nullptr), _pCharState(nullptr),
-      _pCharAudio(nullptr), _pCharTap(nullptr), _connected(false), _currentState(STATE_IDLE) {}
+      _pCharAudio(nullptr), _pCharTap(nullptr), _pCharCmd(nullptr),
+      _connected(false), _currentState(STATE_IDLE), _pendingCmd(CMD_NONE) {}
 
 void BleManager::onConnect(NimBLEServer* pServer) {
     _connected = true;
@@ -13,6 +14,23 @@ void BleManager::onDisconnect(NimBLEServer* pServer) {
     _connected = false;
     Serial.println(F("[BLE] Client disconnected. Restarting advertising..."));
     NimBLEDevice::startAdvertising();
+}
+
+void BleManager::onWrite(NimBLECharacteristic* pCharacteristic) {
+    if (pCharacteristic == _pCharCmd || pCharacteristic == _pCharState) {
+        std::string val = pCharacteristic->getValue();
+        if (!val.empty()) {
+            uint8_t cmdByte = (uint8_t)val[0];
+            _pendingCmd = (BleCommand)cmdByte;
+            Serial.printf("[BLE] Command received: %u\n", cmdByte);
+        }
+    }
+}
+
+BleCommand BleManager::getPendingCommand() {
+    BleCommand cmd = _pendingCmd;
+    _pendingCmd = CMD_NONE;
+    return cmd;
 }
 
 bool BleManager::begin(const char* deviceName) {
@@ -29,6 +47,7 @@ bool BleManager::begin(const char* deviceName) {
         BLE_CHAR_STATE_UUID,
         NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY
     );
+    _pCharState->setCallbacks(this);
 
     // Audio Data Stream Characteristic: Notify
     _pCharAudio = _pService->createCharacteristic(
@@ -41,6 +60,13 @@ bool BleManager::begin(const char* deviceName) {
         BLE_CHAR_TAP_UUID,
         NIMBLE_PROPERTY::NOTIFY
     );
+
+    // Command Characteristic: Write
+    _pCharCmd = _pService->createCharacteristic(
+        BLE_CHAR_CMD_UUID,
+        NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
+    );
+    _pCharCmd->setCallbacks(this);
 
     // Set initial values
     uint8_t initPayload[7] = {0, 0, 0, 0, 0, (uint8_t)(AUDIO_SAMPLE_RATE & 0xFF), (uint8_t)((AUDIO_SAMPLE_RATE >> 8) & 0xFF)};
@@ -58,6 +84,21 @@ bool BleManager::begin(const char* deviceName) {
     pAdvertising->start();
     Serial.printf("[BLE] Server active. Advertising as \"%s\"...\n", deviceName);
 
+    return true;
+}
+
+bool BleManager::stop() {
+    if (NimBLEDevice::getInitialized()) {
+        NimBLEDevice::getAdvertising()->stop();
+        NimBLEDevice::deinit(true);
+    }
+    _connected = false;
+    _pServer = nullptr;
+    _pService = nullptr;
+    _pCharState = nullptr;
+    _pCharAudio = nullptr;
+    _pCharTap = nullptr;
+    _pCharCmd = nullptr;
     return true;
 }
 

@@ -10,19 +10,34 @@
 #define BMI160_REG_DATA_START   0x0C
 #define BMI160_REG_ACCEL_RANGE  0x41
 #define BMI160_REG_GYRO_RANGE   0x43
+#define BMI160_REG_INT_EN_0     0x50
+#define BMI160_REG_INT_OUT_CTRL 0x53
+#define BMI160_REG_INT_MAP_0    0x55
+#define BMI160_REG_INT_MOTION_0 0x5F
+#define BMI160_REG_INT_MOTION_1 0x60
 #define BMI160_REG_CMD          0x7E
 
 // LSM6DS Series (LSM6DS3 / LSM6DSO / LSM6DSL)
 #define LSM6DS_REG_WHO_AM_I     0x0F
 #define LSM6DS_REG_CTRL1_XL     0x10 // Accel control
 #define LSM6DS_REG_CTRL2_G      0x11 // Gyro control
+#define LSM6DS_REG_CTRL6_C      0x15 // Accel low power mode
 #define LSM6DS_REG_DATA_START   0x22 // Gyro X, Y, Z (0x22-0x27), Accel X, Y, Z (0x28-0x2D)
+#define LSM6DS_REG_TAP_CFG      0x58 // Interrupt enable
+#define LSM6DS_REG_WAKE_UP_THS  0x5B // Wake-up threshold
+#define LSM6DS_REG_WAKE_UP_DUR  0x5C // Wake-up duration
+#define LSM6DS_REG_MD1_CFG      0x5E // Route wake-up to INT1
 
 // MPU-6050
 #define MPU_REG_WHO_AM_I        0x75
 #define MPU_REG_PWR_MGMT_1      0x6B
+#define MPU_REG_PWR_MGMT_2      0x6C
 #define MPU_REG_ACCEL_CONFIG    0x1C
 #define MPU_REG_GYRO_CONFIG     0x1B
+#define MPU_REG_INT_PIN_CFG     0x37
+#define MPU_REG_INT_ENABLE      0x38
+#define MPU_REG_MOT_THR         0x1F
+#define MPU_REG_MOT_DUR         0x20
 #define MPU_REG_DATA_START      0x3B // Accel (0x3B-0x40), Temp (0x41-0x42), Gyro (0x43-0x48)
 
 ImuDriver::ImuDriver()
@@ -226,5 +241,112 @@ bool ImuDriver::readSensorData(ImuMetricData& metricData, ImuRawData* rawDataOut
         return true;
     }
 
+    return false;
+}
+
+bool ImuDriver::configureLowPowerWakeup(float thresholdG) {
+    if (!_initialized) return false;
+
+    if (_type == IMU_TYPE_LSM6DS) {
+        // 1. Power down Gyroscope to save ~4 mA
+        writeRegister(LSM6DS_REG_CTRL2_G, 0x00);
+        delay(10);
+
+        // 2. Set Accelerometer to Low Power mode @ 26 Hz, +/- 2g
+        writeRegister(LSM6DS_REG_CTRL1_XL, 0x20); // 26 Hz ODR
+        writeRegister(LSM6DS_REG_CTRL6_C, 0x10);  // XL_HM_MODE = 1 (Low-Power Accel enabled)
+        delay(10);
+
+        // 3. Configure Wake-up threshold (1 LSB = 2000mg / 64 = 31.25mg)
+        uint8_t ths = (uint8_t)(thresholdG * 1000.0f / 31.25f);
+        if (ths < 1) ths = 1;
+        if (ths > 63) ths = 63; // 6-bit field
+        writeRegister(LSM6DS_REG_WAKE_UP_THS, ths);
+        writeRegister(LSM6DS_REG_WAKE_UP_DUR, 0x00); // Instant pulse
+
+        // 4. Enable interrupt logic and route to INT1
+        writeRegister(LSM6DS_REG_TAP_CFG, 0x80); // INTERRUPTS_ENABLE = 1
+        writeRegister(LSM6DS_REG_MD1_CFG, 0x20); // INT1_WU = 1 (Wake-Up routed to INT1)
+
+        Serial.printf("[IMU] LSM6DS configured for Low-Power Wake-up (~6 uA). Threshold: %.2f g (reg=0x%02X)\n", 
+                      thresholdG, ths);
+        return true;
+    }
+    else if (_type == IMU_TYPE_BMI160) {
+        // 1. Power down Gyroscope
+        writeRegister(BMI160_REG_CMD, 0x14); // Gyro suspend mode
+        delay(10);
+
+        // 2. Configure Accelerometer to Low-Power mode
+        writeRegister(BMI160_REG_CMD, 0x12); // Accel low-power mode
+        delay(10);
+
+        // 3. Configure Any-Motion Interrupt on X, Y, Z
+        writeRegister(BMI160_REG_INT_EN_0, 0x07); // Any-motion X, Y, Z enable
+        writeRegister(BMI160_REG_INT_OUT_CTRL, 0x0A); // INT1 output enable, active-high, push-pull
+        writeRegister(BMI160_REG_INT_MAP_0, 0x04); // Map any-motion to INT1
+        writeRegister(BMI160_REG_INT_MOTION_0, 0x00); // 1 consecutive violation
+
+        // Threshold: 1 LSB = 3.91mg @ +/-2g
+        uint16_t rawThs = (uint16_t)(thresholdG * 1000.0f / 3.91f);
+        uint8_t ths = (rawThs > 255) ? 255 : (uint8_t)rawThs;
+        writeRegister(BMI160_REG_INT_MOTION_1, ths);
+
+        Serial.printf("[IMU] BMI160 configured for Low-Power Wake-up (~5 uA). Threshold: %.2f g (reg=0x%02X)\n", 
+                      thresholdG, ths);
+        return true;
+    }
+    else if (_type == IMU_TYPE_MPU6050) {
+        // 1. Wake up MPU
+        writeRegister(MPU_REG_PWR_MGMT_1, 0x00);
+        delay(10);
+
+        // 2. Configure Accel Only (Gyro standby)
+        writeRegister(MPU_REG_PWR_MGMT_2, 0x07); // Accel ON, Gyro OFF
+        writeRegister(MPU_REG_INT_PIN_CFG, 0x20); // 50us pulse, push-pull, active high
+        writeRegister(MPU_REG_INT_ENABLE, 0x40);  // Motion detection interrupt
+
+        // Threshold: 1 LSB = 32mg
+        uint16_t rawThs = (uint16_t)(thresholdG * 1000.0f / 32.0f);
+        uint8_t ths = (rawThs > 255) ? 255 : (uint8_t)rawThs;
+        writeRegister(MPU_REG_MOT_THR, ths);
+        writeRegister(MPU_REG_MOT_DUR, 0x01);
+
+        // 3. Put MPU into cycle mode for low power
+        writeRegister(MPU_REG_PWR_MGMT_1, 0x20); // Cycle mode
+
+        Serial.printf("[IMU] MPU-6050 configured for Low-Power Wake-up. Threshold: %.2f g\n", thresholdG);
+        return true;
+    }
+
+    return false;
+}
+
+bool ImuDriver::setPowerMode(bool active) {
+    if (!_initialized) return false;
+
+    if (active) {
+        // Restore high-performance 104 Hz sampling mode for active operation
+        if (_type == IMU_TYPE_LSM6DS) {
+            writeRegister(LSM6DS_REG_CTRL1_XL, 0x40); // 104 Hz, +/- 2g
+            delay(10);
+            writeRegister(LSM6DS_REG_CTRL2_G, 0x4C);  // 104 Hz Gyro
+            delay(10);
+            return true;
+        } else if (_type == IMU_TYPE_BMI160) {
+            writeRegister(BMI160_REG_CMD, 0x11); // Accel normal mode
+            delay(10);
+            writeRegister(BMI160_REG_CMD, 0x15); // Gyro normal mode
+            delay(50);
+            return true;
+        } else if (_type == IMU_TYPE_MPU6050) {
+            writeRegister(MPU_REG_PWR_MGMT_1, 0x00);
+            writeRegister(MPU_REG_PWR_MGMT_2, 0x00);
+            delay(10);
+            return true;
+        }
+    } else {
+        return configureLowPowerWakeup(1.4f);
+    }
     return false;
 }

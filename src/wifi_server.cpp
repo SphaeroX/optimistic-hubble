@@ -2,11 +2,15 @@
 #include "config.h"
 
 WifiServerManager::WifiServerManager(StorageManager& storageRef)
-    : _storage(storageRef), _server(HTTP_SERVER_PORT), _ssid(WIFI_AP_SSID), _pass(WIFI_AP_PASS) {}
+    : _storage(storageRef), _server(HTTP_SERVER_PORT), _ssid(WIFI_AP_SSID), _pass(WIFI_AP_PASS),
+      _active(false), _lastRequestTime(0) {}
 
 bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port) {
+    if (_active) return true;
+
     _ssid = ssid;
     _pass = pass;
+    _lastRequestTime = millis();
 
     WiFi.disconnect(true);
     delay(50);
@@ -36,12 +40,12 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
     Serial.println(F("--------------------------------------------------"));
 
     // Register WebServer Routes
-    _server.on("/", HTTP_GET, [this]() { handleRoot(); });
-    _server.on("/api/clips", HTTP_GET, [this]() { handleApiClips(); });
-    _server.on("/api/download", HTTP_GET, [this]() { handleApiDownload(); });
-    _server.on("/api/clear", HTTP_GET, [this]() { handleApiClear(); });
-    _server.on("/api/clear", HTTP_POST, [this]() { handleApiClear(); });
-    _server.on("/api/status", HTTP_GET, [this]() { handleStatus(); });
+    _server.on("/", HTTP_GET, [this]() { notifyActivity(); handleRoot(); });
+    _server.on("/api/clips", HTTP_GET, [this]() { notifyActivity(); handleApiClips(); });
+    _server.on("/api/download", HTTP_GET, [this]() { notifyActivity(); handleApiDownload(); });
+    _server.on("/api/clear", HTTP_GET, [this]() { notifyActivity(); handleApiClear(); });
+    _server.on("/api/clear", HTTP_POST, [this]() { notifyActivity(); handleApiClear(); });
+    _server.on("/api/status", HTTP_GET, [this]() { notifyActivity(); handleStatus(); });
 
     // Captive Portal probes
     _server.on("/generate_204", HTTP_GET, [this]() { handleCaptivePortal(); });
@@ -53,11 +57,43 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
     _server.onNotFound([this]() { handleOptions(); });
 
     _server.begin();
+    _active = true;
     Serial.println(F("[HTTP] Sync Server & Captive Portal listening on port 80."));
     return true;
 }
 
+bool WifiServerManager::stop() {
+    if (!_active) return true;
+
+    _dnsServer.stop();
+    _server.close();
+    _server.stop();
+
+    WiFi.softAPdisconnect(true);
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+
+    _active = false;
+    Serial.println(F("[WIFI] Wi-Fi SoftAP and Web Server turned OFF to save battery (~150 mA)."));
+    return true;
+}
+
+void WifiServerManager::notifyActivity() {
+    _lastRequestTime = millis();
+}
+
+unsigned long WifiServerManager::getInactivityMs() const {
+    if (!_active) return 0;
+    return millis() - _lastRequestTime;
+}
+
+bool WifiServerManager::isInactive(unsigned long timeoutMs) const {
+    if (!_active) return false;
+    return (millis() - _lastRequestTime) >= timeoutMs;
+}
+
 void WifiServerManager::handleClient() {
+    if (!_active) return;
     _dnsServer.processNextRequest();
     _server.handleClient();
 }

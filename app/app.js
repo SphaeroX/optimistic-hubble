@@ -4,12 +4,15 @@
 const BLE_SERVICE_UUID     = '19b10000-e8f2-537e-4f6c-d104768a1214';
 const BLE_CHAR_STATE_UUID  = '19b10001-e8f2-537e-4f6c-d104768a1214';
 const BLE_CHAR_TAP_UUID    = '19b10003-e8f2-537e-4f6c-d104768a1214';
+const BLE_CHAR_CMD_UUID    = '19b10004-e8f2-537e-4f6c-d104768a1214';
 
 // App State
 let bleDevice = null;
 let gattServer = null;
 let charState = null;
 let charTap = null;
+let charCmd = null;
+let wifiActiveOnDevice = false;
 
 let currentWavBlob = null;
 let currentWavUrl = null;
@@ -279,6 +282,12 @@ async function connectBle() {
     await charTap.startNotifications();
     charTap.addEventListener('characteristicvaluechanged', onTapEvent);
 
+    try {
+      charCmd = await service.getCharacteristic(BLE_CHAR_CMD_UUID);
+    } catch (e) {
+      console.log('[BLE] Command characteristic optional fallback:', e);
+    }
+
     btnConnect.classList.add('connected');
     btnConnectText.textContent = 'BLE Verbunden';
     connectionBadge.textContent = 'BLE Online';
@@ -293,6 +302,50 @@ async function connectBle() {
   }
 }
 
+async function sendBleCommand(cmdCode) {
+  if (!charCmd && !charState) {
+    alert('Bitte zuerst über BLE verbinden, um Befehle an den XIAO zu senden!');
+    return false;
+  }
+  try {
+    const targetChar = charCmd || charState;
+    const buf = new Uint8Array([cmdCode]);
+    await targetChar.writeValue(buf);
+    console.log(`[BLE CMD] Sent command opcode: ${cmdCode}`);
+    return true;
+  } catch (e) {
+    console.error('[BLE CMD Error]', e);
+    alert(`Befehl konnte nicht gesendet werden: ${e.message}`);
+    return false;
+  }
+}
+
+async function toggleWifiViaBle() {
+  const btnToggleWifi = document.getElementById('btnToggleWifi');
+  if (wifiActiveOnDevice) {
+    const ok = await sendBleCommand(2); // CMD_STOP_WIFI
+    if (ok) {
+      wifiActiveOnDevice = false;
+      if (btnToggleWifi) btnToggleWifi.textContent = '📡 WLAN Einschalten';
+    }
+  } else {
+    const ok = await sendBleCommand(1); // CMD_START_WIFI
+    if (ok) {
+      wifiActiveOnDevice = true;
+      if (btnToggleWifi) btnToggleWifi.textContent = '📡 WLAN Ausschalten';
+    }
+  }
+}
+
+async function enterSleepViaBle() {
+  if (!confirm('ESP32-C3 jetzt sofort in den Ultra-Low-Power Deep Sleep (< 10 µA) versetzen?\nEr wacht automatisch bei Erschütterung (IMU Shock) oder Tastendruck auf.')) {
+    return;
+  }
+  await sendBleCommand(3); // CMD_ENTER_SLEEP
+  disconnectBle();
+  updateDeviceState(5); // STATE_SLEEPING
+}
+
 function disconnectBle() {
   if (bleDevice && bleDevice.gatt && bleDevice.gatt.connected) {
     bleDevice.gatt.disconnect();
@@ -305,6 +358,7 @@ function onDisconnected() {
   btnConnectText.textContent = 'BLE Live-Signal';
   connectionBadge.textContent = 'BLE Standby';
   connectionBadge.className = 'badge badge-disconnected';
+  charCmd = null;
   console.log('[BLE] Disconnected.');
 }
 
@@ -321,24 +375,47 @@ function onStateChanged(event) {
 
 function updateDeviceState(state, latestClipId = 0, totalClips = 0) {
   stateRing.className = 'state-ring';
+  const btnToggleWifi = document.getElementById('btnToggleWifi');
+  const powerModeVal = document.getElementById('powerModeVal');
 
   switch (state) {
     case 0: // IDLE
       stateRing.classList.add('state-idle');
-      stateLabel.textContent = 'Bereit';
-      stateDesc.textContent = 'Hau auf das Breadboard, um eine Aufnahme zu starten (LED leuchtet).';
+      stateLabel.textContent = 'Bereit (Auto Deep-Sleep)';
+      stateDesc.textContent = 'Hau auf das Breadboard zum Aufnehmen. Geht nach 15s Inaktivität in Deep Sleep (< 10 µA).';
+      if (powerModeVal) powerModeVal.textContent = 'Bereit (< 10 µA Sleep)';
+      wifiActiveOnDevice = false;
+      if (btnToggleWifi) btnToggleWifi.textContent = '📡 WLAN Einschalten';
       break;
 
     case 1: // RECORDING
       stateRing.classList.add('state-recording');
       stateLabel.textContent = 'Aufnahme läuft (Dual-Mic Noise Filter 8 KB/s)...';
       stateDesc.textContent = 'Sprich ins Mikrofon! Hau nochmals auf das Breadboard zum Beenden & Speichern.';
+      if (powerModeVal) powerModeVal.textContent = '🔴 Aufnahme (~28 mA)';
       break;
 
     case 3: // DONE / SAVED_TO_FLASH
       stateRing.classList.add('state-idle');
       stateLabel.textContent = `Aufnahme #${latestClipId} im Flash gespeichert!`;
       stateDesc.textContent = `Gesamt ${totalClips} Aufnahme(n) im Flash bereit zur WLAN-Synchronisation.`;
+      if (powerModeVal) powerModeVal.textContent = 'Gespeichert';
+      break;
+
+    case 4: // STATE_WIFI_ACTIVE
+      stateRing.classList.add('state-idle');
+      stateLabel.textContent = 'WLAN Hotspot Aktiv (Sync)';
+      stateDesc.textContent = 'Verbinde dich mit "XIAO-Audio-Hotspot" und klicke "WLAN Synchronisieren".';
+      if (powerModeVal) powerModeVal.textContent = '📶 WLAN Aktiv (~150 mA)';
+      wifiActiveOnDevice = true;
+      if (btnToggleWifi) btnToggleWifi.textContent = '📡 WLAN Ausschalten';
+      break;
+
+    case 5: // STATE_SLEEPING
+      stateRing.classList.add('state-idle');
+      stateLabel.textContent = '😴 Deep Sleep Aktiv';
+      stateDesc.textContent = 'Gerät schläft stromsparend (< 10 µA). Hau auf das Breadboard zum Aufwecken!';
+      if (powerModeVal) powerModeVal.textContent = '😴 Deep Sleep (~8 µA)';
       break;
   }
 }

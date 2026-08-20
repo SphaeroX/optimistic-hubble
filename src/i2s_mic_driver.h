@@ -20,6 +20,7 @@ public:
     bool begin(int sckPin, int wsPin, int sdPin, uint32_t sampleRate = 16000);
     bool readMetrics(StereoAudioMetrics& metrics);
     void stop();
+    bool isInitialized() const { return _initialized; }
 
     static void formatVuBar(char* buffer, size_t maxLen, float rmsValue, float maxScale = 50000.0f, size_t barWidth = 15);
 

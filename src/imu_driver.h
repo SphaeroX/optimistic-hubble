@@ -34,6 +34,10 @@ public:
     bool begin(uint8_t forcedAddress = 0x00);
     bool readSensorData(ImuMetricData& metricData, ImuRawData* rawDataOut = nullptr);
     
+    // Hardware Low-Power Wake-up Interrupt Configuration for Deep Sleep
+    bool configureLowPowerWakeup(float thresholdG = 1.4f);
+    bool setPowerMode(bool active);
+
     ImuType getType() const { return _type; }
     uint8_t getAddress() const { return _address; }
     uint8_t getChipId() const { return _chipId; }

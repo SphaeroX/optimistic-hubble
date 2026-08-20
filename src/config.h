@@ -10,6 +10,10 @@
 #define PIN_I2C_SCL             7   // XIAO D5 = GPIO 7
 #define I2C_FREQUENCY           400000UL
 
+// IMU Hardware Interrupt Wakeup Pin (RTC GPIO 5) & Boot Button (GPIO 9)
+#define PIN_IMU_INT             5   // XIAO D3 = GPIO 5 (RTC IO, wakes ESP32-C3 from Deep Sleep)
+#define PIN_BOOT_BTN            9   // XIAO D7 = GPIO 9 (Boot Button)
+
 // I2S Stereo Microphone Pins
 #define PIN_I2S_SCK             2   // XIAO D0 = GPIO 2 (Bit Clock)
 #define PIN_I2S_WS              3   // XIAO D1 = GPIO 3 (Word Select / LRCLK)
@@ -21,6 +25,14 @@
 
 // Serial Baud Rate
 #define SERIAL_BAUD_RATE        115200
+
+// ============================================================================
+// Ultra-Low-Power & Deep Sleep Parameters
+// ============================================================================
+#define INACTIVITY_SLEEP_TIMEOUT_MS  15000UL  // 15 seconds of idle inactivity -> Enter Deep Sleep (< 10 uA)
+#define WIFI_INACTIVITY_TIMEOUT_MS   120000UL // 2 minutes of idle Wi-Fi -> Stop SoftAP to save ~150 mA
+#define IMU_WAKEUP_THRESHOLD_G       1.4f     // Hardware shock acceleration threshold for deep sleep wakeup
+#define ENABLE_DEEP_SLEEP_AUTO       true     // Automatically sleep when idle
 
 // ============================================================================
 // Audio Recording & Preamp Parameters
@@ -49,11 +61,24 @@
 #define BLE_CHAR_STATE_UUID     "19b10001-e8f2-537e-4f6c-d104768a1214"
 #define BLE_CHAR_AUDIO_UUID     "19b10002-e8f2-537e-4f6c-d104768a1214"
 #define BLE_CHAR_TAP_UUID       "19b10003-e8f2-537e-4f6c-d104768a1214"
+#define BLE_CHAR_CMD_UUID       "19b10004-e8f2-537e-4f6c-d104768a1214"
 
 // Device Operational States
 enum DeviceState : uint8_t {
     STATE_IDLE = 0,
     STATE_RECORDING = 1,
     STATE_TRANSFERRING = 2,
-    STATE_DONE = 3
+    STATE_DONE = 3,
+    STATE_WIFI_ACTIVE = 4,
+    STATE_SLEEPING = 5
+};
+
+// Remote Control Commands (via BLE)
+enum BleCommand : uint8_t {
+    CMD_NONE = 0,
+    CMD_START_WIFI = 1,
+    CMD_STOP_WIFI = 2,
+    CMD_ENTER_SLEEP = 3,
+    CMD_START_RECORDING = 4,
+    CMD_STOP_RECORDING = 5
 };
