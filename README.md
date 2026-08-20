@@ -1,6 +1,59 @@
-# XIAO ESP32C3 - Ultra-Low-Power Voice Assistant & Dual-Mic Noise Filter
+# XIAO ESP32C3 - Ultra-Low-Power Voice Assistant & Companion Monorepo
 
-An embedded voice recording and signal processing platform built for the **Seeed Studio XIAO ESP32C3**, featuring **two I2S MEMS microphones**, an **IMU sensor** with **Ultra-Low-Power Deep Sleep (< 10 µA)** & **Hardware Shock Wakeup**, **persistent 4MB Flash storage (`LittleFS`)**, and an **on-demand high-speed Wi-Fi synchronization engine** with real-time **Dual-Mic Active Noise Filtering (DSP)** and **8 KB/s high-efficiency storage**.
+An embedded voice recording, signal processing, and companion application monorepo built for the **Seeed Studio XIAO ESP32C3**, featuring **two I2S MEMS microphones**, an **IMU sensor** with **Ultra-Low-Power Deep Sleep (< 10 µA)** & **Hardware Shock Wakeup**, **persistent Flash storage (`LittleFS`)**, and a **Flutter Multiplatform Companion App** supporting **Android, iOS, and Windows Desktop**.
+
+---
+
+## Monorepo Architecture
+
+```
+optimistic-hubble/
+├── apps/
+│   ├── companion_app/           # Flutter Multiplatform App (Android, iOS, Windows, macOS, Web)
+│   │   ├── lib/                 # Clean, modular Dart architecture (Theme, BLE, Wi-Fi sync, Telemetry)
+│   │   ├── android/             # Android project & permissions
+│   │   ├── ios/                 # iOS project & Info.plist permissions
+│   │   └── windows/             # Windows desktop runner & Win32 window config
+│   └── web_prototype/           # Legacy Web Bluetooth prototype
+├── firmware/                    # PlatformIO ESP32-C3 Firmware
+│   ├── src/                     # Audio recorder, BLE service, Wi-Fi SoftAP server, IMU drivers
+│   ├── platformio.ini           # Board definitions, partition tables & compiler flags
+│   └── xiao_esp32c3_hw_test.ino # Hardware test & validation sketch
+├── hardware/                    # KiCad & EasyEDA schematic generators, symbols, outputs
+├── research/                    # IoT transfer studies, BLE/Wi-Fi benchmarks & protocol docs
+├── build.bat                    # Compiles ESP32-C3 firmware
+├── flash_and_monitor.bat        # Builds, flashes and monitors XIAO ESP32-C3
+├── monitor.bat                  # Starts serial monitor (115200 baud)
+├── run_flutter_windows.bat      # Launches Flutter companion app on Windows desktop
+└── start_app.bat                # Starts legacy web prototype
+```
+
+---
+
+## Quick Start Guide
+
+### 1. Running the Flutter Companion App
+* **Windows Desktop (Testing on PC):**
+  ```powershell
+  .\run_flutter_windows.bat
+  # Or:
+  cd apps\companion_app
+  flutter run -d windows
+  ```
+* **Android:**
+  ```powershell
+  cd apps\companion_app
+  flutter run -d android
+  ```
+* **iOS:**
+  ```powershell
+  cd apps\companion_app
+  flutter run -d ios
+  ```
+
+### 2. Building and Flashing Firmware
+* **Build Firmware:** Double-click `build.bat` or run `cd firmware; pio run`
+* **Flash & Monitor:** Double-click `flash_and_monitor.bat` or run `cd firmware; pio run -t upload; pio device monitor`
 
 ---
 

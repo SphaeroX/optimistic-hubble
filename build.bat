@@ -1,18 +1,21 @@
 @echo off
 setlocal
-title Xiao ESP32-C3 - Build
+title Xiao ESP32-C3 - Firmware Build
 
 echo ========================================================
-echo   Seeed Studio XIAO ESP32C3 - Compiling Project...
+echo   Seeed Studio XIAO ESP32C3 - Compiling Firmware...
 echo ========================================================
 echo.
 
+pushd "%~dp0firmware"
 pio run
+set BUILD_ERR=%ERRORLEVEL%
+popd
 
-if %ERRORLEVEL% EQU 0 (
+if %BUILD_ERR% EQU 0 (
     echo.
     echo ========================================================
-    echo   [SUCCESS] Build completed with 0 errors!
+    echo   [SUCCESS] Firmware build completed with 0 errors!
     echo ========================================================
 ) else (
     echo.

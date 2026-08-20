@@ -1,15 +1,47 @@
-.pio
-.vscode
-.idea
+# Monorepo Unified .gitignore
+
+# Flutter / Dart
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.pub/
+**/coverage/
+*.ephemeral
+
+# Embedded / PlatformIO
+firmware/.pio/
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# IDEs & Editor
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+.fleet/
+
+# Python & Virtual Environments
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.venv/
+*/.venv/
 *.log
+
+# KiCad & EDA Artifacts
 *.erc
 *_sklib.py
 test_skidl.net
-hardware/.venv/
-.venv/
 *.kicad_prl
 *-backups/
 ~*.lck
 *.lck
+
+# OS / Windows / macOS
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
