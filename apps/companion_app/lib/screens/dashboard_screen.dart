@@ -381,7 +381,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final isSyncing = widget.syncManager.isSyncing;
     final errorMsg = widget.syncManager.errorMessage;
     final isConnected = widget.bleService.isConnected;
-    final isWifiActive = widget.bleService.telemetry.state == DeviceState.wifiActive;
     final syncedCount = clips.where((c) => c.syncState == SyncState.synced).length;
 
     return ListView(
@@ -438,8 +437,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         height: 14,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
                       )
-                    : const Icon(Icons.sync, size: 18),
-                label: Text(isSyncing ? 'Syncing...' : 'Adaptive Sync All'),
+                    : const Icon(Icons.bolt, size: 18),
+                label: Text(isSyncing ? 'Syncing...' : 'BLE Sync All'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryCyan,
                   foregroundColor: Colors.black,
@@ -462,13 +461,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         const SizedBox(height: 12),
 
-        // Wi-Fi Hotspot Quick Control Card
+        // BLE 5.0 High-Throughput Quick Status Card
         Card(
-          color: isWifiActive ? AppTheme.accentGreen.withAlpha(20) : const Color(0xFF131B2A),
+          color: isConnected ? AppTheme.primaryCyan.withAlpha(20) : const Color(0xFF131B2A),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
             side: BorderSide(
-              color: isWifiActive ? AppTheme.accentGreen : const Color(0xFF243248),
+              color: isConnected ? AppTheme.primaryCyan : const Color(0xFF243248),
             ),
           ),
           child: Padding(
@@ -476,8 +475,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Row(
               children: [
                 Icon(
-                  isWifiActive ? Icons.wifi : Icons.wifi_off,
-                  color: isWifiActive ? AppTheme.accentGreen : AppTheme.textMuted,
+                  isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+                  color: isConnected ? AppTheme.primaryCyan : AppTheme.textMuted,
                   size: 22,
                 ),
                 const SizedBox(width: 12),
@@ -486,44 +485,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isWifiActive ? 'Wi-Fi Turbo Active' : 'Wi-Fi Hotspot Standby',
+                        isConnected ? 'BLE 5.0 High-Throughput Ready' : 'BLE High-Throughput Standby',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
-                          color: isWifiActive ? AppTheme.accentGreen : Colors.white,
+                          color: isConnected ? AppTheme.primaryCyan : Colors.white,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        isWifiActive
-                            ? 'SSID: ${AppConstants.defaultApSsid} (192.168.4.1)'
-                            : 'Auto-starts for Turbo sync (or toggle manually)',
+                        isConnected
+                            ? 'L2CAP CoC (SPSM 0x0081) • 2M PHY • ~125-175 KB/s'
+                            : 'Connect to Xiao ESP32 to sync recordings over BLE',
                         style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                if (isConnected)
-                  ElevatedButton(
-                    onPressed: () {
-                      if (isWifiActive) {
-                        widget.bleService.sendCommand(BleCommand.stopWifi);
-                      } else {
-                        widget.bleService.sendCommand(BleCommand.startWifi);
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: isWifiActive ? AppTheme.accentOrange : const Color(0xFF1D283A),
-                      foregroundColor: isWifiActive ? Colors.black : AppTheme.primaryCyan,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                    child: Text(
-                      isWifiActive ? 'Turn Off' : 'Turn On',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -577,7 +555,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Icon(Icons.mic_none, size: 48, color: AppTheme.textMuted),
                   SizedBox(height: 12),
                   Text(
-                    'No recordings stored yet.\n\n• Tap board or click "Record" to record audio\n• High-speed Wi-Fi Turbo (>1.8 MB/s) with Range Resume',
+                    'No recordings stored yet.\n\n• Tap board or click "Record" to record audio\n• High-speed BLE 5.0 L2CAP CoC (125-175 KB/s) sync',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
                   ),

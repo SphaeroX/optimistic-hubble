@@ -20,32 +20,12 @@ class SettingsTab extends StatefulWidget {
 }
 
 class _SettingsTabState extends State<SettingsTab> {
-  late final TextEditingController _ssidController;
-  late final TextEditingController _passController;
-  late final TextEditingController _ipController;
-
-  @override
-  void initState() {
-    super.initState();
-    _ssidController = TextEditingController(text: AppConstants.defaultApSsid);
-    _passController = TextEditingController(text: AppConstants.defaultApPassword);
-    _ipController = TextEditingController(text: widget.syncManager.deviceIp);
-  }
-
-  @override
-  void dispose() {
-    _ssidController.dispose();
-    _passController.dispose();
-    _ipController.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        // Tiered Adaptive Hybrid Engine Overview
+        // BLE 5.0 High-Throughput Sync Overview
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -54,93 +34,39 @@ class _SettingsTabState extends State<SettingsTab> {
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.auto_awesome, color: AppTheme.primaryCyan, size: 22),
+                    Icon(Icons.bolt, color: AppTheme.primaryCyan, size: 22),
                     SizedBox(width: 8),
                     Text(
-                      'Tiered Adaptive Hybrid Sync Engine',
+                      'BLE 5.0 High-Throughput Sync Architecture',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'The companion app dynamically chooses the optimal sync strategy based on file size and connection state:',
+                  'All audio recordings are synchronized directly over BLE 5.0 with zero Wi-Fi state disruption or captive portal issues:',
                   style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
                 ),
                 const SizedBox(height: 12),
                 _buildSyncTierRow(
                   icon: Icons.bluetooth_audio,
                   color: AppTheme.primaryCyan,
-                  title: 'Tier 1: Silent BLE 5.0 L2CAP CoC',
-                  desc: 'Audio < 2.0 MB (< 4 min). Transferred silently in 4-18s with zero Wi-Fi state disruption.',
+                  title: 'BLE 5.0 2M PHY & DLE',
+                  desc: 'Physical link operates at 2 Mbps with Data Length Extension (251-byte Link Layer PDU) for maximum radio throughput.',
                 ),
                 const SizedBox(height: 8),
                 _buildSyncTierRow(
-                  icon: Icons.wifi_protected_setup,
-                  color: AppTheme.accentOrange,
-                  title: 'Tier 2: High-Speed Wi-Fi SoftAP',
-                  desc: 'Audio ≥ 2.0 MB (up to 16.8 MB). Transferred at >1.8 MB/s with RFC 7233 Range Resume and cellular 5G preservation.',
-                ),
-                const SizedBox(height: 8),
-                _buildSyncTierRow(
-                  icon: Icons.timer,
+                  icon: Icons.speed,
                   color: AppTheme.accentGreen,
-                  title: 'SoftAP Inactivity Watchdog',
-                  desc: 'Wi-Fi radio automatically shuts down after 60s without clients or 30s idle, saving ~150 mA battery current.',
+                  title: 'L2CAP Credit-Based Channels (SPSM 0x0081)',
+                  desc: 'High-speed binary stream (~125-175 KB/s). Transfers a 1-minute audio clip in ~3.8s (~15x real-time).',
                 ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // Wi-Fi SoftAP Sync Config
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.wifi, color: AppTheme.primaryCyan, size: 22),
-                    SizedBox(width: 8),
-                    Text(
-                      'Wi-Fi SoftAP Sync Config',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _ssidController,
-                  decoration: const InputDecoration(
-                    labelText: 'Hotspot SSID Pattern',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.router),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _passController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'WPA2 Password',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.lock),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _ipController,
-                  decoration: const InputDecoration(
-                    labelText: 'Device IP Address (Gateway)',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.network_ping),
-                  ),
-                  onChanged: (val) {
-                    widget.syncManager.updateEndpoint(val.trim(), AppConstants.defaultHttpPort);
-                  },
+                const SizedBox(height: 8),
+                _buildSyncTierRow(
+                  icon: Icons.verified_user,
+                  color: AppTheme.accentPurple,
+                  title: 'Per-Chunk & File-Level CRC32',
+                  desc: 'Every 512-byte frame is hardware CRC32 checked, with full-file validation before saving to local disk.',
                 ),
               ],
             ),
@@ -170,16 +96,6 @@ class _SettingsTabState extends State<SettingsTab> {
                   spacing: 10,
                   runSpacing: 10,
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: () => widget.bleService.sendCommand(BleCommand.startWifi),
-                      icon: const Icon(Icons.wifi_tethering),
-                      label: const Text('Start SoftAP Server'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => widget.bleService.sendCommand(BleCommand.stopWifi),
-                      icon: const Icon(Icons.wifi_off),
-                      label: const Text('Stop SoftAP'),
-                    ),
                     OutlinedButton.icon(
                       onPressed: () => widget.bleService.sendCommand(BleCommand.enterSleep),
                       icon: const Icon(Icons.bedtime),
@@ -278,9 +194,10 @@ class _SettingsTabState extends State<SettingsTab> {
                 ),
                 const SizedBox(height: 12),
                 _buildInfoRow('Target MCU', 'Seeed Studio XIAO ESP32-C3 (RISC-V 160MHz)'),
-                _buildInfoRow('Sync Architecture', 'Tiered Adaptive Hybrid Engine (BLE L2CAP + Wi-Fi Turbo)'),
+                _buildInfoRow('Sync Architecture', '100% BLE 5.0 High-Throughput (L2CAP CoC)'),
+                _buildInfoRow('BLE Physical Layer', '2M PHY + Data Length Extension (DLE 251B)'),
                 _buildInfoRow('BLE L2CAP SPSM', '0x0081 (Credit-Based Flow Control, MTU 512)'),
-                _buildInfoRow('Wi-Fi Protocol', 'HTTP/1.1 with RFC 7233 Range Resume (>1.8 MB/s)'),
+                _buildInfoRow('Throughput Rate', '~125 - 175 KB/s (~15x real-time speed)'),
                 _buildInfoRow('Audio Codec', '16 kHz IMA-ADPCM 4-bit Mono (8 KB/s)'),
                 _buildInfoRow('Microphone', 'I2S Stereo/Mono Digital MEMS'),
                 _buildInfoRow('IMU Sensor', 'LSM6DS3 / BMI160 6-Axis + Tap Detector'),

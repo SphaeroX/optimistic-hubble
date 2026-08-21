@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import '../../../core/audio/adpcm_decoder.dart';
 import '../../../core/audio/native_audio_player.dart';
 import '../../../core/constants/app_constants.dart';
@@ -201,48 +199,17 @@ class RecordingSyncManager extends ChangeNotifier {
     }
   }
 
-  /// Fetches exact metadata list from the ESP32 Wi-Fi server (http://192.168.4.1/api/clips).
+  /// Refreshes clip inventory from local storage and real-time BLE telemetry.
   Future<void> fetchDeviceClips({bool showError = false}) async {
     if (showError) {
       _errorMessage = null;
       notifyListeners();
     }
-
-    try {
-      final uri = Uri.parse('http://$_deviceIp:$_devicePort/api/clips');
-      final response = await http.get(uri).timeout(const Duration(seconds: 3));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final dynamic list = data is Map ? data['clips'] : data;
-        if (list is List) {
-          for (final item in list) {
-            final rec = RecordingItem.fromApiJson(item as Map<String, dynamic>);
-            final localFile = await LocalStorageManager.getLocalFile('clip_${rec.id}.wav');
-            final isLocal = localFile != null && localFile.existsSync();
-
-            _clipsMap[rec.id] = rec.copyWith(
-              syncState: isLocal ? SyncState.synced : SyncState.onDevice,
-              localWavPath: isLocal ? localFile.path : null,
-              downloadProgress: isLocal ? 1.0 : 0.0,
-              crcVerified: isLocal,
-            );
-          }
-          _errorMessage = null;
-          notifyListeners();
-          return;
-        }
-      }
-    } catch (e) {
-      if (showError) {
-        _errorMessage = 'Could not reach http://$_deviceIp:$_devicePort. Turn on Wi-Fi Hotspot ("${AppConstants.defaultApSsid}").';
-        notifyListeners();
-      }
-    }
+    await loadSavedLocalRecordings();
+    _onBleUpdate();
   }
 
-  /// Adaptive Hybrid Download for a single clip:
-  /// - Automatically signals ESP32 to start Wi-Fi Hotspot if needed for >1.8 MB/s Turbo sync.
+  /// BLE 5.0 High-Throughput Download for a single clip (L2CAP CoC SPSM 0x0081):
   Future<bool> downloadClip(
     int clipId, {
     SyncTier? forcedTier,
@@ -256,88 +223,80 @@ class RecordingSyncManager extends ChangeNotifier {
     _clipsMap[clipId] = clip.copyWith(
       syncState: SyncState.downloading,
       downloadProgress: 0.05,
-      transferSpeed: 'Starting download...',
+      transferSpeed: 'Starting BLE 5.0 sync...',
     );
     notifyListeners();
 
-    bool wifiStartedByThisCall = false;
     try {
-      // 1. If BLE is connected and Wi-Fi is currently off, start Hotspot for Turbo download (single clip only)
-      final bool needStartWifi = !keepWifiAlive &&
-          (bleService?.isConnected == true &&
-              bleService?.telemetry.state != DeviceState.wifiActive);
+      // 1. Android Native BLE L2CAP CoC High-Throughput Transfer
+      if (_nativeBridge.isPlatformAndroid && bleService?.isConnected == true && bleService?.connectedDevice != null) {
+        final targetDir = await LocalStorageManager.getRecordingsDirectory();
+        final targetPath = '${targetDir.path}/clip_${clip.id}.wav';
+        final tempFile = File('${targetDir.path}/clip_${clip.id}.wav.part');
+        final int resumeOffset = tempFile.existsSync() ? tempFile.lengthSync() : 0;
 
-      if (needStartWifi) {
-        wifiStartedByThisCall = true;
-        _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
-          transferSpeed: 'Starting Wi-Fi Turbo Hotspot...',
+        // Command ESP32 to start streaming over L2CAP Channel
+        await bleService!.sendCommand(
+          BleCommand.startL2capStream,
+          clipId: clip.id,
+          offset: resumeOffset,
         );
-        _currentSpeed = 'Starting Wi-Fi Hotspot...';
-        notifyListeners();
 
-        await bleService!.sendCommand(BleCommand.startWifi);
-        await Future.delayed(const Duration(milliseconds: 1500));
-      }
+        final String? savedPath = await _nativeBridge.startBleL2capSync(
+          deviceAddress: bleService!.connectedDevice!.id,
+          fileId: clip.id,
+          destinationPath: targetPath,
+          psm: AppConstants.bleL2capPsm,
+        );
 
-      // 2. Android Native Wi-Fi Turbo Sync (via Network.socketFactory)
-      if (_nativeBridge.isPlatformAndroid) {
-        try {
-          final targetDir = await LocalStorageManager.getRecordingsDirectory();
-          final targetPath = '${targetDir.path}/clip_${clip.id}.wav';
-          final tempFile = File('${targetDir.path}/clip_${clip.id}.wav.part');
-          final int resumeOffset = tempFile.existsSync() ? tempFile.lengthSync() : 0;
-
-          final String? savedPath = await _nativeBridge.startWifiSoftApSync(
-            fileId: clip.id,
-            ssidPattern: AppConstants.defaultApSsidPattern,
-            passphrase: AppConstants.defaultApPassword,
-            startOffset: resumeOffset,
-            destinationPath: targetPath,
-            keepConnected: keepWifiAlive,
+        if (savedPath != null) {
+          _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
+            syncState: SyncState.synced,
+            downloadProgress: 1.0,
+            localWavPath: savedPath,
+            crcVerified: true,
+            transferSpeed: 'Verified (BLE 5.0 High-Throughput)',
           );
-
-          if (!keepWifiAlive && wifiStartedByThisCall && bleService?.isConnected == true) {
-            await bleService!.sendCommand(BleCommand.stopWifi);
-          }
-
-          if (savedPath != null) {
-            _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
-              syncState: SyncState.synced,
-              downloadProgress: 1.0,
-              localWavPath: savedPath,
-              crcVerified: true,
-              transferSpeed: 'Verified (>1.8 MB/s Turbo)',
-            );
-            _currentSyncFile = '';
-            _currentSpeed = null;
-            notifyListeners();
-            return true;
-          }
-        } catch (nativeErr) {
-          debugPrint('[RecordingSyncManager] Native Wi-Fi sync fallback to HTTP: $nativeErr');
+          _currentSyncFile = '';
+          _currentSpeed = null;
+          notifyListeners();
+          return true;
         }
       }
 
-      // 3. High-speed HTTP stream download with Range Resume support (fallback / non-Android)
-      final success = await _downloadViaHttpRange(clipId);
-
-      if (!keepWifiAlive && wifiStartedByThisCall && bleService?.isConnected == true) {
-        await bleService!.sendCommand(BleCommand.stopWifi);
+      // 2. Simulated or Host Fallback (Mock Mode for PC/Testing)
+      if (bleService?.isMockMode == true) {
+        final syntheticWav = _generateSyntheticAudioWav(
+          durationSeconds: clip.duration.inSeconds > 0 ? clip.duration.inSeconds : 5,
+        );
+        final savedFile = await LocalStorageManager.saveWavFile(
+          filename: 'clip_${clip.id}.wav',
+          wavBytes: syntheticWav,
+        );
+        _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
+          syncState: SyncState.synced,
+          downloadProgress: 1.0,
+          localWavPath: savedFile.path,
+          crcVerified: true,
+          transferSpeed: 'Verified (Simulated BLE)',
+        );
+        _currentSyncFile = '';
+        _currentSpeed = null;
+        notifyListeners();
+        return true;
       }
 
-      return success;
+      if (bleService?.isConnected != true) {
+        throw Exception('Please connect to Xiao ESP32 via BLE first');
+      }
+
+      throw Exception('BLE L2CAP is supported on Android 10+ (API 29+)');
     } catch (e) {
-      if (!keepWifiAlive && wifiStartedByThisCall && bleService?.isConnected == true) {
-        try {
-          await bleService!.sendCommand(BleCommand.stopWifi);
-        } catch (_) {}
-      }
-
       _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
         syncState: SyncState.error,
         transferSpeed: 'Failed: $e',
       );
-      _errorMessage = 'Download error: $e';
+      _errorMessage = 'BLE sync error: $e';
       _currentSyncFile = '';
       _currentSpeed = null;
       notifyListeners();
@@ -345,97 +304,7 @@ class RecordingSyncManager extends ChangeNotifier {
     }
   }
 
-  /// High-Speed HTTP GET stream with RFC 7233 Range resume support
-  Future<bool> _downloadViaHttpRange(int clipId) async {
-    final clip = _clipsMap[clipId];
-    if (clip == null) return false;
-
-    final uri = Uri.parse('http://$_deviceIp:$_devicePort/api/download?id=$clipId');
-    final client = http.Client();
-    final request = http.Request('GET', uri);
-
-    final recordingsDir = await LocalStorageManager.getRecordingsDirectory();
-    final targetFile = File('${recordingsDir.path}/clip_${clip.id}.wav');
-    final tempFile = File('${recordingsDir.path}/clip_${clip.id}.wav.part');
-
-    int effectiveOffset = 0;
-    if (tempFile.existsSync()) {
-      final len = tempFile.lengthSync();
-      if (len > 0 && len < clip.sizeBytes) {
-        effectiveOffset = len;
-        request.headers['Range'] = 'bytes=$effectiveOffset-';
-      }
-    }
-
-    final startTime = DateTime.now();
-    final response = await client.send(request).timeout(const Duration(seconds: 30));
-
-    if (response.statusCode != 200 && response.statusCode != 206) {
-      throw Exception('Server returned HTTP ${response.statusCode}');
-    }
-
-    final isPartial = (response.statusCode == 206 && effectiveOffset > 0);
-    final actualOffset = isPartial ? effectiveOffset : 0;
-    final totalLength = (response.contentLength ?? (clip.sizeBytes - actualOffset)) + actualOffset;
-
-    final sink = tempFile.openWrite(mode: isPartial ? FileMode.append : FileMode.write);
-    int bytesReceived = actualOffset;
-
-    try {
-      await for (final chunk in response.stream) {
-        sink.add(chunk);
-        bytesReceived += chunk.length;
-        final elapsedSec = DateTime.now().difference(startTime).inMilliseconds / 1000.0;
-        final speedKb = elapsedSec > 0 ? ((bytesReceived - actualOffset) / 1024.0) / elapsedSec : 0.0;
-        final speedStr = speedKb > 1024
-            ? '${(speedKb / 1024.0).toStringAsFixed(2)} MB/s'
-            : '${speedKb.toStringAsFixed(1)} KB/s';
-
-        final progress = totalLength > 0 ? (bytesReceived / totalLength).clamp(0.0, 1.0) : 0.5;
-
-        _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
-          downloadProgress: progress,
-          transferSpeed: speedStr,
-        );
-        _currentSpeed = speedStr;
-        notifyListeners();
-      }
-      await sink.flush();
-    } finally {
-      await sink.close();
-    }
-
-    if (tempFile.existsSync()) {
-      final bytes = await tempFile.readAsBytes();
-      if (bytes.length > 4 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) {
-        // Standard RIFF/WAVE header already present
-        if (targetFile.existsSync()) targetFile.deleteSync();
-        tempFile.renameSync(targetFile.path);
-      } else {
-        // Raw ADPCM - decode to Linear PCM WAV
-        final wavBytes = AdpcmDecoder.decodeAdpcmToWav(bytes, sampleRate: clip.sampleRate);
-        await LocalStorageManager.saveWavFile(
-          filename: 'clip_${clip.id}.wav',
-          wavBytes: wavBytes,
-        );
-        if (tempFile.existsSync()) tempFile.deleteSync();
-      }
-    }
-
-    _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
-      syncState: SyncState.synced,
-      downloadProgress: 1.0,
-      localWavPath: targetFile.path,
-      crcVerified: true,
-      transferSpeed: 'Verified',
-    );
-    _currentSyncFile = '';
-    _currentSpeed = null;
-    notifyListeners();
-    return true;
-  }
-
-  /// High-Speed Tiered Sync for all unsynced clips
+  /// BLE 5.0 High-Throughput Sequential Sync for all unsynced clips
   Future<void> syncAllClips() async {
     if (_isSyncing) return;
     _isSyncing = true;
@@ -443,12 +312,7 @@ class RecordingSyncManager extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
-    bool wifiStartedForBatch = false;
     try {
-      try {
-        await fetchDeviceClips(showError: false);
-      } catch (_) {}
-
       final unsynced = _clipsMap.values.where((c) => c.syncState != SyncState.synced).toList();
       if (unsynced.isEmpty) {
         _isSyncing = false;
@@ -456,29 +320,6 @@ class RecordingSyncManager extends ChangeNotifier {
         return;
       }
 
-      // 1. If BLE is connected and Wi-Fi is off, start Hotspot ONCE for the entire batch
-      if (bleService?.isConnected == true &&
-          bleService?.telemetry.state != DeviceState.wifiActive) {
-        wifiStartedForBatch = true;
-        _currentSpeed = 'Starting Wi-Fi Hotspot for batch...';
-        notifyListeners();
-        await bleService!.sendCommand(BleCommand.startWifi);
-        await Future.delayed(const Duration(milliseconds: 1500));
-      }
-
-      // 2. Pre-connect native Wi-Fi if on Android to ensure session is active
-      if (_nativeBridge.isPlatformAndroid) {
-        try {
-          await _nativeBridge.connectWifiSoftAp(
-            ssidPattern: AppConstants.defaultApSsidPattern,
-            passphrase: AppConstants.defaultApPassword,
-          );
-        } catch (e) {
-          debugPrint('[RecordingSyncManager] Pre-connecting Wi-Fi SoftAP: $e');
-        }
-      }
-
-      // 3. Process each unsynced clip keeping Wi-Fi connection alive across the whole batch
       for (int i = 0; i < unsynced.length; i++) {
         if (!_isSyncing) break; // Check if cancelled
 
@@ -487,8 +328,7 @@ class RecordingSyncManager extends ChangeNotifier {
         _syncProgress = (i / unsynced.length);
         notifyListeners();
 
-        // Pass keepWifiAlive: true so individual downloads don't tear down Wi-Fi
-        await downloadClip(clip.id, keepWifiAlive: true);
+        await downloadClip(clip.id);
 
         _syncProgress = ((i + 1) / unsynced.length);
         notifyListeners();
@@ -496,19 +336,6 @@ class RecordingSyncManager extends ChangeNotifier {
     } catch (e) {
       _errorMessage = 'Sync error: $e';
     } finally {
-      // 4. Clean up batch Wi-Fi session
-      if (_nativeBridge.isPlatformAndroid) {
-        try {
-          await _nativeBridge.disconnectWifiSoftAp();
-        } catch (_) {}
-      }
-
-      if (wifiStartedForBatch && bleService?.isConnected == true) {
-        try {
-          await bleService!.sendCommand(BleCommand.stopWifi);
-        } catch (_) {}
-      }
-
       _isSyncing = false;
       _currentSyncFile = '';
       _currentSpeed = null;
@@ -516,7 +343,7 @@ class RecordingSyncManager extends ChangeNotifier {
     }
   }
 
-  /// Cancels any active synchronization in progress and restores normal Wi-Fi routing.
+  /// Cancels any active synchronization in progress.
   Future<void> cancelSync() async {
     if (!_isSyncing) return;
     _isSyncing = false;
@@ -524,12 +351,6 @@ class RecordingSyncManager extends ChangeNotifier {
 
     if (_nativeBridge.isPlatformAndroid) {
       await _nativeBridge.cancelSync();
-    }
-
-    if (bleService?.isConnected == true) {
-      try {
-        await bleService!.sendCommand(BleCommand.stopWifi);
-      } catch (_) {}
     }
 
     _currentSyncFile = '';
@@ -560,10 +381,6 @@ class RecordingSyncManager extends ChangeNotifier {
     if (bleService?.isConnected == true) {
       await bleService!.sendCommand(BleCommand.clearStorage);
     }
-    try {
-      final uri = Uri.parse('http://$_deviceIp:$_devicePort/api/clear');
-      await http.post(uri).timeout(const Duration(seconds: 3));
-    } catch (_) {}
     _clipsMap.clear();
     _lastKnownClipCount = 0;
     await loadSavedLocalRecordings();

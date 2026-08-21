@@ -42,6 +42,7 @@ public:
 
     // NimBLE Server Callbacks
     void onConnect(NimBLEServer* pServer) override;
+    void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override;
     void onDisconnect(NimBLEServer* pServer) override;
 
     // NimBLE Characteristic Callbacks

@@ -11,6 +11,15 @@ void BleManager::onConnect(NimBLEServer* pServer) {
     Serial.println(F("[BLE] Client connected!"));
 }
 
+void BleManager::onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) {
+    _connected = true;
+    Serial.println(F("[BLE] Client connected (BLE 5.0 High-Throughput negotiation)!"));
+    if (desc != nullptr) {
+        // Negotiate 7.5ms - 15ms connection interval for maximum throughput
+        pServer->updateConnParams(desc->conn_handle, 6, 12, 0, 400);
+    }
+}
+
 void BleManager::onDisconnect(NimBLEServer* pServer) {
     _connected = false;
     Serial.println(F("[BLE] Client disconnected. Restarting advertising..."));
@@ -64,6 +73,7 @@ BleCommand BleManager::getPendingCommand() {
 bool BleManager::begin(const char* deviceName) {
     if (!NimBLEDevice::getInitialized()) {
         NimBLEDevice::init(deviceName);
+        NimBLEDevice::setMTU(512);
         NimBLEDevice::setPower(ESP_PWR_LVL_P9); // +9 dBm for maximum range
 
         _pServer = NimBLEDevice::createServer();

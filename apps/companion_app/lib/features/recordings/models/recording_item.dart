@@ -36,8 +36,7 @@ class RecordingItem {
     SyncTier? recommendedTier,
     this.transferSpeed,
     this.crcVerified = false,
-  }) : recommendedTier = recommendedTier ??
-            (sizeBytes < AppConstants.tier1MaxSizeBytes ? SyncTier.bleL2cap : SyncTier.wifiTurbo);
+  }) : recommendedTier = recommendedTier ?? SyncTier.bleL2cap;
 
   factory RecordingItem.fromApiJson(Map<String, dynamic> json) {
     final int id = json['id'] as int? ?? 1;
@@ -54,7 +53,7 @@ class RecordingItem {
       sampleRate: rate,
       recordedAt: DateTime.now(),
       syncState: SyncState.onDevice,
-      recommendedTier: size < AppConstants.tier1MaxSizeBytes ? SyncTier.bleL2cap : SyncTier.wifiTurbo,
+      recommendedTier: SyncTier.bleL2cap,
     );
   }
 

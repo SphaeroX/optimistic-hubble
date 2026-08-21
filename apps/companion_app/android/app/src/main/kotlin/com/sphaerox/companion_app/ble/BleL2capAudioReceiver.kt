@@ -26,6 +26,7 @@ class BleL2capAudioReceiver(private val context: Context) {
         device: BluetoothDevice,
         psm: Int = 0x0081,
         outputFile: File,
+        onConnected: (() -> Unit)? = null,
         onProgress: (bytesReceived: Long, totalBytes: Long) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
         var fileOutputStream: FileOutputStream? = null
@@ -34,6 +35,7 @@ class BleL2capAudioReceiver(private val context: Context) {
             Log.i(TAG, "Opening L2CAP Channel to PSM: 0x${psm.toString(16)} on device: ${device.address}")
             l2capSocket = device.createInsecureL2capChannel(psm)
             l2capSocket?.connect()
+            onConnected?.invoke()
 
             val inputStream: InputStream = l2capSocket?.inputStream 
                 ?: throw IOException("Failed to obtain L2CAP socket input stream")

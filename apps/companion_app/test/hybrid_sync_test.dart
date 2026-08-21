@@ -4,12 +4,12 @@ import 'package:companion_app/core/services/native_audio_sync_bridge.dart';
 import 'package:companion_app/features/recordings/models/recording_item.dart';
 
 void main() {
-  group('Tiered Adaptive Hybrid Sync Tests', () {
-    test('Tier 1 vs Tier 2 size threshold correctly assigns recommended tier', () {
+  group('BLE 5.0 High-Throughput Sync Tests', () {
+    test('All clips default to BLE 5.0 High-Throughput tier', () {
       final smallClip = RecordingItem(
         id: 1,
         remoteFilename: 'clip_001.wav',
-        sizeBytes: 192000, // 192 KB (< 2.0 MB)
+        sizeBytes: 192000,
         duration: const Duration(seconds: 24),
         sampleRate: 16000,
         recordedAt: DateTime.now(),
@@ -18,21 +18,21 @@ void main() {
       final largeClip = RecordingItem(
         id: 2,
         remoteFilename: 'clip_002.wav',
-        sizeBytes: 4800000, // 4.8 MB (>= 2.0 MB)
+        sizeBytes: 4800000,
         duration: const Duration(minutes: 10),
         sampleRate: 16000,
         recordedAt: DateTime.now(),
       );
 
       expect(smallClip.recommendedTier, SyncTier.bleL2cap);
-      expect(largeClip.recommendedTier, SyncTier.wifiTurbo);
+      expect(largeClip.recommendedTier, SyncTier.bleL2cap);
     });
 
-    test('RecordingItem fromApiJson creates valid model with adaptive tier', () {
+    test('RecordingItem fromApiJson creates valid model with BLE tier', () {
       final json = {
         'id': 105,
         'filename': 'clip_105.wav',
-        'size': 2400000, // 2.4 MB -> Wi-Fi Turbo
+        'size': 2400000,
         'duration': 300.0,
         'sampleRate': 16000,
       };
@@ -42,7 +42,7 @@ void main() {
       expect(item.id, 105);
       expect(item.remoteFilename, 'clip_105.wav');
       expect(item.sizeBytes, 2400000);
-      expect(item.recommendedTier, SyncTier.wifiTurbo);
+      expect(item.recommendedTier, SyncTier.bleL2cap);
       expect(item.syncState, SyncState.onDevice);
     });
 
@@ -188,11 +188,11 @@ void main() {
       final downloading = item.copyWith(
         syncState: SyncState.downloading,
         downloadProgress: 0.45,
-        transferSpeed: '2.10 MB/s (Wi-Fi Turbo)',
+        transferSpeed: '148.5 KB/s (BLE 5.0 High-Throughput)',
       );
       expect(downloading.syncState, SyncState.downloading);
       expect(downloading.downloadProgress, 0.45);
-      expect(downloading.transferSpeed, '2.10 MB/s (Wi-Fi Turbo)');
+      expect(downloading.transferSpeed, '148.5 KB/s (BLE 5.0 High-Throughput)');
       expect(downloading.id, 42);
 
       final synced = downloading.copyWith(

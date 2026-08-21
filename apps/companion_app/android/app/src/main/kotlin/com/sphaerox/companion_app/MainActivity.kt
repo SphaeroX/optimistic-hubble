@@ -191,7 +191,10 @@ class MainActivity : FlutterActivity() {
                 val success = receiver.receiveAudioViaL2cap(
                     device = device,
                     psm = psm,
-                    outputFile = targetFile
+                    outputFile = targetFile,
+                    onConnected = {
+                        sendEvent("connected", 0.05, 0, 0, "L2CAP channel connected! Streaming audio...")
+                    }
                 ) { bytesReceived, totalBytes ->
                     if (!isActive) throw CancellationException("BLE L2CAP sync cancelled")
                     val elapsedSec = (System.currentTimeMillis() - startTime) / 1000.0
@@ -203,7 +206,7 @@ class MainActivity : FlutterActivity() {
                         progress = progress,
                         bytesReceived = bytesReceived,
                         totalBytes = totalBytes,
-                        message = "${String.format(Locale.US, "%.1f", speedKb)} KB/s (BLE L2CAP)",
+                        message = "${String.format(Locale.US, "%.1f", speedKb)} KB/s (BLE 5.0 High-Throughput)",
                         filePath = targetFile.absolutePath
                     )
                 }

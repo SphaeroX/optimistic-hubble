@@ -73,10 +73,10 @@ enum BleCommand {
   const BleCommand(this.rawValue);
 }
 
-/// Audio Sync Tier Strategy (Tier 1 BLE vs Tier 2 Wi-Fi SoftAP)
+/// Audio Sync Strategy (BLE 5.0 High-Throughput L2CAP CoC)
 enum SyncTier {
-  bleL2cap('BLE Fast', 'Tier 1: Silent BLE 5.0 (No Wi-Fi state switch)'),
-  wifiTurbo('Wi-Fi Turbo', 'Tier 2: High-Speed SoftAP (> 1.8 MB/s + Range Resume)');
+  bleL2cap('BLE 5.0 High-Throughput', 'High-Speed BLE 5.0 L2CAP CoC Channel (125-175 KB/s)'),
+  wifiTurbo('Wi-Fi Legacy', 'Legacy SoftAP Mode (Disabled / Deprecated)');
 
   final String label;
   final String description;
