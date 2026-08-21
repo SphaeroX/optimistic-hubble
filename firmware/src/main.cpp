@@ -278,29 +278,29 @@ void loop() {
         }
     }
 
-    // 7. Periodic Telemetry (10 Hz BLE Stream + Serial)
+    // 7. Periodic Telemetry (12.5 Hz BLE Stream + Serial)
     if (now - lastTelemetryTime >= TELEMETRY_INTERVAL_MS) {
         lastTelemetryTime = now;
 
+        ImuMetricData imuMetrics{};
+        bool hasImu = imu.readSensorData(imuMetrics);
+        float mag = hasImu 
+            ? sqrtf(imuMetrics.accelX_g * imuMetrics.accelX_g + 
+                    imuMetrics.accelY_g * imuMetrics.accelY_g + 
+                    imuMetrics.accelZ_g * imuMetrics.accelZ_g)
+            : 1.0f;
+
         static unsigned long lastSerialPrintTime = 0;
-        if (now - lastSerialPrintTime >= 1000) {
+        if (now - lastSerialPrintTime >= 500) {
             lastSerialPrintTime = now;
-            Serial.printf("[STATUS] BLE: %s | State: %s | Flash: %u clips | Rec: %u B\n",
+            Serial.printf("[STATUS] BLE: %s | State: %s | IMU: X=%+.2f Y=%+.2f Z=%+.2f (Mag=%.2fg) | Clips: %u | Taps: %u\n",
                           ble.isConnected() ? "ONLINE " : "STANDBY",
                           recorder.isRecording() ? "RECORDING" : (wifiServer.isActive() ? "WIFI_AP  " : "IDLE     "),
-                          storage.getClipCount(),
-                          recorder.isRecording() ? recorder.getRecordedBytes() : 0);
+                          imuMetrics.accelX_g, imuMetrics.accelY_g, imuMetrics.accelZ_g, mag,
+                          storage.getClipCount(), totalTapEvents);
         }
 
         if (ble.isConnected()) {
-            ImuMetricData imuMetrics{};
-            bool hasImu = imu.readSensorData(imuMetrics);
-            float mag = hasImu 
-                ? sqrtf(imuMetrics.accelX_g * imuMetrics.accelX_g + 
-                        imuMetrics.accelY_g * imuMetrics.accelY_g + 
-                        imuMetrics.accelZ_g * imuMetrics.accelZ_g)
-                : 1.0f;
-
             DeviceState curState = recorder.isRecording() ? STATE_RECORDING : 
                                    (wifiServer.isActive() ? STATE_WIFI_ACTIVE : STATE_IDLE);
 

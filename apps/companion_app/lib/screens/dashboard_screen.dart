@@ -5,6 +5,7 @@ import '../core/utils/formatters.dart';
 import '../features/connection/services/ble_service.dart';
 import '../features/connection/widgets/device_scanner_sheet.dart';
 import '../features/debug_console/debug_log_sheet.dart';
+import '../features/recordings/models/recording_item.dart';
 import '../features/recordings/services/recording_sync_manager.dart';
 import '../features/recordings/widgets/clip_card.dart';
 import '../features/recordings/widgets/sync_progress_banner.dart';
@@ -66,72 +67,95 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
         return Scaffold(
           appBar: AppBar(
+            titleSpacing: 12,
             title: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
-                    color: (isRecording ? AppTheme.accentRed : (isConnected ? AppTheme.primaryCyan : AppTheme.cardDark)).withAlpha(50),
+                    color: (isRecording
+                            ? AppTheme.accentRed
+                            : (isConnected ? AppTheme.primaryCyan : AppTheme.cardDark))
+                        .withAlpha(40),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
                     isRecording ? Icons.fiber_manual_record : Icons.graphic_eq,
-                    color: isRecording ? AppTheme.accentRed : (isConnected ? AppTheme.primaryCyan : AppTheme.textMuted),
-                    size: 20,
+                    color: isRecording
+                        ? AppTheme.accentRed
+                        : (isConnected ? AppTheme.primaryCyan : AppTheme.textMuted),
+                    size: 18,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      AppConstants.appName,
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      isConnected
-                          ? (widget.bleService.connectedDevice?.name ?? 'Connected')
-                          : (widget.bleService.isConnecting ? 'Connecting...' : 'Disconnected (No Device)'),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isConnected
-                            ? AppTheme.accentGreen
-                            : (widget.bleService.isConnecting ? AppTheme.accentOrange : AppTheme.textMuted),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        AppConstants.appName,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                       ),
-                    ),
-                  ],
+                      Text(
+                        isConnected
+                            ? (widget.bleService.connectedDevice?.name ?? 'Connected')
+                            : (widget.bleService.isConnecting
+                                ? 'Connecting...'
+                                : 'Disconnected'),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isConnected
+                              ? AppTheme.accentGreen
+                              : (widget.bleService.isConnecting
+                                  ? AppTheme.accentOrange
+                                  : AppTheme.textMuted),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
             actions: [
-              // Debug Console Button
               IconButton(
-                icon: const Icon(Icons.terminal, color: AppTheme.primaryCyan),
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.terminal, color: AppTheme.primaryCyan, size: 20),
                 tooltip: 'Hardware Debug Console',
                 onPressed: _openDebugConsole,
               ),
-
-              // Connection Status Action Chip
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                padding: const EdgeInsets.only(right: 12, left: 4),
                 child: ActionChip(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
                   avatar: widget.bleService.isConnecting
                       ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentOrange),
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: AppTheme.accentOrange),
                         )
                       : Icon(
                           isConnected ? Icons.bluetooth_connected : Icons.bluetooth_searching,
-                          size: 16,
+                          size: 14,
                           color: isConnected ? AppTheme.accentGreen : AppTheme.primaryCyan,
                         ),
                   label: Text(
-                    isConnected ? 'Connected' : (widget.bleService.isConnecting ? 'Connecting...' : 'Scan BLE'),
+                    isConnected
+                        ? 'Connected'
+                        : (widget.bleService.isConnecting ? '...' : 'Scan'),
                     style: TextStyle(
+                      fontSize: 11,
                       color: isConnected
                           ? AppTheme.accentGreen
-                          : (widget.bleService.isConnecting ? AppTheme.accentOrange : AppTheme.primaryCyan),
+                          : (widget.bleService.isConnecting
+                              ? AppTheme.accentOrange
+                              : AppTheme.primaryCyan),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -139,14 +163,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   side: BorderSide(
                     color: isConnected
                         ? AppTheme.accentGreen
-                        : (widget.bleService.isConnecting ? AppTheme.accentOrange : AppTheme.primaryCyan),
+                        : (widget.bleService.isConnecting
+                            ? AppTheme.accentOrange
+                            : AppTheme.primaryCyan),
                   ),
                   onPressed: isConnected
                       ? () => widget.bleService.disconnect()
                       : (widget.bleService.isConnecting ? null : _openDeviceScanner),
                 ),
               ),
-              const SizedBox(width: 8),
             ],
           ),
           body: Row(
@@ -236,7 +261,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       children: [
         // Real-Time Hardware Status Banner
         Card(
@@ -249,24 +274,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(16),
             child: Column(
               children: [
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: (isRecording ? AppTheme.accentRed : (isConnected ? AppTheme.primaryCyan : AppTheme.textMuted)).withAlpha(40),
+                        color: (isRecording
+                                ? AppTheme.accentRed
+                                : (isConnected ? AppTheme.primaryCyan : AppTheme.textMuted))
+                            .withAlpha(40),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        isRecording ? Icons.fiber_manual_record : (isConnected ? Icons.sensors : Icons.sensors_off),
-                        color: isRecording ? AppTheme.accentRed : (isConnected ? AppTheme.primaryCyan : AppTheme.textMuted),
-                        size: 26,
+                        isRecording
+                            ? Icons.fiber_manual_record
+                            : (isConnected ? Icons.sensors : Icons.sensors_off),
+                        color: isRecording
+                            ? AppTheme.accentRed
+                            : (isConnected ? AppTheme.primaryCyan : AppTheme.textMuted),
+                        size: 22,
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -274,7 +306,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           Text(
                             isConnected ? devState.label : 'Device Offline',
                             style: TextStyle(
-                              fontSize: 18,
+                              fontSize: 16,
                               fontWeight: FontWeight.bold,
                               color: isRecording ? AppTheme.accentRed : Colors.white,
                             ),
@@ -282,15 +314,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           const SizedBox(height: 2),
                           Text(
                             !isConnected
-                                ? 'Click "Scan BLE" in the top right to connect your XIAO ESP32-C3'
+                                ? 'Click "Scan" in top bar to connect your XIAO'
                                 : (isRecording
-                                    ? 'Recording active: ${Formatters.formatBytes(telem.totalAudioBytes)} captured @ 16kHz'
+                                    ? '${Formatters.formatBytes(telem.totalAudioBytes)} captured @ 16kHz'
                                     : devState.description),
-                            style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                            style: const TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(width: 8),
                     ElevatedButton.icon(
                       onPressed: !isConnected
                           ? _openDeviceScanner
@@ -301,16 +336,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 widget.bleService.sendCommand(BleCommand.startRecording);
                               }
                             },
-                      icon: Icon(!isConnected ? Icons.bluetooth : (isRecording ? Icons.stop : Icons.mic)),
+                      icon: Icon(!isConnected
+                          ? Icons.bluetooth
+                          : (isRecording ? Icons.stop : Icons.mic), size: 18),
                       label: Text(!isConnected ? 'Connect' : (isRecording ? 'Stop' : 'Record')),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: isRecording ? AppTheme.accentRed : AppTheme.primaryCyan,
                         foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
 
                 // Live Waveform Visualizer
                 WaveformVisualizer(
@@ -321,7 +359,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
 
         // Telemetry Grid / Cards
         BatteryGaugeCard(telemetry: uiTelemetry),
@@ -344,45 +382,85 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final errorMsg = widget.syncManager.errorMessage;
     final isConnected = widget.bleService.isConnected;
     final isWifiActive = widget.bleService.telemetry.state == DeviceState.wifiActive;
+    final syncedCount = clips.where((c) => c.syncState == SyncState.synced).length;
 
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       children: [
-        // Sync Header & Trigger
+        // Sync Header Title & Badge
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Recordings (Adaptive Sync)',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  '${clips.length} recordings available locally / on device',
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
-                ),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Recordings',
+                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    '${clips.length} clip${clips.length == 1 ? '' : 's'} on device / local',
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                  ),
+                ],
+              ),
             ),
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.refresh, color: AppTheme.primaryCyan),
-                  tooltip: 'Check Wi-Fi Clips',
-                  onPressed: () => widget.syncManager.fetchDeviceClips(showError: true),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppTheme.cardDark,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF2E3E58)),
+              ),
+              child: Text(
+                '$syncedCount/${clips.length} Synced',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.primaryCyan,
                 ),
-                const SizedBox(width: 4),
-                ElevatedButton.icon(
-                  onPressed: isSyncing ? null : () => widget.syncManager.syncAllClips(),
-                  icon: const Icon(Icons.sync),
-                  label: const Text('Adaptive Sync All'),
-                ),
-              ],
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
+
+        // Action Buttons Row
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: isSyncing ? null : () => widget.syncManager.syncAllClips(),
+                icon: isSyncing
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                      )
+                    : const Icon(Icons.sync, size: 18),
+                label: Text(isSyncing ? 'Syncing...' : 'Adaptive Sync All'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryCyan,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: () => widget.syncManager.fetchDeviceClips(showError: true),
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Refresh'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.primaryCyan,
+                side: const BorderSide(color: AppTheme.primaryCyan),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
 
         // Wi-Fi Hotspot Quick Control Card
         Card(
@@ -394,39 +472,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Icon(
-                      isWifiActive ? Icons.wifi : Icons.wifi_off,
-                      color: isWifiActive ? AppTheme.accentGreen : AppTheme.textMuted,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isWifiActive ? 'Wi-Fi Hotspot Active' : 'Wi-Fi Hotspot Standby',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: isWifiActive ? AppTheme.accentGreen : Colors.white,
-                          ),
-                        ),
-                        Text(
-                          isWifiActive ? 'SSID: ${AppConstants.defaultApSsid} (192.168.4.1)' : 'Tier 1 BLE active (or toggle for Tier 2 Turbo)',
-                          style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                        ),
-                      ],
-                    ),
-                  ],
+                Icon(
+                  isWifiActive ? Icons.wifi : Icons.wifi_off,
+                  color: isWifiActive ? AppTheme.accentGreen : AppTheme.textMuted,
+                  size: 22,
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isWifiActive ? 'Wi-Fi Turbo Active' : 'Wi-Fi Hotspot Standby',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: isWifiActive ? AppTheme.accentGreen : Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        isWifiActive
+                            ? 'SSID: ${AppConstants.defaultApSsid} (192.168.4.1)'
+                            : 'Auto-starts for Turbo sync (or toggle manually)',
+                        style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
                 if (isConnected)
-                  OutlinedButton(
+                  ElevatedButton(
                     onPressed: () {
                       if (isWifiActive) {
                         widget.bleService.sendCommand(BleCommand.stopWifi);
@@ -434,18 +513,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         widget.bleService.sendCommand(BleCommand.startWifi);
                       }
                     },
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: isWifiActive ? AppTheme.accentOrange : AppTheme.primaryCyan,
-                      side: BorderSide(color: isWifiActive ? AppTheme.accentOrange : AppTheme.primaryCyan),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isWifiActive ? AppTheme.accentOrange : const Color(0xFF1D283A),
+                      foregroundColor: isWifiActive ? Colors.black : AppTheme.primaryCyan,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
-                    child: Text(isWifiActive ? 'Turn Off' : 'Turn On'),
+                    child: Text(
+                      isWifiActive ? 'Turn Off' : 'Turn On',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
                   ),
               ],
             ),
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
 
         // Error message banner if any
         if (errorMsg != null) ...[
@@ -473,7 +556,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
         ],
 
         // Progress Banner
@@ -487,14 +570,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         // Clips List
         if (clips.isEmpty)
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 60),
+            padding: const EdgeInsets.symmetric(vertical: 50),
             child: const Center(
               child: Column(
                 children: [
                   Icon(Icons.mic_none, size: 48, color: AppTheme.textMuted),
                   SizedBox(height: 12),
                   Text(
-                    'No recordings stored yet.\n\n• Tap board or tap "Record" to record audio\n• Tier 1: Silent BLE sync for clips < 2.0 MB\n• Tier 2: Wi-Fi Turbo (>1.8 MB/s) with Range Resume for clips ≥ 2.0 MB',
+                    'No recordings stored yet.\n\n• Tap board or click "Record" to record audio\n• High-speed Wi-Fi Turbo (>1.8 MB/s) with Range Resume',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
                   ),

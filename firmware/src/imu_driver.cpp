@@ -53,10 +53,10 @@ bool ImuDriver::writeRegister(uint8_t reg, uint8_t value) {
 bool ImuDriver::readRegisters(uint8_t reg, uint8_t* buffer, size_t length) {
     Wire.beginTransmission(_address);
     Wire.write(reg);
-    if (Wire.endTransmission(false) != 0) {
+    if (Wire.endTransmission(true) != 0) {
         return false;
     }
-    size_t received = Wire.requestFrom(_address, (uint8_t)length);
+    size_t received = Wire.requestFrom((int)_address, (int)length, (int)true);
     if (received != length) {
         return false;
     }
