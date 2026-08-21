@@ -19,7 +19,6 @@ optimistic-hubble/
 │   ├── src/                     # Audio recorder, BLE service, Wi-Fi SoftAP server, IMU drivers
 │   ├── platformio.ini           # Board definitions, partition tables & compiler flags
 │   └── xiao_esp32c3_hw_test.ino # Hardware test & validation sketch
-├── hardware/                    # KiCad & EasyEDA schematic generators, symbols, outputs
 ├── research/                    # IoT transfer studies, BLE/Wi-Fi benchmarks & protocol docs
 ├── build.bat                    # Compiles ESP32-C3 firmware
 ├── flash_and_monitor.bat        # Builds, flashes and monitors XIAO ESP32-C3
