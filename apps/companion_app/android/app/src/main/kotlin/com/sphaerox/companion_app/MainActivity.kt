@@ -179,25 +179,43 @@ class MainActivity : FlutterActivity() {
     ) {
         activeSyncJob?.cancel()
         activeSyncJob = activityScope.launch(Dispatchers.IO) {
+            val wifiManager = iotWifiManager ?: IotWifiManager(applicationContext)
             try {
-                sendEvent("connecting", 0.0, 0, 0, "Requesting SoftAP link ($ssidPattern)...")
+                sendEvent("connecting", 0.0, 0, 0, "Connecting to XIAO-Audio-Hotspot...")
 
-                val wifiManager = iotWifiManager ?: IotWifiManager(applicationContext)
-                val connState = wifiManager.connectToEsp32SoftAp(ssidPattern, passphrase)
-                    .first { it is WifiConnectionState.Connected || it is WifiConnectionState.Failed }
-
-                if (connState !is WifiConnectionState.Connected) {
-                    withContext(Dispatchers.Main) {
-                        val reason = if (connState is WifiConnectionState.Failed) connState.reason else "Could not connect to SoftAP"
-                        sendEvent("failed", 0.0, 0, 0, reason)
-                        result.error("WIFI_FAILED", reason, null)
+                // 1. Check if 192.168.4.1 is already directly reachable (e.g. user manually connected or already active)
+                var alreadyConnected = false
+                val directCheckClient = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(1200, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    .readTimeout(1200, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    .build()
+                try {
+                    val ping = directCheckClient.newCall(Request.Builder().url("http://192.168.4.1/api/clips").build()).execute()
+                    if (ping.isSuccessful) {
+                        alreadyConnected = true
+                        Log.i(TAG, "Already connected to 192.168.4.1! Bypassing WifiNetworkSpecifier.")
                     }
-                    return@launch
+                    ping.close()
+                } catch (_: Exception) {}
+
+                var client = directCheckClient
+                if (!alreadyConnected) {
+                    val connState = wifiManager.connectToEsp32SoftAp("XIAO-Audio-Hotspot", passphrase)
+                        .first { it is WifiConnectionState.Connected || it is WifiConnectionState.Failed }
+
+                    if (connState !is WifiConnectionState.Connected) {
+                        withContext(Dispatchers.Main) {
+                            val reason = if (connState is WifiConnectionState.Failed) connState.reason else "Could not connect to SoftAP"
+                            sendEvent("failed", 0.0, 0, 0, reason)
+                            result.error("WIFI_FAILED", reason, null)
+                        }
+                        return@launch
+                    }
+                    client = IotHttpClientFactory.createClient(connState.network)
                 }
 
-                sendEvent("connected", 0.05, 0, 0, "SoftAP connected! Streaming audio...")
+                sendEvent("connected", 0.05, 0, 0, "SoftAP connected! Downloading audio...")
 
-                val client = IotHttpClientFactory.createClient(connState.network)
                 val url = if (fileId > 0) "http://192.168.4.1/api/download?id=$fileId" else "http://192.168.4.1/api/download"
                 
                 val reqBuilder = Request.Builder().url(url)

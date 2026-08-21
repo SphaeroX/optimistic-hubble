@@ -376,11 +376,12 @@ class BleService extends ChangeNotifier {
   }
 
   void _handleIncomingCharacteristic(String charUuid, Uint8List value) {
-    if (BleUuidParser.compareStrings(charUuid, AppConstants.bleCharStateUuid)) {
+    final cleanUuid = charUuid.toLowerCase().replaceAll('-', '');
+    if (cleanUuid.contains('ff01') || BleUuidParser.compareStrings(charUuid, AppConstants.bleCharStateUuid)) {
       _parseStatePayload(value);
-    } else if (BleUuidParser.compareStrings(charUuid, AppConstants.bleCharTapUuid)) {
+    } else if (cleanUuid.contains('ff03') || BleUuidParser.compareStrings(charUuid, AppConstants.bleCharTapUuid)) {
       _parseTapPayload(value);
-    } else if (BleUuidParser.compareStrings(charUuid, AppConstants.bleCharAudioUuid)) {
+    } else if (cleanUuid.contains('ff02') || BleUuidParser.compareStrings(charUuid, AppConstants.bleCharAudioUuid)) {
       _parseAudioChunkPayload(value);
     }
   }
