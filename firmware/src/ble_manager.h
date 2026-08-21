@@ -32,6 +32,7 @@ public:
     );
     void notifyTap(float shockMagnitude);
     bool transmitAudio(const uint8_t* audioData, size_t totalBytes, uint16_t sampleRate);
+    bool streamAudioFileFromStorage(uint16_t clipId, uint32_t startOffset = 0);
     bool streamL2capClip(uint16_t clipId, uint32_t startOffset = 0);
 
     bool hasPendingCommand() const { return _pendingCmd != CMD_NONE; }

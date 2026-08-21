@@ -1,4 +1,5 @@
 #include "ble_manager.h"
+#include <LittleFS.h>
 
 BleManager::BleManager()
     : _pServer(nullptr), _pService(nullptr), _pCharState(nullptr),
@@ -286,6 +287,72 @@ bool BleManager::transmitAudio(const uint8_t* audioData, size_t totalBytes, uint
     delay(100);
     updateState(STATE_IDLE);
 
+    return true;
+}
+
+bool BleManager::streamAudioFileFromStorage(uint16_t clipId, uint32_t startOffset) {
+    if (_pCharAudio == nullptr || !_connected) {
+        Serial.println(F("[BLE] Cannot stream: BLE not connected"));
+        return false;
+    }
+
+    char filename[32];
+    snprintf(filename, sizeof(filename), "/clip_%03u.wav", clipId);
+
+    if (!LittleFS.exists(filename)) {
+        Serial.printf("[BLE] File not found: %s\n", filename);
+        return false;
+    }
+
+    File file = LittleFS.open(filename, FILE_READ);
+    if (!file || file.isDirectory()) {
+        Serial.printf("[BLE] Failed to open %s\n", filename);
+        return false;
+    }
+
+    size_t totalBytes = file.size();
+    if (startOffset >= totalBytes) {
+        file.close();
+        return false;
+    }
+
+    file.seek(startOffset);
+
+    const size_t CHUNK_PAYLOAD_SIZE = 240;
+    size_t totalChunks = (totalBytes + CHUNK_PAYLOAD_SIZE - 1) / CHUNK_PAYLOAD_SIZE;
+    size_t startChunk = startOffset / CHUNK_PAYLOAD_SIZE;
+
+    updateState(STATE_TRANSFERRING, totalBytes, AUDIO_SAMPLE_RATE);
+    Serial.printf("[BLE] Streaming %s (%u bytes, %u chunks) via BLE GATT...\n",
+                  filename, (unsigned int)totalBytes, (unsigned int)totalChunks);
+
+    uint8_t packet[8 + CHUNK_PAYLOAD_SIZE];
+
+    for (size_t chunkIdx = startChunk; chunkIdx < totalChunks && _connected; ++chunkIdx) {
+        size_t bytesRead = file.read(&packet[8], CHUNK_PAYLOAD_SIZE);
+        if (bytesRead == 0) break;
+
+        packet[0] = (uint8_t)(chunkIdx & 0xFF);
+        packet[1] = (uint8_t)((chunkIdx >> 8) & 0xFF);
+        packet[2] = (uint8_t)(totalChunks & 0xFF);
+        packet[3] = (uint8_t)((totalChunks >> 8) & 0xFF);
+        packet[4] = (uint8_t)(bytesRead & 0xFF);
+        packet[5] = (uint8_t)((bytesRead >> 8) & 0xFF);
+        packet[6] = (uint8_t)(clipId & 0xFF);
+        packet[7] = (uint8_t)((clipId >> 8) & 0xFF);
+
+        _pCharAudio->setValue(packet, 8 + bytesRead);
+        _pCharAudio->notify();
+
+        delay(5);
+    }
+
+    file.close();
+    Serial.printf("[BLE] Stream completed for clip #%u (%u bytes)\n", clipId, (unsigned int)totalBytes);
+
+    updateState(STATE_DONE, totalBytes, AUDIO_SAMPLE_RATE);
+    delay(50);
+    updateState(STATE_IDLE);
     return true;
 }
 

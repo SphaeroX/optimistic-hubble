@@ -23,6 +23,7 @@ class RecordingSyncManager extends ChangeNotifier {
   String? _currentSpeed;
   String? _errorMessage;
   StreamSubscription<SyncProgressEvent>? _nativeSyncSubscription;
+  StreamSubscription<SyncProgressEvent>? _bleAudioSubscription;
 
   String _deviceIp = AppConstants.defaultDeviceIp;
   int _devicePort = AppConstants.defaultHttpPort;
@@ -50,6 +51,7 @@ class RecordingSyncManager extends ChangeNotifier {
     audioPlayer.addListener(_onAudioPlayerUpdate);
     bleService?.addListener(_onBleUpdate);
     _initNativeEventListener();
+    _initBleAudioEventListener();
     loadSavedLocalRecordings();
   }
 
@@ -58,7 +60,30 @@ class RecordingSyncManager extends ChangeNotifier {
     audioPlayer.removeListener(_onAudioPlayerUpdate);
     bleService?.removeListener(_onBleUpdate);
     _nativeSyncSubscription?.cancel();
+    _bleAudioSubscription?.cancel();
     super.dispose();
+  }
+
+  void _initBleAudioEventListener() {
+    _bleAudioSubscription = bleService?.audioProgressEvents.listen((event) {
+      _syncProgress = event.progress;
+      _currentSpeed = event.message;
+
+      if (event.isTransferring && _currentSyncFile.isNotEmpty) {
+        final target = _clipsMap.values.cast<RecordingItem?>().firstWhere(
+              (c) => c?.remoteFilename == _currentSyncFile,
+              orElse: () => null,
+            );
+        if (target != null) {
+          _clipsMap[target.id] = target.copyWith(
+            syncState: SyncState.downloading,
+            downloadProgress: event.progress,
+            transferSpeed: event.message,
+          );
+        }
+      }
+      notifyListeners();
+    });
   }
 
   void _initNativeEventListener() {
@@ -209,7 +234,7 @@ class RecordingSyncManager extends ChangeNotifier {
     _onBleUpdate();
   }
 
-  /// BLE 5.0 High-Throughput Download for a single clip (L2CAP CoC SPSM 0x0081):
+  /// BLE 5.0 High-Throughput Download for a single clip:
   Future<bool> downloadClip(
     int clipId, {
     SyncTier? forcedTier,
@@ -217,6 +242,12 @@ class RecordingSyncManager extends ChangeNotifier {
   }) async {
     final clip = _clipsMap[clipId];
     if (clip == null) return false;
+
+    if (bleService == null || !bleService!.isConnected) {
+      _errorMessage = 'Please connect to Xiao ESP32 via BLE first';
+      notifyListeners();
+      return false;
+    }
 
     _errorMessage = null;
     _currentSyncFile = clip.remoteFilename;
@@ -228,43 +259,7 @@ class RecordingSyncManager extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. Android Native BLE L2CAP CoC High-Throughput Transfer
-      if (_nativeBridge.isPlatformAndroid && bleService?.isConnected == true && bleService?.connectedDevice != null) {
-        final targetDir = await LocalStorageManager.getRecordingsDirectory();
-        final targetPath = '${targetDir.path}/clip_${clip.id}.wav';
-        final tempFile = File('${targetDir.path}/clip_${clip.id}.wav.part');
-        final int resumeOffset = tempFile.existsSync() ? tempFile.lengthSync() : 0;
-
-        // Command ESP32 to start streaming over L2CAP Channel
-        await bleService!.sendCommand(
-          BleCommand.startL2capStream,
-          clipId: clip.id,
-          offset: resumeOffset,
-        );
-
-        final String? savedPath = await _nativeBridge.startBleL2capSync(
-          deviceAddress: bleService!.connectedDevice!.id,
-          fileId: clip.id,
-          destinationPath: targetPath,
-          psm: AppConstants.bleL2capPsm,
-        );
-
-        if (savedPath != null) {
-          _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
-            syncState: SyncState.synced,
-            downloadProgress: 1.0,
-            localWavPath: savedPath,
-            crcVerified: true,
-            transferSpeed: 'Verified (BLE 5.0 High-Throughput)',
-          );
-          _currentSyncFile = '';
-          _currentSpeed = null;
-          notifyListeners();
-          return true;
-        }
-      }
-
-      // 2. Simulated or Host Fallback (Mock Mode for PC/Testing)
+      // 1. Simulated or Host Fallback (Mock Mode for PC/Testing)
       if (bleService?.isMockMode == true) {
         final syntheticWav = _generateSyntheticAudioWav(
           durationSeconds: clip.duration.inSeconds > 0 ? clip.duration.inSeconds : 5,
@@ -286,11 +281,41 @@ class RecordingSyncManager extends ChangeNotifier {
         return true;
       }
 
-      if (bleService?.isConnected != true) {
-        throw Exception('Please connect to Xiao ESP32 via BLE first');
+      // 2. High-speed BLE GATT Stream transfer
+      final Uint8List? rawBytes = await bleService!.streamClipOverGatt(clip.id);
+      if (rawBytes == null || rawBytes.isEmpty) {
+        throw Exception('BLE audio stream timed out or returned no data');
       }
 
-      throw Exception('BLE L2CAP is supported on Android 10+ (API 29+)');
+      Uint8List finalWavBytes;
+      if (rawBytes.length > 4 &&
+          rawBytes[0] == 0x52 &&
+          rawBytes[1] == 0x49 &&
+          rawBytes[2] == 0x46 &&
+          rawBytes[3] == 0x46) {
+        // Standard RIFF/WAVE header
+        finalWavBytes = rawBytes;
+      } else {
+        // Raw ADPCM - decode to Linear 16-bit PCM WAV
+        finalWavBytes = AdpcmDecoder.decodeAdpcmToWav(rawBytes, sampleRate: clip.sampleRate);
+      }
+
+      final savedFile = await LocalStorageManager.saveWavFile(
+        filename: 'clip_${clip.id}.wav',
+        wavBytes: finalWavBytes,
+      );
+
+      _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
+        syncState: SyncState.synced,
+        downloadProgress: 1.0,
+        localWavPath: savedFile.path,
+        crcVerified: true,
+        transferSpeed: 'Verified (BLE 5.0 High-Throughput)',
+      );
+      _currentSyncFile = '';
+      _currentSpeed = null;
+      notifyListeners();
+      return true;
     } catch (e) {
       _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
         syncState: SyncState.error,

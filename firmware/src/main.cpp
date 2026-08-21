@@ -215,9 +215,9 @@ void loop() {
                 break;
 
             case CMD_START_L2CAP_STREAM:
-                Serial.printf("\n[BLE CMD] Start L2CAP stream for clip #%u (Offset: %lu)...\n",
+                Serial.printf("\n[BLE CMD] Start audio stream for clip #%u (Offset: %lu)...\n",
                               ble.getCommandClipId(), ble.getCommandOffset());
-                ble.streamL2capClip(ble.getCommandClipId(), ble.getCommandOffset());
+                ble.streamAudioFileFromStorage(ble.getCommandClipId(), ble.getCommandOffset());
                 break;
 
             default:

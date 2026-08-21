@@ -495,7 +495,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       const SizedBox(height: 2),
                       Text(
                         isConnected
-                            ? 'L2CAP CoC (SPSM 0x0081) • 2M PHY • ~125-175 KB/s'
+                            ? 'GATT High-Throughput Stream • 2M PHY • Direct Sync'
                             : 'Connect to Xiao ESP32 to sync recordings over BLE',
                         style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
                       ),

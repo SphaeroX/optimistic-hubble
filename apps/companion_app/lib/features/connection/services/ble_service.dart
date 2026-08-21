@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:universal_ble/universal_ble.dart' hide BleCommand;
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/native_audio_sync_bridge.dart';
 import '../../../core/services/permission_service.dart';
 import '../../telemetry/models/device_telemetry.dart';
 import '../../telemetry/models/tap_event.dart';
@@ -42,6 +43,11 @@ class BleService extends ChangeNotifier {
 
   // Multi-packet audio chunk buffer
   final Map<int, Uint8List> _audioChunks = {};
+  final StreamController<SyncProgressEvent> _audioProgressController = StreamController<SyncProgressEvent>.broadcast();
+  Stream<SyncProgressEvent> get audioProgressEvents => _audioProgressController.stream;
+  int _activeDownloadClipId = 0;
+  DateTime? _downloadStartTime;
+  Completer<Uint8List?>? _activeDownloadCompleter;
 
   // Getters
   ConnectionStatus get status => _status;
@@ -490,17 +496,52 @@ class BleService extends ChangeNotifier {
 
   void _parseAudioChunkPayload(Uint8List value) {
     if (value.length < 6) return;
-    final chunkIdx = value[0] | (value[1] << 8);
-    final totalChunks = value[2] | (value[3] << 8);
-    final payloadLen = value[4] | (value[5] << 8);
+    final ByteData bd = ByteData.sublistView(value);
+    final chunkIdx = bd.getUint16(0, Endian.little);
+    final totalChunks = bd.getUint16(2, Endian.little);
+    final payloadLen = bd.getUint16(4, Endian.little);
 
-    if (value.length < 6 + payloadLen) return;
-    final payload = value.sublist(6, 6 + payloadLen);
+    int clipId = _activeDownloadClipId;
+    Uint8List payload;
+
+    if (value.length >= 8 && value.length >= 8 + payloadLen) {
+      clipId = bd.getUint16(6, Endian.little);
+      payload = value.sublist(8, 8 + payloadLen);
+    } else if (value.length >= 6 + payloadLen) {
+      payload = value.sublist(6, 6 + payloadLen);
+    } else {
+      return;
+    }
+
+    if (_activeDownloadClipId != clipId || _audioChunks.isEmpty) {
+      _activeDownloadClipId = clipId;
+      _audioChunks.clear();
+      _downloadStartTime ??= DateTime.now();
+    }
 
     _audioChunks[chunkIdx] = payload;
-    _log('AUDIO', 'Received Audio Chunk #$chunkIdx of $totalChunks ($payloadLen bytes)');
 
-    if (_audioChunks.length == totalChunks) {
+    final progress = totalChunks > 0 ? (_audioChunks.length / totalChunks).clamp(0.0, 1.0) : 0.0;
+
+    double speedKb = 0.0;
+    if (_downloadStartTime != null) {
+      final elapsedSec = DateTime.now().difference(_downloadStartTime!).inMilliseconds / 1000.0;
+      if (elapsedSec > 0.05) {
+        speedKb = ((_audioChunks.length * payloadLen) / 1024.0) / elapsedSec;
+      }
+    }
+
+    final speedStr = speedKb > 0 ? '${speedKb.toStringAsFixed(1)} KB/s (BLE 5.0 High-Throughput)' : 'Streaming...';
+
+    _audioProgressController.add(SyncProgressEvent(
+      status: 'transferring',
+      progress: progress,
+      bytesReceived: _audioChunks.length * payloadLen,
+      totalBytes: totalChunks * payloadLen,
+      message: speedStr,
+    ));
+
+    if (_audioChunks.length >= totalChunks && totalChunks > 0) {
       final List<int> fullAudio = [];
       for (int i = 0; i < totalChunks; i++) {
         if (_audioChunks.containsKey(i)) {
@@ -508,9 +549,46 @@ class BleService extends ChangeNotifier {
         }
       }
       _audioChunks.clear();
-      _log('AUDIO', 'All $totalChunks audio chunks reconstructed (${fullAudio.length} bytes)');
+      _log('AUDIO', 'Clip #$clipId reconstructed (${fullAudio.length} bytes in $totalChunks chunks)');
+      final resultBytes = Uint8List.fromList(fullAudio);
+      if (_activeDownloadCompleter != null && !_activeDownloadCompleter!.isCompleted) {
+        _activeDownloadCompleter!.complete(resultBytes);
+      }
     }
     notifyListeners();
+  }
+
+  /// Request Xiao ESP32 to stream the audio file over high-throughput BLE GATT notifications
+  Future<Uint8List?> streamClipOverGatt(int clipId) async {
+    if (!isConnected) {
+      _log('AUDIO', 'Cannot stream clip #$clipId: Not connected to BLE', isError: true);
+      return null;
+    }
+
+    _activeDownloadClipId = clipId;
+    _audioChunks.clear();
+    _downloadStartTime = DateTime.now();
+    _activeDownloadCompleter = Completer<Uint8List?>();
+
+    _log('AUDIO', 'Requesting BLE stream for clip #$clipId...');
+    await sendCommand(BleCommand.startL2capStream, clipId: clipId);
+
+    try {
+      final result = await _activeDownloadCompleter!.future.timeout(
+        const Duration(seconds: 40),
+        onTimeout: () {
+          _log('AUDIO', 'Stream timeout for clip #$clipId', isError: true);
+          return null;
+        },
+      );
+      return result;
+    } catch (e) {
+      _log('AUDIO', 'Stream exception for clip #$clipId: $e', isError: true);
+      return null;
+    } finally {
+      _activeDownloadCompleter = null;
+      _downloadStartTime = null;
+    }
   }
 
   // ==========================================================================
