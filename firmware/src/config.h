@@ -63,6 +63,13 @@
 #define BLE_CHAR_TAP_UUID "19b10003-e8f2-537e-4f6c-d104768a1214"
 #define BLE_CHAR_CMD_UUID "19b10004-e8f2-537e-4f6c-d104768a1214"
 
+// SoftAP Watchdog Timing (Section 5.2.2)
+#define SOFTAP_CONNECT_TIMEOUT_MS 60000UL // 60s timeout if no station connects
+#define SOFTAP_IDLE_TIMEOUT_MS 30000UL    // 30s idle after transfer before powering off Wi-Fi
+
+// BLE L2CAP CoC Parameters
+#define BLE_L2CAP_AUDIO_PSM 0x0081
+
 // Device Operational States
 enum DeviceState : uint8_t
 {
@@ -86,5 +93,7 @@ enum BleCommand : uint8_t
     CMD_ENTER_SLEEP = 3,
     CMD_START_RECORDING = 4,
     CMD_STOP_RECORDING = 5,
-    CMD_CLEAR_STORAGE = 6
+    CMD_CLEAR_STORAGE = 6,
+    CMD_START_L2CAP_STREAM = 7
 };
+

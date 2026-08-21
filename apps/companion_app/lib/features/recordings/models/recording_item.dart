@@ -1,7 +1,9 @@
+import '../../../core/constants/app_constants.dart';
+
 enum SyncState {
   onDevice,    // Clip is on ESP32 LittleFS flash only
-  downloading, // Wi-Fi transfer in progress
-  synced,      // Downloaded and converted to WAV on local disk
+  downloading, // Transfer in progress (BLE or Wi-Fi)
+  synced,      // Downloaded and verified on local disk
   error        // Sync failed
 }
 
@@ -16,6 +18,9 @@ class RecordingItem {
   final double downloadProgress;
   final String? localWavPath;
   final bool isPlaying;
+  final SyncTier recommendedTier;
+  final String? transferSpeed;
+  final bool crcVerified;
 
   RecordingItem({
     required this.id,
@@ -28,11 +33,15 @@ class RecordingItem {
     this.downloadProgress = 0.0,
     this.localWavPath,
     this.isPlaying = false,
-  });
+    SyncTier? recommendedTier,
+    this.transferSpeed,
+    this.crcVerified = false,
+  }) : recommendedTier = recommendedTier ??
+            (sizeBytes < AppConstants.tier1MaxSizeBytes ? SyncTier.bleL2cap : SyncTier.wifiTurbo);
 
   factory RecordingItem.fromApiJson(Map<String, dynamic> json) {
     final int id = json['id'] as int? ?? 1;
-    final String name = json['filename'] as String? ?? 'clip_$id.adpcm';
+    final String name = json['filename'] as String? ?? 'clip_$id.wav';
     final int size = json['size'] as int? ?? 0;
     final double durSec = (json['duration'] as num?)?.toDouble() ?? (size > 0 ? (size / 8000.0) : 0.0);
     final int rate = json['sampleRate'] as int? ?? 16000;
@@ -45,6 +54,7 @@ class RecordingItem {
       sampleRate: rate,
       recordedAt: DateTime.now(),
       syncState: SyncState.onDevice,
+      recommendedTier: size < AppConstants.tier1MaxSizeBytes ? SyncTier.bleL2cap : SyncTier.wifiTurbo,
     );
   }
 
@@ -59,6 +69,9 @@ class RecordingItem {
     double? downloadProgress,
     String? localWavPath,
     bool? isPlaying,
+    SyncTier? recommendedTier,
+    String? transferSpeed,
+    bool? crcVerified,
   }) {
     return RecordingItem(
       id: id ?? this.id,
@@ -71,6 +84,9 @@ class RecordingItem {
       downloadProgress: downloadProgress ?? this.downloadProgress,
       localWavPath: localWavPath ?? this.localWavPath,
       isPlaying: isPlaying ?? this.isPlaying,
+      recommendedTier: recommendedTier ?? this.recommendedTier,
+      transferSpeed: transferSpeed ?? this.transferSpeed,
+      crcVerified: crcVerified ?? this.crcVerified,
     );
   }
 }

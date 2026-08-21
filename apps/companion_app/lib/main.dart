@@ -28,7 +28,10 @@ class _XiaoCompanionAppState extends State<XiaoCompanionApp> {
     super.initState();
     _bleService = BleService();
     _audioPlayer = NativeAudioPlayer();
-    _syncManager = RecordingSyncManager(audioPlayer: _audioPlayer);
+    _syncManager = RecordingSyncManager(
+      audioPlayer: _audioPlayer,
+      bleService: _bleService,
+    );
   }
 
   @override

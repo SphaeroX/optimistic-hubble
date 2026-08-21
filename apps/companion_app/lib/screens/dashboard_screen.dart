@@ -354,7 +354,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Recordings (WAV Audio)',
+                  'Recordings (Adaptive Sync)',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 Text(
@@ -366,7 +366,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ElevatedButton.icon(
               onPressed: isSyncing ? null : () => widget.syncManager.syncAllClips(),
               icon: const Icon(Icons.sync),
-              label: const Text('Wi-Fi Fast Sync'),
+              label: const Text('Adaptive Sync All'),
             ),
           ],
         ),
@@ -402,6 +402,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           isSyncing: isSyncing,
           progress: widget.syncManager.syncProgress,
           currentFile: widget.syncManager.currentSyncFile,
+          currentSpeed: widget.syncManager.currentSpeed,
         ),
 
         // Clips List
@@ -414,7 +415,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Icon(Icons.mic_none, size: 48, color: AppTheme.textMuted),
                   SizedBox(height: 12),
                   Text(
-                    'No recordings stored yet.\n\n1. Connect via BLE to record directly.\n2. Or turn on Wi-Fi Hotspot and click "Wi-Fi Fast Sync" to pull clips from Flash.',
+                    'No recordings stored yet.\n\n• Tier 1: Silent BLE 5.0 sync for clips < 2.0 MB\n• Tier 2: Wi-Fi Turbo (>1.8 MB/s) with Range Resume for clips ≥ 2.0 MB',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
                   ),

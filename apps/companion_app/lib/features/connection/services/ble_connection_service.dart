@@ -223,6 +223,10 @@ class BleConnectionService extends ChangeNotifier {
       case BleCommand.clearStorage:
         _statusMessage = 'Flash storage cleared';
         break;
+      case BleCommand.startL2capStream:
+        _deviceState = DeviceState.transferring;
+        _statusMessage = 'L2CAP Stream active';
+        break;
       case BleCommand.none:
         break;
     }

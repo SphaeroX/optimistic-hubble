@@ -10,9 +10,10 @@ class WifiServerManager {
 public:
     WifiServerManager(StorageManager& storageRef);
 
-    bool begin(const char* ssid = "XIAO-Audio-Hotspot", const char* pass = "xiaoesp32c3", uint16_t port = 80);
+    bool begin(const char* ssid = WIFI_AP_SSID, const char* pass = WIFI_AP_PASS, uint16_t port = HTTP_SERVER_PORT);
     bool stop();
     void handleClient();
+    void checkWatchdog();
     
     bool isActive() const { return _active; }
     void notifyActivity();
@@ -33,11 +34,13 @@ private:
     bool _active;
     bool _routesConfigured;
     unsigned long _lastRequestTime;
+    unsigned long _softApStartTime;
 
     void setupRoutes();
     void handleRoot();
     void handleApiClips();
     void handleApiDownload();
+    void handleApiDelete();
     void handleApiClear();
     void handleStatus();
     void handleOptions();

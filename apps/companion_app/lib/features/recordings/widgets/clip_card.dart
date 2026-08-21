@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/storage_manager.dart';
@@ -8,18 +9,21 @@ class ClipCard extends StatelessWidget {
   final RecordingItem clip;
   final VoidCallback onPlayToggle;
   final VoidCallback onDownload;
+  final Function(SyncTier tier)? onDownloadWithTier;
 
   const ClipCard({
     super.key,
     required this.clip,
     required this.onPlayToggle,
     required this.onDownload,
+    this.onDownloadWithTier,
   });
 
   @override
   Widget build(BuildContext context) {
     final isSynced = clip.syncState == SyncState.synced;
     final isDownloading = clip.syncState == SyncState.downloading;
+    final isBleTier = clip.recommendedTier == SyncTier.bleL2cap;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -47,15 +51,17 @@ class ClipCard extends StatelessWidget {
                       ? AppTheme.accentGreen
                       : isSynced
                           ? AppTheme.primaryCyan.withAlpha(40)
-                          : const Color(0xFF243248),
+                          : (isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange).withAlpha(40),
                   child: IconButton(
                     icon: Icon(
                       clip.isPlaying
                           ? Icons.pause
-                          : (isSynced ? Icons.play_arrow : Icons.cloud_download),
+                          : (isSynced ? Icons.play_arrow : (isBleTier ? Icons.bluetooth_audio : Icons.wifi_protected_setup)),
                       color: clip.isPlaying
                           ? Colors.black
-                          : (isSynced ? AppTheme.primaryCyan : Colors.white70),
+                          : (isSynced
+                              ? AppTheme.primaryCyan
+                              : (isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange)),
                       size: 24,
                     ),
                     onPressed: isSynced ? onPlayToggle : onDownload,
@@ -71,47 +77,69 @@ class ClipCard extends StatelessWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'Clip #${clip.id} (${clip.remoteFilename})',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                              color: Colors.white,
+                          Expanded(
+                            child: Text(
+                              'Clip #${clip.id} (${clip.remoteFilename})',
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                           _buildStatusBadge(isSynced, isDownloading),
                         ],
                       ),
                       const SizedBox(height: 6),
-                      Row(
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 4,
                         children: [
-                          Icon(Icons.timer_outlined, size: 14, color: AppTheme.textMuted),
-                          const SizedBox(width: 4),
-                          Text(
-                            Formatters.formatDuration(clip.duration),
-                            style: const TextStyle(
-                              color: AppTheme.primaryCyan,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.timer_outlined, size: 14, color: AppTheme.textMuted),
+                              const SizedBox(width: 4),
+                              Text(
+                                Formatters.formatDuration(clip.duration),
+                                style: const TextStyle(
+                                  color: AppTheme.primaryCyan,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          Icon(Icons.data_usage, size: 14, color: AppTheme.textMuted),
-                          const SizedBox(width: 4),
-                          Text(
-                            Formatters.formatBytes(clip.sizeBytes),
-                            style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.data_usage, size: 14, color: AppTheme.textMuted),
+                              const SizedBox(width: 4),
+                              Text(
+                                Formatters.formatBytes(clip.sizeBytes),
+                                style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
+                          // Tier Recommendation Badge
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF131B2A),
+                              color: (isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange).withAlpha(30),
                               borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: (isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange).withAlpha(80),
+                              ),
                             ),
                             child: Text(
-                              '${clip.sampleRate ~/ 1000}kHz ADPCM',
-                              style: const TextStyle(color: AppTheme.textMuted, fontSize: 10),
+                              isBleTier ? 'Tier 1: BLE (<2MB)' : 'Tier 2: Wi-Fi Turbo (>=2MB)',
+                              style: TextStyle(
+                                color: isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],
@@ -125,14 +153,31 @@ class ClipCard extends StatelessWidget {
             // Progress bar if downloading
             if (isDownloading) ...[
               const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: clip.downloadProgress,
-                  minHeight: 6,
-                  backgroundColor: const Color(0xFF243248),
-                  valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryCyan),
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: clip.downloadProgress,
+                      minHeight: 6,
+                      backgroundColor: const Color(0xFF243248),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange,
+                      ),
+                    ),
+                  ),
+                  if (clip.transferSpeed != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      clip.transferSpeed!,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
 
@@ -143,9 +188,15 @@ class ClipCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Stored as standard 16-bit PCM WAV',
-                    style: TextStyle(color: AppTheme.textMuted.withAlpha(180), fontSize: 11),
+                  Row(
+                    children: [
+                      const Icon(Icons.verified, size: 14, color: AppTheme.accentGreen),
+                      const SizedBox(width: 4),
+                      Text(
+                        'CRC32 Verified PCM WAV',
+                        style: TextStyle(color: AppTheme.textMuted.withAlpha(200), fontSize: 11),
+                      ),
+                    ],
                   ),
                   TextButton.icon(
                     onPressed: () => LocalStorageManager.openInFileManager(),
@@ -213,7 +264,7 @@ class ClipCard extends StatelessWidget {
         color: const Color(0xFF243248),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: const Text('Flash Memory Only', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+      child: const Text('Flash Only', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
     );
   }
 }

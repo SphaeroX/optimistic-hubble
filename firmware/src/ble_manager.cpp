@@ -3,7 +3,8 @@
 BleManager::BleManager()
     : _pServer(nullptr), _pService(nullptr), _pCharState(nullptr),
       _pCharAudio(nullptr), _pCharTap(nullptr), _pCharCmd(nullptr),
-      _connected(false), _currentState(STATE_IDLE), _pendingCmd(CMD_NONE) {}
+      _connected(false), _currentState(STATE_IDLE), _pendingCmd(CMD_NONE),
+      _cmdClipId(0), _cmdOffset(0) {}
 
 void BleManager::onConnect(NimBLEServer* pServer) {
     _connected = true;
@@ -36,8 +37,22 @@ void BleManager::handleCharacteristicWrite(NimBLECharacteristic* pCharacteristic
 
     uint8_t cmdByte = data[0];
     _pendingCmd = (BleCommand)cmdByte;
-    Serial.printf("\n[BLE] >>> Command received: %u (from characteristic: %s) <<<\n",
-                  cmdByte, pCharacteristic->getUUID().toString().c_str());
+
+    // Parse optional parameters for commands
+    if (val.size() >= 3) {
+        _cmdClipId = (uint16_t)(data[1] | (data[2] << 8));
+    } else {
+        _cmdClipId = 0;
+    }
+
+    if (val.size() >= 7) {
+        _cmdOffset = (uint32_t)(data[3] | (data[4] << 8) | (data[5] << 16) | (data[6] << 24));
+    } else {
+        _cmdOffset = 0;
+    }
+
+    Serial.printf("\n[BLE] >>> Command received: %u (Clip: %u, Offset: %lu) from %s <<<\n",
+                  cmdByte, _cmdClipId, _cmdOffset, pCharacteristic->getUUID().toString().c_str());
 }
 
 BleCommand BleManager::getPendingCommand() {
@@ -49,21 +64,21 @@ BleCommand BleManager::getPendingCommand() {
 bool BleManager::begin(const char* deviceName) {
     if (!NimBLEDevice::getInitialized()) {
         NimBLEDevice::init(deviceName);
-        NimBLEDevice::setPower(ESP_PWR_LVL_P9); // +9 dBm for strong stable signal
+        NimBLEDevice::setPower(ESP_PWR_LVL_P9); // +9 dBm for maximum range
 
         _pServer = NimBLEDevice::createServer();
         _pServer->setCallbacks(this);
 
         _pService = _pServer->createService(BLE_SERVICE_UUID);
 
-        // State / Control Characteristic: Read, Write, Notify
+        // State / Telemetry Characteristic: Read, Write, Notify
         _pCharState = _pService->createCharacteristic(
             BLE_CHAR_STATE_UUID,
             NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY
         );
         _pCharState->setCallbacks(this);
 
-        // Audio Data Stream Characteristic: Notify
+        // Audio Stream Characteristic: Notify
         _pCharAudio = _pService->createCharacteristic(
             BLE_CHAR_AUDIO_UUID,
             NIMBLE_PROPERTY::NOTIFY
@@ -82,13 +97,16 @@ bool BleManager::begin(const char* deviceName) {
         );
         _pCharCmd->setCallbacks(this);
 
-        // Set initial values
+        // Initial State Payload
         uint8_t initPayload[7] = {0, 0, 0, 0, 0, (uint8_t)(AUDIO_SAMPLE_RATE & 0xFF), (uint8_t)((AUDIO_SAMPLE_RATE >> 8) & 0xFF)};
         _pCharState->setValue(initPayload, sizeof(initPayload));
 
         _pService->start();
 
-        // Configure Advertising for maximum Windows compatibility
+        // Initialize NimBLE L2CAP CoC Server on SPSM 0x0081
+        NimBleL2CapServer::getInstance().begin(BLE_L2CAP_AUDIO_PSM, L2CAP_COC_MTU);
+
+        // Configure Advertising
         NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
         pAdvertising->addServiceUUID(BLE_SERVICE_UUID);
         pAdvertising->setScanResponse(true);
@@ -202,7 +220,7 @@ void BleManager::notifyTap(float shockMagnitude) {
     if (_pCharTap == nullptr || !_connected) return;
 
     uint8_t payload[5];
-    payload[0] = 0x01; // Tap flag
+    payload[0] = 0x01;
     int32_t fixedShock = (int32_t)(shockMagnitude * 1000.0f);
     payload[1] = (uint8_t)(fixedShock & 0xFF);
     payload[2] = (uint8_t)((fixedShock >> 8) & 0xFF);
@@ -221,7 +239,7 @@ bool BleManager::transmitAudio(const uint8_t* audioData, size_t totalBytes, uint
     updateState(STATE_TRANSFERRING, totalBytes, sampleRate);
     delay(50);
 
-    const size_t CHUNK_PAYLOAD_SIZE = 240; // 240 bytes audio payload
+    const size_t CHUNK_PAYLOAD_SIZE = 240;
     size_t totalChunks = (totalBytes + CHUNK_PAYLOAD_SIZE - 1) / CHUNK_PAYLOAD_SIZE;
 
     Serial.printf("[BLE] Transmitting %u bytes of audio in %u chunks...\n", totalBytes, totalChunks);
@@ -237,7 +255,6 @@ bool BleManager::transmitAudio(const uint8_t* audioData, size_t totalBytes, uint
         size_t offset = chunkIdx * CHUNK_PAYLOAD_SIZE;
         size_t thisPayload = (totalBytes - offset > CHUNK_PAYLOAD_SIZE) ? CHUNK_PAYLOAD_SIZE : (totalBytes - offset);
 
-        // Header: [ChunkIndex(2), TotalChunks(2), PayloadLen(2)]
         packet[0] = (uint8_t)(chunkIdx & 0xFF);
         packet[1] = (uint8_t)((chunkIdx >> 8) & 0xFF);
         packet[2] = (uint8_t)(totalChunks & 0xFF);
@@ -250,7 +267,7 @@ bool BleManager::transmitAudio(const uint8_t* audioData, size_t totalBytes, uint
         _pCharAudio->setValue(packet, 6 + thisPayload);
         _pCharAudio->notify();
 
-        delay(8); // Safe spacing for Windows BLE link layer
+        delay(8);
     }
 
     Serial.println(F("[BLE] Audio transmission complete!"));
@@ -260,4 +277,14 @@ bool BleManager::transmitAudio(const uint8_t* audioData, size_t totalBytes, uint
     updateState(STATE_IDLE);
 
     return true;
+}
+
+bool BleManager::streamL2capClip(uint16_t clipId, uint32_t startOffset) {
+    char filename[32];
+    snprintf(filename, sizeof(filename), "/clip_%03u.wav", clipId);
+
+    updateState(STATE_TRANSFERRING, 0, AUDIO_SAMPLE_RATE);
+    bool ok = NimBleL2CapServer::getInstance().streamAudioFile(filename, clipId, startOffset);
+    updateState(ok ? STATE_DONE : STATE_IDLE);
+    return ok;
 }

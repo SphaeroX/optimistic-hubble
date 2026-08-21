@@ -215,6 +215,12 @@ void loop() {
                 ble.updateState(STATE_IDLE);
                 break;
 
+            case CMD_START_L2CAP_STREAM:
+                Serial.printf("\n[BLE CMD] Start L2CAP stream for clip #%u (Offset: %lu)...\n",
+                              ble.getCommandClipId(), ble.getCommandOffset());
+                ble.streamL2capClip(ble.getCommandClipId(), ble.getCommandOffset());
+                break;
+
             default:
                 break;
         }
@@ -239,17 +245,11 @@ void loop() {
         lastButtonState = btnState;
     }
 
-    // 4. IDLE State: Handle WebServer and DNS requests (if Wi-Fi active)
+    // 4. IDLE State: Handle WebServer, DNS requests, and SoftAP Watchdog (if Wi-Fi active)
     if (wifiServer.isActive()) {
         wifiServer.handleClient();
+        wifiServer.checkWatchdog();
         power.notifyActivity();
-
-        // Auto-stop Wi-Fi after inactivity timeout to preserve battery
-        if (wifiServer.isInactive(WIFI_INACTIVITY_TIMEOUT_MS)) {
-            Serial.println(F("[WIFI] Inactivity timeout reached. Shutting down Wi-Fi to save power..."));
-            wifiServer.stop();
-            ble.updateState(STATE_IDLE);
-        }
     }
 
     // 5. IDLE State: Monitor IMU for Start Tap (when awake)

@@ -45,6 +45,55 @@ class _SettingsTabState extends State<SettingsTab> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        // Tiered Adaptive Hybrid Engine Overview
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.auto_awesome, color: AppTheme.primaryCyan, size: 22),
+                    SizedBox(width: 8),
+                    Text(
+                      'Tiered Adaptive Hybrid Sync Engine',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'The companion app dynamically chooses the optimal sync strategy based on file size and connection state:',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                _buildSyncTierRow(
+                  icon: Icons.bluetooth_audio,
+                  color: AppTheme.primaryCyan,
+                  title: 'Tier 1: Silent BLE 5.0 L2CAP CoC',
+                  desc: 'Audio < 2.0 MB (< 4 min). Transferred silently in 4-18s with zero Wi-Fi state disruption.',
+                ),
+                const SizedBox(height: 8),
+                _buildSyncTierRow(
+                  icon: Icons.wifi_protected_setup,
+                  color: AppTheme.accentOrange,
+                  title: 'Tier 2: High-Speed Wi-Fi SoftAP',
+                  desc: 'Audio ≥ 2.0 MB (up to 16.8 MB). Transferred at >1.8 MB/s with RFC 7233 Range Resume and cellular 5G preservation.',
+                ),
+                const SizedBox(height: 8),
+                _buildSyncTierRow(
+                  icon: Icons.timer,
+                  color: AppTheme.accentGreen,
+                  title: 'SoftAP Inactivity Watchdog',
+                  desc: 'Wi-Fi radio automatically shuts down after 60s without clients or 30s idle, saving ~150 mA battery current.',
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
         // Wi-Fi SoftAP Sync Config
         Card(
           child: Padding(
@@ -66,7 +115,7 @@ class _SettingsTabState extends State<SettingsTab> {
                 TextField(
                   controller: _ssidController,
                   decoration: const InputDecoration(
-                    labelText: 'Hotspot SSID',
+                    labelText: 'Hotspot SSID Pattern',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.router),
                   ),
@@ -195,7 +244,7 @@ class _SettingsTabState extends State<SettingsTab> {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Downloaded recordings are automatically converted to standard Linear 16-bit PCM WAV and stored in your Documents directory.',
+                  'Downloaded recordings are automatically validated (CRC32) and stored as standard Linear 16-bit PCM WAV files in your local documents directory.',
                   style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
                 ),
                 const SizedBox(height: 12),
@@ -222,13 +271,16 @@ class _SettingsTabState extends State<SettingsTab> {
                     Icon(Icons.info_outline, color: AppTheme.primaryCyan, size: 22),
                     SizedBox(width: 8),
                     Text(
-                      'System & Hardware Specs',
+                      'System & Protocol Specs',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
                 _buildInfoRow('Target MCU', 'Seeed Studio XIAO ESP32-C3 (RISC-V 160MHz)'),
+                _buildInfoRow('Sync Architecture', 'Tiered Adaptive Hybrid Engine (BLE L2CAP + Wi-Fi Turbo)'),
+                _buildInfoRow('BLE L2CAP SPSM', '0x0081 (Credit-Based Flow Control, MTU 512)'),
+                _buildInfoRow('Wi-Fi Protocol', 'HTTP/1.1 with RFC 7233 Range Resume (>1.8 MB/s)'),
                 _buildInfoRow('Audio Codec', '16 kHz IMA-ADPCM 4-bit Mono (8 KB/s)'),
                 _buildInfoRow('Microphone', 'I2S Stereo/Mono Digital MEMS'),
                 _buildInfoRow('IMU Sensor', 'LSM6DS3 / BMI160 6-Axis + Tap Detector'),
@@ -242,6 +294,31 @@ class _SettingsTabState extends State<SettingsTab> {
     );
   }
 
+  Widget _buildSyncTierRow({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String desc,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: color, size: 18),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 2),
+              Text(desc, style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildInfoRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -249,7 +326,14 @@ class _SettingsTabState extends State<SettingsTab> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+          ),
         ],
       ),
     );

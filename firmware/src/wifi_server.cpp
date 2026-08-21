@@ -1,8 +1,11 @@
 #include "wifi_server.h"
 #include "config.h"
 
-// Custom RequestHandler to catch any unhandled routes and avoid ESP32 WebServer's
-// default "request handler not found" error log before notFound fallback.
+// Mandatory HTTP Header registration for RFC 7233 Range Support
+static const char* HTTP_COLLECT_HEADERS[] = {"Range", "Accept-Ranges", "If-Range"};
+static const size_t HTTP_COLLECT_HEADERS_COUNT = sizeof(HTTP_COLLECT_HEADERS) / sizeof(char*);
+
+// Custom RequestHandler to catch unhandled routes and prevent log noise
 class CatchAllRequestHandler : public RequestHandler {
 public:
     CatchAllRequestHandler(WifiServerManager& manager) : _manager(manager) {}
@@ -10,7 +13,7 @@ public:
     bool canHandle(HTTPMethod method, String uri) override {
         (void)method;
         (void)uri;
-        return true; // Handle all remaining routes
+        return true;
     }
 
     bool handle(WebServer& server, HTTPMethod requestMethod, String requestUri) override {
@@ -27,17 +30,21 @@ private:
 
 WifiServerManager::WifiServerManager(StorageManager& storageRef)
     : _storage(storageRef), _server(HTTP_SERVER_PORT), _ssid(WIFI_AP_SSID), _pass(WIFI_AP_PASS),
-      _active(false), _routesConfigured(false), _lastRequestTime(0) {}
+      _active(false), _routesConfigured(false), _lastRequestTime(0), _softApStartTime(0) {}
 
 void WifiServerManager::setupRoutes() {
     if (_routesConfigured) return;
 
     _server.enableCORS(true);
+    _server.collectHeaders(HTTP_COLLECT_HEADERS, HTTP_COLLECT_HEADERS_COUNT);
 
     // Register WebServer API & Dashboard Routes
     _server.on("/", HTTP_GET, [this]() { notifyActivity(); handleRoot(); });
     _server.on("/api/clips", HTTP_GET, [this]() { notifyActivity(); handleApiClips(); });
     _server.on("/api/download", HTTP_GET, [this]() { notifyActivity(); handleApiDownload(); });
+    _server.on("/api/delete", HTTP_POST, [this]() { notifyActivity(); handleApiDelete(); });
+    _server.on("/api/delete", HTTP_GET, [this]() { notifyActivity(); handleApiDelete(); });
+    _server.on("/api/complete", HTTP_POST, [this]() { notifyActivity(); handleApiDelete(); });
     _server.on("/api/clear", HTTP_GET, [this]() { notifyActivity(); handleApiClear(); });
     _server.on("/api/clear", HTTP_POST, [this]() { notifyActivity(); handleApiClear(); });
     _server.on("/api/status", HTTP_GET, [this]() { notifyActivity(); handleStatus(); });
@@ -46,6 +53,8 @@ void WifiServerManager::setupRoutes() {
     _server.on("/", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
     _server.on("/api/clips", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
     _server.on("/api/download", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
+    _server.on("/api/delete", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
+    _server.on("/api/complete", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
     _server.on("/api/clear", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
     _server.on("/api/status", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
 
@@ -54,7 +63,7 @@ void WifiServerManager::setupRoutes() {
     _server.on("/apple-touch-icon.png", HTTP_ANY, [this]() { notifyActivity(); handleFavicon(); });
     _server.on("/apple-touch-icon-precomposed.png", HTTP_ANY, [this]() { notifyActivity(); handleFavicon(); });
 
-    // Captive Portal probes
+    // Captive Portal Probes
     _server.on("/generate_204", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
     _server.on("/gen_204", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
     _server.on("/hotspot-detect.html", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
@@ -65,9 +74,8 @@ void WifiServerManager::setupRoutes() {
     _server.on("/mobile/status.txt", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
     _server.on("/check_network_status.txt", HTTP_ANY, [this]() { notifyActivity(); handleCaptivePortal(); });
 
-    // Catch-All Handler to satisfy WebServer::_currentHandler and avoid "request handler not found" errors
+    // Catch-All Handler
     _server.addHandler(new CatchAllRequestHandler(*this));
-
     _server.onNotFound([this]() { handleCatchAll(); });
 
     _routesConfigured = true;
@@ -79,6 +87,7 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
     _ssid = ssid;
     _pass = pass;
     _lastRequestTime = millis();
+    _softApStartTime = millis();
 
     WiFi.disconnect(true);
     delay(50);
@@ -104,15 +113,12 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
 
     Serial.println(F("--------------------------------------------------"));
     Serial.printf("[WIFI AP ACTIVE] SSID: \"%s\" | Password: \"%s\"\n", _ssid, _pass);
-    Serial.printf("[WIFI AP ACTIVE] Web Dashboard: http://%s\n", WiFi.softAPIP().toString().c_str());
+    Serial.printf("[WIFI AP ACTIVE] High-Speed Sync Endpoint: http://%s/api/download\n", WiFi.softAPIP().toString().c_str());
     Serial.println(F("--------------------------------------------------"));
 
-    // Ensure routes are registered once
     setupRoutes();
-
     _server.begin(port);
     _active = true;
-    Serial.printf("[HTTP] Sync Server & Captive Portal listening on port %u.\n", port);
     return true;
 }
 
@@ -128,7 +134,7 @@ bool WifiServerManager::stop() {
     WiFi.mode(WIFI_OFF);
 
     _active = false;
-    Serial.println(F("[WIFI] Wi-Fi SoftAP and Web Server turned OFF to save battery (~150 mA)."));
+    Serial.println(F("[WIFI] SoftAP turned OFF to save battery (~150 mA)."));
     return true;
 }
 
@@ -144,6 +150,26 @@ unsigned long WifiServerManager::getInactivityMs() const {
 bool WifiServerManager::isInactive(unsigned long timeoutMs) const {
     if (!_active) return false;
     return (millis() - _lastRequestTime) >= timeoutMs;
+}
+
+void WifiServerManager::checkWatchdog() {
+    if (!_active || WiFi.getMode() != WIFI_AP) return;
+
+    int stationCount = WiFi.softAPgetStationNum();
+    unsigned long now = millis();
+
+    // Condition 1: 0 stations connected after initial setup timeout (60s)
+    if (stationCount == 0 && (now - _softApStartTime > SOFTAP_CONNECT_TIMEOUT_MS)) {
+        Serial.println(F("[WATCHDOG] SoftAP 60s timeout with 0 clients. Shutting down Wi-Fi."));
+        stop();
+        return;
+    }
+
+    // Condition 2: Inactivity timeout after transfers complete (30s)
+    if (stationCount > 0 && (now - _lastRequestTime > SOFTAP_IDLE_TIMEOUT_MS)) {
+        Serial.println(F("[WATCHDOG] SoftAP idle timeout (>30s). Shutting down Wi-Fi to preserve battery."));
+        stop();
+    }
 }
 
 void WifiServerManager::handleClient() {
@@ -191,7 +217,8 @@ void WifiServerManager::handleCaptivePortal() {
 void WifiServerManager::handleOptions() {
     _server.sendHeader("Access-Control-Allow-Origin", "*");
     _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE");
-    _server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+    _server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Range");
+    _server.sendHeader("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Length");
     _server.send(204);
 }
 
@@ -239,6 +266,7 @@ void WifiServerManager::handleApiClips() {
 
 void WifiServerManager::handleApiDownload() {
     _server.sendHeader("Access-Control-Allow-Origin", "*");
+    _server.sendHeader("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Length");
 
     uint16_t clipId = 0;
     if (_server.hasArg("id")) {
@@ -260,12 +288,93 @@ void WifiServerManager::handleApiDownload() {
         return;
     }
 
+    size_t totalFileSize = file.size();
+    size_t startByte = 0;
+    size_t endByte = (totalFileSize > 0) ? (totalFileSize - 1) : 0;
+    bool isRangeRequest = false;
+
+    // RFC 7233 Range header parsing
+    if (_server.hasHeader("Range")) {
+        String rangeHeader = _server.header("Range");
+        int eqIdx = rangeHeader.indexOf('=');
+        int dashIdx = rangeHeader.indexOf('-');
+        if (eqIdx != -1 && dashIdx != -1) {
+            isRangeRequest = true;
+            startByte = rangeHeader.substring(eqIdx + 1, dashIdx).toInt();
+            if (dashIdx + 1 < (int)rangeHeader.length()) {
+                endByte = rangeHeader.substring(dashIdx + 1).toInt();
+            }
+        }
+    }
+
+    // Range bounds validation
+    if (startByte > endByte || startByte >= totalFileSize) {
+        _server.sendHeader("Content-Range", "bytes */" + String(totalFileSize));
+        _server.send(416, "text/plain", "Requested Range Not Satisfiable");
+        file.close();
+        return;
+    }
+
+    if (endByte >= totalFileSize) {
+        endByte = totalFileSize - 1;
+    }
+
+    size_t contentLength = (endByte - startByte) + 1;
+    file.seek(startByte);
+
     char filename[32];
     snprintf(filename, sizeof(filename), "clip_%03u.wav", clipId);
 
-    _server.sendHeader("Content-Disposition", "inline; filename=\"" + String(filename) + "\"");
-    _server.streamFile(file, "audio/wav");
+    _server.sendHeader("Content-Type", "audio/wav");
+    _server.sendHeader("Accept-Ranges", "bytes");
+    _server.sendHeader("Content-Disposition", "attachment; filename=\"" + String(filename) + "\"");
+    _server.sendHeader("Content-Length", String(contentLength));
+
+    if (isRangeRequest) {
+        _server.sendHeader("Content-Range", "bytes " + String(startByte) + "-" + String(endByte) + "/" + String(totalFileSize));
+        _server.send(206, "audio/wav", "");
+    } else {
+        _server.send(200, "audio/wav", "");
+    }
+
+    // Double-buffered stream chunk (2 x TCP MSS = 2920 bytes) for > 1.8 MB/s throughput
+    uint8_t streamBuffer[2920];
+    WiFiClient client = _server.client();
+    size_t bytesRemaining = contentLength;
+
+    while (client.connected() && bytesRemaining > 0) {
+        size_t bytesToRead = (bytesRemaining > sizeof(streamBuffer)) ? sizeof(streamBuffer) : bytesRemaining;
+        size_t bytesRead = file.read(streamBuffer, bytesToRead);
+        if (bytesRead > 0) {
+            client.write(streamBuffer, bytesRead);
+            bytesRemaining -= bytesRead;
+        } else {
+            break;
+        }
+    }
+
     file.close();
+    notifyActivity();
+}
+
+void WifiServerManager::handleApiDelete() {
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
+    _server.sendHeader("Content-Type", "application/json");
+
+    if (!_server.hasArg("id")) {
+        _server.send(400, "application/json", "{\"error\":\"Missing id parameter\"}");
+        return;
+    }
+
+    uint16_t clipId = (uint16_t)_server.arg("id").toInt();
+    bool deleted = _storage.deleteClip(clipId);
+    _storage.refresh();
+
+    if (deleted) {
+        _server.send(200, "application/json", "{\"status\":\"success\",\"deletedId\":" + String(clipId) + "}");
+    } else {
+        _server.send(404, "application/json", "{\"error\":\"Clip not found or delete failed\"}");
+    }
 }
 
 void WifiServerManager::handleApiClear() {
@@ -297,84 +406,26 @@ void WifiServerManager::handleRoot() {
                   ".btn-danger{background:#e11d48;margin-top:10px;width:100%;}"
                   "</style></head><body><div class='container'>"
                   "<div class='card'><h1>XIAO Voice Vault</h1>"
-                  "<p>Hardware Dual-Mic Filter (8 KB/s) &bull; Universal Standard WAV</p>"
+                  "<p>Hardware Dual-Mic Filter (8 KB/s) &bull; RFC 7233 Range Resume</p>"
                   "<div class='stat'><span>Aufnahmen: <strong>" + String(clips.size()) + "</strong></span>"
                   "<span>Speicher: <strong>" + String(usedKb) + " / " + String(totalKb) + " KB</strong></span></div>";
 
     if (clips.empty()) {
-        html += "<p style='text-align:center;padding:20px 0;color:#64748b;'>Noch keine Aufnahmen im Flash gespeichert.<br>Hau auf das Breadboard, um aufzunehmen!</p>";
+        html += "<p style='text-align:center;padding:20px 0;color:#64748b;'>Noch keine Aufnahmen im Flash gespeichert.</p>";
     } else {
         for (int i = clips.size() - 1; i >= 0; --i) {
             html += "<div class='clip'><div>"
                     "<div class='clip-title'>Aufnahme #" + String(clips[i].id) + "</div>"
-                    "<div class='clip-meta'>" + String(clips[i].duration, 1) + "s &bull; " + String(clips[i].fileSize / 1024) + " KB (8 KB/s)</div>"
+                    "<div class='clip-meta'>" + String(clips[i].duration, 1) + "s &bull; " + String(clips[i].fileSize / 1024) + " KB</div>"
                     "</div>"
                     "<div style='display:flex;align-items:center;gap:6px;'>"
-                    "<button onclick=\"playMonoAdpcm('/api/download?id=" + String(clips[i].id) + "')\">▶ Abspielen</button>"
-                    "<button class='btn-secondary' onclick=\"downloadPcmWav('/api/download?id=" + String(clips[i].id) + "', " + String(clips[i].id) + ")\">⬇ WAV</button>"
+                    "<a href='/api/download?id=" + String(clips[i].id) + "'><button class='btn-secondary'>⬇ Download</button></a>"
                     "</div></div>";
         }
         html += "<form method='POST' action='/api/clear' onsubmit='return confirm(\"Wirklich alle Aufnahmen löschen?\");'>"
                 "<button type='submit' class='btn-danger'>Alle Aufnahmen vom Flash löschen</button></form>";
     }
 
-    html += "</div></div><script>"
-            "let actx = null;"
-            "const stepT = [7,8,9,10,11,12,13,14,16,17,19,21,23,25,28,31,34,37,41,45,50,55,60,66,73,80,88,97,107,118,130,143,157,173,190,209,230,253,279,307,337,371,408,449,494,544,598,658,724,796,876,963,1060,1166,1282,1411,1552,1707,1878,2066,2272,2499,2749,3024,3327,3660,4026,4428,4871,5358,5894,6484,7132,7845,8630,9493,10442,11487,12635,13899,15289,16818,18500,20350,22385,24623,27086,29794,32767];"
-            "const idxT = [-1,-1,-1,-1,2,4,6,8,-1,-1,-1,-1,2,4,6,8];"
-            "function decodeMonoAdpcm(buf){"
-            "  const raw = new Uint8Array(buf, 60);"
-            "  const numSamples = raw.length * 2;"
-            "  const pcm = new Int16Array(numSamples);"
-            "  let pred = 0, stepIdx = 0;"
-            "  function dec(n){"
-            "    let step = stepT[stepIdx], dq = step >> 3;"
-            "    if(n & 4) dq += step; if(n & 2) dq += (step >> 1); if(n & 1) dq += (step >> 2);"
-            "    if(n & 8) pred -= dq; else pred += dq;"
-            "    if(pred > 32767) pred = 32767; else if(pred < -32768) pred = -32768;"
-            "    let nxt = stepIdx + idxT[n & 15]; if(nxt < 0) nxt = 0; else if(nxt > 88) nxt = 88;"
-            "    stepIdx = nxt;"
-            "    return pred;"
-            "  }"
-            "  let sIdx = 0;"
-            "  for(let i=0; i<raw.length; i++){"
-            "    pcm[sIdx++] = dec(raw[i] & 15);"
-            "    pcm[sIdx++] = dec((raw[i] >> 4) & 15);"
-            "  }"
-            "  return { pcm, numSamples };"
-            "}"
-            "async function playMonoAdpcm(url){"
-            "  if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)();"
-            "  const res = await fetch(url); const buf = await res.arrayBuffer();"
-            "  const d = decodeMonoAdpcm(buf);"
-            "  const ab = actx.createBuffer(1, d.numSamples, 16000);"
-            "  const out = ab.getChannelData(0);"
-            "  for(let i=0; i<d.numSamples; i++) out[i] = d.pcm[i] / 32768.0;"
-            "  const src = actx.createBufferSource(); src.buffer = ab; src.connect(actx.destination); src.start();"
-            "}"
-            "async function downloadPcmWav(url, id){"
-            "  const res = await fetch(url); const buf = await res.arrayBuffer();"
-            "  const d = decodeMonoAdpcm(buf);"
-            "  const dataBytes = d.numSamples * 2;"
-            "  const totalSize = 44 + dataBytes;"
-            "  const outBuf = new ArrayBuffer(totalSize);"
-            "  const v = new DataView(outBuf);"
-            "  v.setUint8(0,0x52);v.setUint8(1,0x49);v.setUint8(2,0x46);v.setUint8(3,0x46);"
-            "  v.setUint32(4, 36 + dataBytes, true);"
-            "  v.setUint8(8,0x57);v.setUint8(9,0x41);v.setUint8(10,0x56);v.setUint8(11,0x45);"
-            "  v.setUint8(12,0x66);v.setUint8(13,0x6d);v.setUint8(14,0x74);v.setUint8(15,0x20);"
-            "  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);" // 1 Channel Mono
-            "  v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);"
-            "  v.setUint8(36,0x64);v.setUint8(37,0x61);v.setUint8(38,0x74);v.setUint8(39,0x61);"
-            "  v.setUint32(40, dataBytes, true);"
-            "  let off = 44;"
-            "  for(let i=0; i<d.numSamples; i++){"
-            "    v.setInt16(off, d.pcm[i], true); off += 2;"
-            "  }"
-            "  const blob = new Blob([v], {type:'audio/wav'});"
-            "  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'clip_' + id + '_pcm16.wav'; a.click();"
-            "}"
-            "</script></body></html>";
-
+    html += "</div></div></body></html>";
     _server.send(200, "text/html", html);
 }

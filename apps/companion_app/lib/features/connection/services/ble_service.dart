@@ -250,8 +250,8 @@ class BleService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> sendCommand(BleCommand cmd) async {
-    _log('CMD', 'Sending BLE Command: ${cmd.name} (Code: ${cmd.rawValue})');
+  Future<void> sendCommand(BleCommand cmd, {int clipId = 0, int offset = 0}) async {
+    _log('CMD', 'Sending BLE Command: ${cmd.name} (Code: ${cmd.rawValue}) [Clip: $clipId, Offset: $offset]');
 
     if (_isMockMode) {
       _simulateCommand(cmd);
@@ -263,7 +263,16 @@ class BleService extends ChangeNotifier {
       return;
     }
 
-    final bytes = Uint8List.fromList([cmd.rawValue]);
+    final List<int> cmdPayload = [cmd.rawValue];
+    if (clipId > 0 || offset > 0) {
+      cmdPayload.add(clipId & 0xFF);
+      cmdPayload.add((clipId >> 8) & 0xFF);
+      cmdPayload.add(offset & 0xFF);
+      cmdPayload.add((offset >> 8) & 0xFF);
+      cmdPayload.add((offset >> 16) & 0xFF);
+      cmdPayload.add((offset >> 24) & 0xFF);
+    }
+    final bytes = Uint8List.fromList(cmdPayload);
     bool success = false;
 
     // 1. Try write to Command Characteristic (with response)
@@ -308,6 +317,9 @@ class BleService extends ChangeNotifier {
       _log('CMD', 'Command ${cmd.name} transmitted successfully to hardware');
       if (cmd == BleCommand.startWifi) {
         _statusMessage = 'Starting Wi-Fi Hotspot on hardware...';
+        notifyListeners();
+      } else if (cmd == BleCommand.startL2capStream) {
+        _statusMessage = 'Starting L2CAP Stream for Clip #$clipId...';
         notifyListeners();
       }
     }
@@ -598,6 +610,11 @@ class BleService extends ChangeNotifier {
         _telemetry = _telemetry.copyWith(usedStorageBytes: 0, totalClips: 0);
         _statusMessage = 'Flash Storage Cleared';
         _log('MOCK', 'Flash storage cleared');
+        break;
+      case BleCommand.startL2capStream:
+        _telemetry = _telemetry.copyWith(state: DeviceState.transferring);
+        _statusMessage = 'L2CAP Stream active';
+        _log('MOCK', 'State -> TRANSFERRING (L2CAP CoC)');
         break;
       case BleCommand.none:
         break;

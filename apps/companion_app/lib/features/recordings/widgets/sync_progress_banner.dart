@@ -5,17 +5,21 @@ class SyncProgressBanner extends StatelessWidget {
   final bool isSyncing;
   final double progress;
   final String currentFile;
+  final String? currentSpeed;
 
   const SyncProgressBanner({
     super.key,
     required this.isSyncing,
     required this.progress,
     required this.currentFile,
+    this.currentSpeed,
   });
 
   @override
   Widget build(BuildContext context) {
     if (!isSyncing) return const SizedBox.shrink();
+
+    final isWifiTurbo = currentSpeed != null && currentSpeed!.contains('Turbo');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -23,7 +27,10 @@ class SyncProgressBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.primaryCyan.withAlpha(128)),
+        border: Border.all(
+          color: (isWifiTurbo ? AppTheme.accentOrange : AppTheme.primaryCyan).withAlpha(128),
+          width: 1.5,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -33,31 +40,47 @@ class SyncProgressBanner extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const SizedBox(
+                  SizedBox(
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryCyan),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        isWifiTurbo ? AppTheme.accentOrange : AppTheme.primaryCyan,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Text(
-                    'High-Speed Wi-Fi Syncing: $currentFile',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: Colors.white,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Syncing: $currentFile',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Colors.white,
+                        ),
+                      ),
+                      if (currentSpeed != null)
+                        Text(
+                          currentSpeed!,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isWifiTurbo ? AppTheme.accentOrange : AppTheme.primaryCyan,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               ),
               Text(
                 '${(progress * 100).toInt()}%',
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: AppTheme.primaryCyan,
-                  fontSize: 13,
+                  color: isWifiTurbo ? AppTheme.accentOrange : AppTheme.primaryCyan,
+                  fontSize: 14,
                 ),
               ),
             ],
@@ -69,7 +92,9 @@ class SyncProgressBanner extends StatelessWidget {
               value: progress,
               minHeight: 6,
               backgroundColor: const Color(0xFF243248),
-              valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryCyan),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                isWifiTurbo ? AppTheme.accentOrange : AppTheme.primaryCyan,
+              ),
             ),
           ),
         ],

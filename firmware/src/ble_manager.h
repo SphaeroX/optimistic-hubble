@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include "config.h"
+#include "nimble_l2cap_server.h"
 
 class BleManager : public NimBLEServerCallbacks, public NimBLECharacteristicCallbacks {
 public:
@@ -31,9 +32,12 @@ public:
     );
     void notifyTap(float shockMagnitude);
     bool transmitAudio(const uint8_t* audioData, size_t totalBytes, uint16_t sampleRate);
+    bool streamL2capClip(uint16_t clipId, uint32_t startOffset = 0);
 
     bool hasPendingCommand() const { return _pendingCmd != CMD_NONE; }
     BleCommand getPendingCommand();
+    uint16_t getCommandClipId() const { return _cmdClipId; }
+    uint32_t getCommandOffset() const { return _cmdOffset; }
     void clearPendingCommand() { _pendingCmd = CMD_NONE; }
 
     // NimBLE Server Callbacks
@@ -57,4 +61,6 @@ private:
     bool _connected;
     DeviceState _currentState;
     volatile BleCommand _pendingCmd;
+    uint16_t _cmdClipId;
+    uint32_t _cmdOffset;
 };

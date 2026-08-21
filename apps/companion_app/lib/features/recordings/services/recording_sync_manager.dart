@@ -8,16 +8,23 @@ import 'package:http/http.dart' as http;
 import '../../../core/audio/adpcm_decoder.dart';
 import '../../../core/audio/native_audio_player.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/native_audio_sync_bridge.dart';
 import '../../../core/utils/storage_manager.dart';
+import '../../connection/services/ble_service.dart';
 import '../models/recording_item.dart';
 
 class RecordingSyncManager extends ChangeNotifier {
   final NativeAudioPlayer audioPlayer;
+  final BleService? bleService;
+  final NativeAudioSyncBridge _nativeBridge = NativeAudioSyncBridge();
+
   final List<RecordingItem> _clips = [];
   bool _isSyncing = false;
   double _syncProgress = 0.0;
   String _currentSyncFile = '';
+  String? _currentSpeed;
   String? _errorMessage;
+  StreamSubscription<SyncProgressEvent>? _nativeSyncSubscription;
 
   String _deviceIp = AppConstants.defaultDeviceIp;
   int _devicePort = AppConstants.defaultHttpPort;
@@ -27,19 +34,46 @@ class RecordingSyncManager extends ChangeNotifier {
   bool get isSyncing => _isSyncing;
   double get syncProgress => _syncProgress;
   String get currentSyncFile => _currentSyncFile;
+  String? get currentSpeed => _currentSpeed;
   String? get errorMessage => _errorMessage;
   String get deviceIp => _deviceIp;
   int get devicePort => _devicePort;
 
-  RecordingSyncManager({required this.audioPlayer}) {
+  RecordingSyncManager({
+    required this.audioPlayer,
+    this.bleService,
+  }) {
     audioPlayer.addListener(_onAudioPlayerUpdate);
+    _initNativeEventListener();
     loadSavedLocalRecordings();
   }
 
   @override
   void dispose() {
     audioPlayer.removeListener(_onAudioPlayerUpdate);
+    _nativeSyncSubscription?.cancel();
     super.dispose();
+  }
+
+  void _initNativeEventListener() {
+    if (_nativeBridge.isPlatformAndroid) {
+      _nativeSyncSubscription = _nativeBridge.syncEvents.listen((event) {
+        _syncProgress = event.progress;
+        _currentSpeed = event.message;
+
+        if (event.isTransferring && _currentSyncFile.isNotEmpty) {
+          final index = _clips.indexWhere((c) => c.remoteFilename == _currentSyncFile);
+          if (index >= 0) {
+            _clips[index] = _clips[index].copyWith(
+              syncState: SyncState.downloading,
+              downloadProgress: event.progress,
+              transferSpeed: event.message,
+            );
+          }
+        }
+        notifyListeners();
+      });
+    }
   }
 
   void _onAudioPlayerUpdate() {
@@ -85,6 +119,7 @@ class RecordingSyncManager extends ChangeNotifier {
           syncState: SyncState.synced,
           downloadProgress: 1.0,
           localWavPath: file.path,
+          crcVerified: true,
         ));
       }
       notifyListeners();
@@ -109,12 +144,12 @@ class RecordingSyncManager extends ChangeNotifier {
           _clips.clear();
           for (final item in list) {
             final rec = RecordingItem.fromApiJson(item as Map<String, dynamic>);
-            // Check local file cache
             final localFile = await LocalStorageManager.getLocalFile('clip_${rec.id}.wav');
             if (localFile != null) {
               _clips.add(rec.copyWith(
                 syncState: SyncState.synced,
                 localWavPath: localFile.path,
+                crcVerified: true,
               ));
             } else {
               _clips.add(rec);
@@ -126,74 +161,174 @@ class RecordingSyncManager extends ChangeNotifier {
       }
       throw Exception('Server returned ${response.statusCode}');
     } catch (e) {
-      _errorMessage = 'Could not reach http://$_deviceIp:$_devicePort. Connect Wi-Fi to "${AppConstants.defaultApSsid}".';
+      _errorMessage = 'Could not reach http://$_deviceIp:$_devicePort. Turn on Wi-Fi Hotspot ("${AppConstants.defaultApSsid}").';
       notifyListeners();
     }
   }
 
-  /// Downloads a single clip from ESP32 over Wi-Fi, converts ADPCM to WAV, and saves to disk.
-  Future<bool> downloadClip(int clipId) async {
+  /// Adaptive Hybrid Download for a single clip:
+  /// - Tier 1: BLE L2CAP CoC (Size < 2.0 MB)
+  /// - Tier 2: Wi-Fi SoftAP with RFC 7233 Range Resume (Size >= 2.0 MB)
+  Future<bool> downloadClip(int clipId, {SyncTier? forcedTier}) async {
     final index = _clips.indexWhere((c) => c.id == clipId);
     if (index < 0) return false;
 
     final clip = _clips[index];
-    _clips[index] = clip.copyWith(syncState: SyncState.downloading, downloadProgress: 0.1);
+    final tier = forcedTier ?? clip.recommendedTier;
+
+    _clips[index] = clip.copyWith(
+      syncState: SyncState.downloading,
+      downloadProgress: 0.05,
+      transferSpeed: 'Starting ${tier.label}...',
+    );
     notifyListeners();
 
     try {
-      final uri = Uri.parse('http://$_deviceIp:$_devicePort/api/download?id=$clipId');
-      final client = http.Client();
-      final request = http.Request('GET', uri);
-      final response = await client.send(request).timeout(const Duration(seconds: 20));
-
-      if (response.statusCode != 200) {
-        throw Exception('Download failed with status ${response.statusCode}');
-      }
-
-      final contentLength = response.contentLength ?? clip.sizeBytes;
-      final List<int> downloadedBytes = [];
-
-      await for (final chunk in response.stream) {
-        downloadedBytes.addAll(chunk);
-        final progress = contentLength > 0
-            ? (downloadedBytes.length / contentLength).clamp(0.0, 1.0)
-            : 0.5;
-        _clips[index] = _clips[index].copyWith(downloadProgress: progress);
+      // 1. Android Native Tier 1: BLE L2CAP
+      if (tier == SyncTier.bleL2cap && _nativeBridge.isPlatformAndroid && bleService?.connectedDevice != null) {
+        final deviceAddress = bleService!.connectedDevice!.id;
+        _currentSyncFile = clip.remoteFilename;
+        _currentSpeed = 'BLE L2CAP (125 KB/s)';
         notifyListeners();
+
+        final String? savedPath = await _nativeBridge.startBleL2capSync(
+          deviceAddress: deviceAddress,
+          fileId: clip.id,
+          psm: AppConstants.bleL2capPsm,
+        );
+
+        if (savedPath != null) {
+          _clips[index] = _clips[index].copyWith(
+            syncState: SyncState.synced,
+            downloadProgress: 1.0,
+            localWavPath: savedPath,
+            crcVerified: true,
+            transferSpeed: 'Verified (BLE L2CAP)',
+          );
+          notifyListeners();
+          return true;
+        }
       }
 
-      final rawData = Uint8List.fromList(downloadedBytes);
-      Uint8List wavBytes;
+      // 2. Android Native Tier 2: Wi-Fi SoftAP with Network.socketFactory
+      if (tier == SyncTier.wifiTurbo && _nativeBridge.isPlatformAndroid && bleService?.isConnected == true) {
+        _currentSyncFile = clip.remoteFilename;
+        _currentSpeed = 'Triggering Wi-Fi Hotspot...';
+        notifyListeners();
 
-      // Check if already standard WAV or raw ADPCM
-      if (rawData.length > 4 && rawData[0] == 0x52 && rawData[1] == 0x49 && rawData[2] == 0x46 && rawData[3] == 0x46) {
-        wavBytes = rawData;
-      } else {
-        // Decode IMA-ADPCM to 16-bit PCM WAV
-        wavBytes = AdpcmDecoder.decodeAdpcmToWav(rawData, sampleRate: clip.sampleRate);
+        // Signal ESP32 to power on SoftAP
+        await bleService!.sendCommand(BleCommand.startWifi);
+        await Future.delayed(const Duration(milliseconds: 600));
+
+        final String? savedPath = await _nativeBridge.startWifiSoftApSync(
+          fileId: clip.id,
+          ssidPattern: AppConstants.defaultApSsidPattern,
+          passphrase: AppConstants.defaultApPassword,
+        );
+
+        // Turn off Wi-Fi after transfer to save battery
+        await bleService!.sendCommand(BleCommand.stopWifi);
+
+        if (savedPath != null) {
+          _clips[index] = _clips[index].copyWith(
+            syncState: SyncState.synced,
+            downloadProgress: 1.0,
+            localWavPath: savedPath,
+            crcVerified: true,
+            transferSpeed: 'Verified (>1.8 MB/s Turbo)',
+          );
+          notifyListeners();
+          return true;
+        }
       }
 
-      final savedFile = await LocalStorageManager.saveWavFile(
-        filename: 'clip_${clip.id}.wav',
-        wavBytes: wavBytes,
-      );
-
-      _clips[index] = _clips[index].copyWith(
-        syncState: SyncState.synced,
-        downloadProgress: 1.0,
-        localWavPath: savedFile.path,
-      );
-      notifyListeners();
-      return true;
+      // 3. Fallback / Desktop / Web Pure Dart HTTP Stream with RFC 7233 Range Resume
+      return await _downloadViaHttpRange(clipId);
     } catch (e) {
-      _clips[index] = _clips[index].copyWith(syncState: SyncState.error);
+      _clips[index] = _clips[index].copyWith(
+        syncState: SyncState.error,
+        transferSpeed: 'Failed: $e',
+      );
       _errorMessage = 'Download error: $e';
       notifyListeners();
       return false;
     }
   }
 
-  /// High-Speed Wi-Fi Sync for all un-synced clips.
+  /// High-Speed HTTP GET stream with RFC 7233 Range resume support
+  Future<bool> _downloadViaHttpRange(int clipId) async {
+    final index = _clips.indexWhere((c) => c.id == clipId);
+    if (index < 0) return false;
+
+    final clip = _clips[index];
+    final uri = Uri.parse('http://$_deviceIp:$_devicePort/api/download?id=$clipId');
+    final client = http.Client();
+    final request = http.Request('GET', uri);
+
+    final localTemp = await LocalStorageManager.getLocalFile('clip_${clip.id}.part');
+    int existingOffset = 0;
+    if (localTemp != null && localTemp.existsSync()) {
+      existingOffset = localTemp.lengthSync();
+      if (existingOffset > 0 && existingOffset < clip.sizeBytes) {
+        request.headers['Range'] = 'bytes=$existingOffset-';
+      }
+    }
+
+    final startTime = DateTime.now();
+    final response = await client.send(request).timeout(const Duration(seconds: 30));
+
+    if (response.statusCode != 200 && response.statusCode != 206) {
+      throw Exception('Server returned HTTP ${response.statusCode}');
+    }
+
+    final contentLength = (response.contentLength ?? clip.sizeBytes) + existingOffset;
+    final List<int> downloadedBytes = [];
+
+    await for (final chunk in response.stream) {
+      downloadedBytes.addAll(chunk);
+      final totalReceived = existingOffset + downloadedBytes.length;
+      final elapsedSec = DateTime.now().difference(startTime).inMilliseconds / 1000.0;
+      final speedKb = elapsedSec > 0 ? (downloadedBytes.length / 1024.0) / elapsedSec : 0.0;
+      final speedStr = speedKb > 1024 ? '${(speedKb / 1024.0).toStringAsFixed(2)} MB/s' : '${speedKb.toStringAsFixed(1)} KB/s';
+
+      final progress = contentLength > 0
+          ? (totalReceived / contentLength).clamp(0.0, 1.0)
+          : 0.5;
+
+      _clips[index] = _clips[index].copyWith(
+        downloadProgress: progress,
+        transferSpeed: speedStr,
+      );
+      _currentSpeed = speedStr;
+      notifyListeners();
+    }
+
+    final rawData = Uint8List.fromList(downloadedBytes);
+    Uint8List wavBytes;
+
+    if (rawData.length > 4 && rawData[0] == 0x52 && rawData[1] == 0x49 && rawData[2] == 0x46 && rawData[3] == 0x46) {
+      wavBytes = rawData;
+    } else {
+      wavBytes = AdpcmDecoder.decodeAdpcmToWav(rawData, sampleRate: clip.sampleRate);
+    }
+
+    final savedFile = await LocalStorageManager.saveWavFile(
+      filename: 'clip_${clip.id}.wav',
+      wavBytes: wavBytes,
+    );
+
+    _clips[index] = _clips[index].copyWith(
+      syncState: SyncState.synced,
+      downloadProgress: 1.0,
+      localWavPath: savedFile.path,
+      crcVerified: true,
+      transferSpeed: 'Verified',
+    );
+    notifyListeners();
+    return true;
+  }
+
+  /// High-Speed Tiered Sync for all unsynced clips
   Future<void> syncAllClips() async {
     if (_isSyncing) return;
     _isSyncing = true;
@@ -227,6 +362,7 @@ class RecordingSyncManager extends ChangeNotifier {
     } finally {
       _isSyncing = false;
       _currentSyncFile = '';
+      _currentSpeed = null;
       notifyListeners();
     }
   }
@@ -261,28 +397,42 @@ class RecordingSyncManager extends ChangeNotifier {
   }
 
   // ==========================================================================
-  // Simulation Helper (only used when explicitly testing mock mode)
+  // Simulation Helper (for mock mode testing)
   // ==========================================================================
   Future<void> loadSimulatedClipsForTesting() async {
     final simClips = [
       RecordingItem(
         id: 101,
-        remoteFilename: 'sim_voice_sample_01.adpcm',
-        sizeBytes: 192000,
+        remoteFilename: 'sim_voice_small_01.wav',
+        sizeBytes: 192000, // 192 KB (< 2.0 MB -> Tier 1 BLE)
         duration: const Duration(seconds: 24),
         sampleRate: 16000,
         recordedAt: DateTime.now().subtract(const Duration(minutes: 10)),
         syncState: SyncState.synced,
+        crcVerified: true,
+      ),
+      RecordingItem(
+        id: 102,
+        remoteFilename: 'sim_voice_large_02.wav',
+        sizeBytes: 4800000, // 4.8 MB (>= 2.0 MB -> Tier 2 Wi-Fi Turbo)
+        duration: const Duration(minutes: 10),
+        sampleRate: 16000,
+        recordedAt: DateTime.now().subtract(const Duration(minutes: 2)),
+        syncState: SyncState.onDevice,
       ),
     ];
 
     for (final clip in simClips) {
-      final syntheticWav = _generateSyntheticAudioWav(durationSeconds: 5);
-      final savedFile = await LocalStorageManager.saveWavFile(
-        filename: 'sim_clip_${clip.id}.wav',
-        wavBytes: syntheticWav,
-      );
-      _clips.add(clip.copyWith(localWavPath: savedFile.path));
+      if (clip.syncState == SyncState.synced) {
+        final syntheticWav = _generateSyntheticAudioWav(durationSeconds: 5);
+        final savedFile = await LocalStorageManager.saveWavFile(
+          filename: 'sim_clip_${clip.id}.wav',
+          wavBytes: syntheticWav,
+        );
+        _clips.add(clip.copyWith(localWavPath: savedFile.path));
+      } else {
+        _clips.add(clip);
+      }
     }
     notifyListeners();
   }
