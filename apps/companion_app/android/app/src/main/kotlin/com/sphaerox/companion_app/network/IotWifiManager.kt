@@ -89,7 +89,7 @@ class IotWifiManager(private val context: Context) {
                     specifierBuilder.setSsid(cleanPattern)
                 }
 
-                if (passphrase.isNotEmpty()) {
+                if (passphrase.isNotBlank() && passphrase.length >= 8) {
                     specifierBuilder.setWpa2Passphrase(passphrase)
                 }
                 val specifier = specifierBuilder.build()
@@ -104,6 +104,16 @@ class IotWifiManager(private val context: Context) {
                     override fun onAvailable(network: Network) {
                         Log.i(TAG, "IoT Wi-Fi Connected: $network -> Binding process to network")
                         synchronized(stateLock) {
+                            if (deferred.isCompleted || activeCallback != this) {
+                                Log.w(TAG, "IoT Wi-Fi connected after disconnect/cancellation; unbinding immediately.")
+                                try {
+                                    connectivityManager.bindProcessToNetwork(null)
+                                } catch (_: Exception) {}
+                                try {
+                                    connectivityManager.unregisterNetworkCallback(this)
+                                } catch (_: Exception) {}
+                                return
+                            }
                             activeNetwork = network
                             activeCallback = this
                             isConnecting.set(false)

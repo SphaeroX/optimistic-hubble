@@ -21,6 +21,7 @@ import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.Locale
 
 class MainActivity : FlutterActivity() {
 
@@ -172,17 +173,17 @@ class MainActivity : FlutterActivity() {
     ) {
         activeSyncJob?.cancel()
         activeSyncJob = activityScope.launch(Dispatchers.IO) {
+            val targetFile = if (!destinationPath.isNullOrEmpty()) {
+                File(destinationPath).also { it.parentFile?.mkdirs() }
+            } else {
+                File(filesDir, "clip_${fileId}.wav")
+            }
             try {
                 sendEvent("connecting", 0.0, 0, 0, "Opening L2CAP channel (PSM 0x${psm.toString(16)})...")
 
                 val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
                 val adapter = btManager?.adapter ?: throw IOException("Bluetooth Adapter unavailable")
                 val device = adapter.getRemoteDevice(deviceAddress)
-                val targetFile = if (!destinationPath.isNullOrEmpty()) {
-                    File(destinationPath).also { it.parentFile?.mkdirs() }
-                } else {
-                    File(filesDir, "clip_${fileId}.wav")
-                }
                 val receiver = BleL2capAudioReceiver(applicationContext)
 
                 val startTime = System.currentTimeMillis()
@@ -192,6 +193,7 @@ class MainActivity : FlutterActivity() {
                     psm = psm,
                     outputFile = targetFile
                 ) { bytesReceived, totalBytes ->
+                    if (!isActive) throw CancellationException("BLE L2CAP sync cancelled")
                     val elapsedSec = (System.currentTimeMillis() - startTime) / 1000.0
                     val speedKb = if (elapsedSec > 0) (bytesReceived / 1024.0) / elapsedSec else 0.0
                     val progress = if (totalBytes > 0) (bytesReceived.toDouble() / totalBytes.toDouble()).coerceIn(0.0, 1.0) else 0.0
@@ -201,10 +203,12 @@ class MainActivity : FlutterActivity() {
                         progress = progress,
                         bytesReceived = bytesReceived,
                         totalBytes = totalBytes,
-                        message = "${String.format("%.1f", speedKb)} KB/s (BLE L2CAP)",
+                        message = "${String.format(Locale.US, "%.1f", speedKb)} KB/s (BLE L2CAP)",
                         filePath = targetFile.absolutePath
                     )
                 }
+
+                if (!isActive) return@launch
 
                 withContext(Dispatchers.Main) {
                     if (success) {
@@ -215,6 +219,8 @@ class MainActivity : FlutterActivity() {
                         result.error("SYNC_FAILED", "L2CAP audio transfer failed", null)
                     }
                 }
+            } catch (e: CancellationException) {
+                Log.i(TAG, "startBleL2capSync cancelled")
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     sendEvent("failed", 0.0, 0, 0, e.message ?: "Unknown error")
@@ -236,6 +242,13 @@ class MainActivity : FlutterActivity() {
         activeSyncJob?.cancel()
         activeSyncJob = activityScope.launch(Dispatchers.IO) {
             val wifiManager = getWifiManager()
+            val targetFile = if (!destinationPath.isNullOrEmpty()) {
+                File(destinationPath).also { it.parentFile?.mkdirs() }
+            } else {
+                File(filesDir, if (fileId > 0) "clip_${fileId}.wav" else "clip_latest.wav")
+            }
+            val tempFile = File(targetFile.parentFile ?: filesDir, "${targetFile.name}.part")
+
             try {
                 val activeNet = wifiManager.getActiveNetwork()
                 val network: Network = if (wifiManager.isConnected() && activeNet != null) {
@@ -257,44 +270,42 @@ class MainActivity : FlutterActivity() {
                     reqBuilder.addHeader("Range", "bytes=$startOffset-")
                 }
 
-                val response = client.newCall(reqBuilder.build()).execute()
-                if (!response.isSuccessful && response.code != 206) {
-                    throw IOException("Server returned HTTP ${response.code}")
-                }
+                client.newCall(reqBuilder.build()).execute().use { response ->
+                    if (!response.isSuccessful && response.code != 206) {
+                        throw IOException("Server returned HTTP ${response.code}")
+                    }
 
-                val body = response.body ?: throw IOException("Empty response body")
-                val totalLength = (response.header("Content-Length")?.toLongOrNull() ?: 0L) + startOffset
-                val targetFile = if (!destinationPath.isNullOrEmpty()) {
-                    File(destinationPath).also { it.parentFile?.mkdirs() }
-                } else {
-                    File(filesDir, if (fileId > 0) "clip_${fileId}.wav" else "clip_latest.wav")
-                }
-                val tempFile = File(targetFile.parentFile ?: filesDir, "${targetFile.name}.part")
+                    val body = response.body ?: throw IOException("Empty response body")
+                    val totalLength = (response.header("Content-Length")?.toLongOrNull() ?: 0L) + startOffset
 
-                var bytesReadTotal = if (startOffset > 0 && tempFile.exists()) tempFile.length() else 0L
-                val fos = FileOutputStream(tempFile, startOffset > 0)
-                val buffer = ByteArray(16384)
-                val startTime = System.currentTimeMillis()
+                    var bytesReadTotal = if (startOffset > 0 && tempFile.exists()) tempFile.length() else 0L
+                    val fos = FileOutputStream(tempFile, startOffset > 0)
+                    val buffer = ByteArray(16384)
+                    val startTime = System.currentTimeMillis()
 
-                body.byteStream().use { input ->
-                    fos.use { output ->
-                        var read: Int
-                        while (input.read(buffer).also { read = it } != -1) {
-                            output.write(buffer, 0, read)
-                            bytesReadTotal += read
+                    body.byteStream().use { input ->
+                        fos.use { output ->
+                            var read: Int
+                            while (input.read(buffer).also { read = it } != -1) {
+                                if (!isActive) {
+                                    throw CancellationException("Download cancelled by user")
+                                }
+                                output.write(buffer, 0, read)
+                                bytesReadTotal += read
 
-                            val elapsedSec = (System.currentTimeMillis() - startTime) / 1000.0
-                            val speedMb = if (elapsedSec > 0) ((bytesReadTotal - startOffset) / (1024.0 * 1024.0)) / elapsedSec else 0.0
-                            val progress = if (totalLength > 0) (bytesReadTotal.toDouble() / totalLength.toDouble()).coerceIn(0.0, 1.0) else 0.5
+                                val elapsedSec = (System.currentTimeMillis() - startTime) / 1000.0
+                                val speedMb = if (elapsedSec > 0) ((bytesReadTotal - startOffset) / (1024.0 * 1024.0)) / elapsedSec else 0.0
+                                val progress = if (totalLength > 0) (bytesReadTotal.toDouble() / totalLength.toDouble()).coerceIn(0.0, 1.0) else 0.5
 
-                            sendEvent(
-                                status = "transferring",
-                                progress = progress,
-                                bytesReceived = bytesReadTotal,
-                                totalBytes = totalLength,
-                                message = "${String.format("%.2f", speedMb)} MB/s (Wi-Fi Turbo)",
-                                filePath = targetFile.absolutePath
-                            )
+                                sendEvent(
+                                    status = "transferring",
+                                    progress = progress,
+                                    bytesReceived = bytesReadTotal,
+                                    totalBytes = totalLength,
+                                    message = "${String.format(Locale.US, "%.2f", speedMb)} MB/s (Wi-Fi Turbo)",
+                                    filePath = targetFile.absolutePath
+                                )
+                            }
                         }
                     }
                 }
@@ -302,6 +313,8 @@ class MainActivity : FlutterActivity() {
                 if (!keepConnected) {
                     try { wifiManager.disconnect() } catch (_: Throwable) {}
                 }
+
+                if (!isActive) return@launch
 
                 if (targetFile.exists()) targetFile.delete()
                 if (!tempFile.renameTo(targetFile)) {
@@ -312,6 +325,11 @@ class MainActivity : FlutterActivity() {
                 withContext(Dispatchers.Main) {
                     sendEvent("completed", 1.0, targetFile.length(), targetFile.length(), "Sync complete", targetFile.absolutePath)
                     result.success(targetFile.absolutePath)
+                }
+            } catch (e: CancellationException) {
+                Log.i(TAG, "startWifiSoftApSync cancelled")
+                if (!keepConnected) {
+                    try { getWifiManager().disconnect() } catch (_: Throwable) {}
                 }
             } catch (e: Exception) {
                 if (!keepConnected) {

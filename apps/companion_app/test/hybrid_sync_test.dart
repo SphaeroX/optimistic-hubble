@@ -87,6 +87,17 @@ void main() {
       );
       expect(failedEvent.isFailed, isTrue);
       expect(failedEvent.isCompleted, isFalse);
+
+      const cancelledEvent = SyncProgressEvent(
+        status: 'cancelled',
+        progress: 0.0,
+        bytesReceived: 0,
+        totalBytes: 0,
+        message: 'Sync cancelled by user',
+      );
+      expect(cancelledEvent.status, 'cancelled');
+      expect(cancelledEvent.isCompleted, isFalse);
+      expect(cancelledEvent.isFailed, isFalse);
     });
 
     test('NativeAudioSyncBridge platform fallback returns safe defaults on non-Android platforms', () async {
@@ -119,6 +130,41 @@ void main() {
 
       await bridge.disconnectWifiSoftAp();
       await bridge.cancelSync();
+    });
+
+    test('RecordingItem copyWith correctly preserves and updates properties', () {
+      final item = RecordingItem(
+        id: 42,
+        remoteFilename: 'clip_042.wav',
+        sizeBytes: 1024000,
+        duration: const Duration(seconds: 64),
+        sampleRate: 16000,
+        recordedAt: DateTime(2026, 8, 21),
+      );
+
+      expect(item.syncState, SyncState.onDevice);
+      expect(item.downloadProgress, 0.0);
+
+      final downloading = item.copyWith(
+        syncState: SyncState.downloading,
+        downloadProgress: 0.45,
+        transferSpeed: '2.10 MB/s (Wi-Fi Turbo)',
+      );
+      expect(downloading.syncState, SyncState.downloading);
+      expect(downloading.downloadProgress, 0.45);
+      expect(downloading.transferSpeed, '2.10 MB/s (Wi-Fi Turbo)');
+      expect(downloading.id, 42);
+
+      final synced = downloading.copyWith(
+        syncState: SyncState.synced,
+        downloadProgress: 1.0,
+        localWavPath: '/recordings/clip_42.wav',
+        crcVerified: true,
+      );
+      expect(synced.syncState, SyncState.synced);
+      expect(synced.downloadProgress, 1.0);
+      expect(synced.localWavPath, '/recordings/clip_42.wav');
+      expect(synced.crcVerified, isTrue);
     });
   });
 }

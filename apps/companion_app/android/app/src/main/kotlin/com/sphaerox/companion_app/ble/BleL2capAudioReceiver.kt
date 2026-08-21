@@ -141,7 +141,8 @@ class BleL2capAudioReceiver(private val context: Context) {
             // 5. Atomic rename from .part to final destination file
             if (outputFile.exists()) outputFile.delete()
             if (!tempFile.renameTo(outputFile)) {
-                throw IOException("Failed to rename temporary file to destination: ${outputFile.absolutePath}")
+                tempFile.copyTo(outputFile, overwrite = true)
+                tempFile.delete()
             }
 
             Log.i(TAG, "Audio sync completed successfully: ${outputFile.absolutePath} (${outputFile.length()} bytes)")

@@ -100,28 +100,29 @@ class AudioSyncForegroundService : Service() {
                             .url("http://192.168.4.1/api/download?id=$fileId")
                             .build()
 
-                        val response = client.newCall(request).execute()
-                        if (response.isSuccessful) {
-                            val body = response.body ?: throw IOException("Empty response body from ESP32 SoftAP")
-                            val totalBytes = body.contentLength()
-                            var bytesReadTotal = 0L
-                            val buffer = ByteArray(8192)
+                        client.newCall(request).execute().use { response ->
+                            if (response.isSuccessful) {
+                                val body = response.body ?: throw IOException("Empty response body from ESP32 SoftAP")
+                                val totalBytes = body.contentLength()
+                                var bytesReadTotal = 0L
+                                val buffer = ByteArray(8192)
 
-                            FileOutputStream(targetFile).use { fos ->
-                                body.byteStream().use { input ->
-                                    var read: Int
-                                    while (input.read(buffer).also { read = it } != -1) {
-                                        fos.write(buffer, 0, read)
-                                        bytesReadTotal += read
-                                        val percent = if (totalBytes > 0) ((bytesReadTotal * 100) / totalBytes).toInt() else 0
-                                        notificationManager.notify(
-                                            NOTIFICATION_ID,
-                                            buildProgressNotification("Downloading Wi-Fi audio: $percent%", percent, 100)
-                                        )
+                                FileOutputStream(targetFile).use { fos ->
+                                    body.byteStream().use { input ->
+                                        var read: Int
+                                        while (input.read(buffer).also { read = it } != -1) {
+                                            fos.write(buffer, 0, read)
+                                            bytesReadTotal += read
+                                            val percent = if (totalBytes > 0) ((bytesReadTotal * 100) / totalBytes).toInt() else 0
+                                            notificationManager.notify(
+                                                NOTIFICATION_ID,
+                                                buildProgressNotification("Downloading Wi-Fi audio: $percent%", percent, 100)
+                                            )
+                                        }
                                     }
                                 }
+                                syncSuccess = true
                             }
-                            syncSuccess = true
                         }
                     } finally {
                         wifiManager.disconnect()
