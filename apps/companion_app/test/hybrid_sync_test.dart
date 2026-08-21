@@ -105,9 +105,20 @@ void main() {
 
       final singleSync = await bridge.startWifiSoftApSync(
         fileId: 10,
+        destinationPath: '/tmp/test_clip_10.wav',
         keepConnected: true,
       );
       expect(singleSync, isNull);
+
+      final l2capSync = await bridge.startBleL2capSync(
+        deviceAddress: 'AA:BB:CC:DD:EE:FF',
+        fileId: 10,
+        destinationPath: '/tmp/test_clip_10.wav',
+      );
+      expect(l2capSync, isNull);
+
+      await bridge.disconnectWifiSoftAp();
+      await bridge.cancelSync();
     });
   });
 }

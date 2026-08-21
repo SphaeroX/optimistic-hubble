@@ -12,6 +12,7 @@ import android.os.Looper
 import android.os.PatternMatcher
 import android.util.Log
 import androidx.annotation.RequiresApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -79,15 +80,18 @@ class IotWifiManager(private val context: Context) {
                 connectionDeferred = newDeferred
                 deferred = newDeferred
 
-                val cleanSsid = if (ssidPattern.contains(".*")) "XIAO-Audio-Hotspot" else ssidPattern
+                val cleanPattern = ssidPattern.replace(".*", "*")
 
                 val specifierBuilder = WifiNetworkSpecifier.Builder()
-                if (cleanSsid.contains("*")) {
-                    specifierBuilder.setSsidPattern(PatternMatcher(cleanSsid, PatternMatcher.PATTERN_SIMPLE_GLOB))
+                if (cleanPattern.contains("*")) {
+                    specifierBuilder.setSsidPattern(PatternMatcher(cleanPattern, PatternMatcher.PATTERN_SIMPLE_GLOB))
                 } else {
-                    specifierBuilder.setSsid(cleanSsid)
+                    specifierBuilder.setSsid(cleanPattern)
                 }
-                specifierBuilder.setWpa2Passphrase(passphrase)
+
+                if (passphrase.isNotEmpty()) {
+                    specifierBuilder.setWpa2Passphrase(passphrase)
+                }
                 val specifier = specifierBuilder.build()
 
                 val request = NetworkRequest.Builder()
@@ -116,7 +120,7 @@ class IotWifiManager(private val context: Context) {
                     override fun onLost(network: Network) {
                         Log.w(TAG, "IoT Wi-Fi Lost: $network")
                         synchronized(stateLock) {
-                            if (activeNetwork == network) {
+                            if (activeNetwork == network || activeNetwork == null) {
                                 activeNetwork = null
                                 activeCallback = null
                                 isConnecting.set(false)
@@ -125,6 +129,9 @@ class IotWifiManager(private val context: Context) {
                         }
                         try {
                             connectivityManager.bindProcessToNetwork(null)
+                        } catch (_: Exception) {}
+                        try {
+                            connectivityManager.unregisterNetworkCallback(this)
                         } catch (_: Exception) {}
                         if (!deferred.isCompleted) {
                             deferred.completeExceptionally(IOException("Wi-Fi network lost"))
@@ -141,6 +148,9 @@ class IotWifiManager(private val context: Context) {
                         }
                         try {
                             connectivityManager.bindProcessToNetwork(null)
+                        } catch (_: Exception) {}
+                        try {
+                            connectivityManager.unregisterNetworkCallback(this)
                         } catch (_: Exception) {}
                         if (!deferred.isCompleted) {
                             deferred.completeExceptionally(IOException("User cancelled or device not found"))
@@ -163,7 +173,12 @@ class IotWifiManager(private val context: Context) {
             }
         }
 
-        return deferred.await()
+        return try {
+            deferred.await()
+        } catch (e: CancellationException) {
+            disconnect()
+            throw e
+        }
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)

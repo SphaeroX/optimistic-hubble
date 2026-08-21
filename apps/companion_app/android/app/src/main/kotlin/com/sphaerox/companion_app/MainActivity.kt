@@ -32,6 +32,15 @@ class MainActivity : FlutterActivity() {
     private var activeSyncJob: Job? = null
     private var iotWifiManager: IotWifiManager? = null
 
+    private fun getWifiManager(): IotWifiManager {
+        var manager = iotWifiManager
+        if (manager == null) {
+            manager = IotWifiManager(applicationContext)
+            iotWifiManager = manager
+        }
+        return manager
+    }
+
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -68,6 +77,7 @@ class MainActivity : FlutterActivity() {
                             val deviceAddress = call.argument<String>("deviceAddress")
                             val fileId = call.argument<Number>("fileId")?.toLong() ?: 0L
                             val psm = call.argument<Int>("psm") ?: 0x0081
+                            val destinationPath = call.argument<String>("destinationPath")
 
                             if (deviceAddress.isNullOrEmpty()) {
                                 result.error("INVALID_ARGS", "Device address is required", null)
@@ -79,7 +89,7 @@ class MainActivity : FlutterActivity() {
                                 return@setMethodCallHandler
                             }
 
-                            startBleL2capSync(deviceAddress, fileId, psm, result)
+                            startBleL2capSync(deviceAddress, fileId, psm, destinationPath, result)
                         }
 
                         "connectWifiSoftAp" -> {
@@ -92,7 +102,7 @@ class MainActivity : FlutterActivity() {
                             }
 
                             activityScope.launch(Dispatchers.IO) {
-                                val wifiManager = iotWifiManager ?: IotWifiManager(applicationContext)
+                                val wifiManager = getWifiManager()
                                 try {
                                     wifiManager.connect(ssidPattern, passphrase)
                                     withContext(Dispatchers.Main) {
@@ -108,7 +118,7 @@ class MainActivity : FlutterActivity() {
 
                         "disconnectWifiSoftAp" -> {
                             try {
-                                iotWifiManager?.disconnect()
+                                getWifiManager().disconnect()
                                 result.success(true)
                             } catch (e: Exception) {
                                 result.error("WIFI_DISCONNECT_FAILED", e.message, null)
@@ -116,7 +126,7 @@ class MainActivity : FlutterActivity() {
                         }
 
                         "isWifiConnected" -> {
-                            result.success(iotWifiManager?.isConnected() == true)
+                            result.success(getWifiManager().isConnected())
                         }
 
                         "startWifiSoftApSync" -> {
@@ -124,6 +134,7 @@ class MainActivity : FlutterActivity() {
                             val passphrase = call.argument<String>("passphrase") ?: "xiaoesp32c3"
                             val fileId = call.argument<Number>("fileId")?.toLong() ?: 0L
                             val startOffset = call.argument<Number>("startOffset")?.toLong() ?: 0L
+                            val destinationPath = call.argument<String>("destinationPath")
                             val keepConnected = call.argument<Boolean>("keepConnected") ?: false
 
                             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -131,12 +142,12 @@ class MainActivity : FlutterActivity() {
                                 return@setMethodCallHandler
                             }
 
-                            startWifiSoftApSync(ssidPattern, passphrase, fileId, startOffset, keepConnected, result)
+                            startWifiSoftApSync(ssidPattern, passphrase, fileId, startOffset, destinationPath, keepConnected, result)
                         }
 
                         "cancelSync" -> {
                             activeSyncJob?.cancel()
-                            try { iotWifiManager?.disconnect() } catch (_: Throwable) {}
+                            try { getWifiManager().disconnect() } catch (_: Throwable) {}
                             sendEvent("cancelled", 0.0, 0, 0, "Sync cancelled by user")
                             result.success(true)
                         }
@@ -156,6 +167,7 @@ class MainActivity : FlutterActivity() {
         deviceAddress: String,
         fileId: Long,
         psm: Int,
+        destinationPath: String?,
         result: MethodChannel.Result
     ) {
         activeSyncJob?.cancel()
@@ -166,7 +178,11 @@ class MainActivity : FlutterActivity() {
                 val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
                 val adapter = btManager?.adapter ?: throw IOException("Bluetooth Adapter unavailable")
                 val device = adapter.getRemoteDevice(deviceAddress)
-                val targetFile = File(filesDir, "clip_${fileId}.wav")
+                val targetFile = if (!destinationPath.isNullOrEmpty()) {
+                    File(destinationPath).also { it.parentFile?.mkdirs() }
+                } else {
+                    File(filesDir, "clip_${fileId}.wav")
+                }
                 val receiver = BleL2capAudioReceiver(applicationContext)
 
                 val startTime = System.currentTimeMillis()
@@ -213,12 +229,13 @@ class MainActivity : FlutterActivity() {
         passphrase: String,
         fileId: Long,
         startOffset: Long,
+        destinationPath: String?,
         keepConnected: Boolean,
         result: MethodChannel.Result
     ) {
         activeSyncJob?.cancel()
         activeSyncJob = activityScope.launch(Dispatchers.IO) {
-            val wifiManager = iotWifiManager ?: IotWifiManager(applicationContext)
+            val wifiManager = getWifiManager()
             try {
                 val activeNet = wifiManager.getActiveNetwork()
                 val network: Network = if (wifiManager.isConnected() && activeNet != null) {
@@ -247,8 +264,12 @@ class MainActivity : FlutterActivity() {
 
                 val body = response.body ?: throw IOException("Empty response body")
                 val totalLength = (response.header("Content-Length")?.toLongOrNull() ?: 0L) + startOffset
-                val targetFile = File(filesDir, if (fileId > 0) "clip_${fileId}.wav" else "clip_latest.wav")
-                val tempFile = File(filesDir, "${targetFile.name}.part")
+                val targetFile = if (!destinationPath.isNullOrEmpty()) {
+                    File(destinationPath).also { it.parentFile?.mkdirs() }
+                } else {
+                    File(filesDir, if (fileId > 0) "clip_${fileId}.wav" else "clip_latest.wav")
+                }
+                val tempFile = File(targetFile.parentFile ?: filesDir, "${targetFile.name}.part")
 
                 var bytesReadTotal = if (startOffset > 0 && tempFile.exists()) tempFile.length() else 0L
                 val fos = FileOutputStream(tempFile, startOffset > 0)
@@ -283,7 +304,10 @@ class MainActivity : FlutterActivity() {
                 }
 
                 if (targetFile.exists()) targetFile.delete()
-                tempFile.renameTo(targetFile)
+                if (!tempFile.renameTo(targetFile)) {
+                    tempFile.copyTo(targetFile, overwrite = true)
+                    tempFile.delete()
+                }
 
                 withContext(Dispatchers.Main) {
                     sendEvent("completed", 1.0, targetFile.length(), targetFile.length(), "Sync complete", targetFile.absolutePath)
@@ -291,7 +315,7 @@ class MainActivity : FlutterActivity() {
                 }
             } catch (e: Exception) {
                 if (!keepConnected) {
-                    try { iotWifiManager?.disconnect() } catch (_: Throwable) {}
+                    try { getWifiManager().disconnect() } catch (_: Throwable) {}
                 }
                 withContext(Dispatchers.Main) {
                     sendEvent("failed", 0.0, 0, 0, e.message ?: "Unknown error")

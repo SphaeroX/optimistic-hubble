@@ -79,6 +79,7 @@ class NativeAudioSyncBridge {
     required String deviceAddress,
     required int fileId,
     int psm = AppConstants.bleL2capPsm,
+    String? destinationPath,
   }) async {
     if (!isPlatformAndroid) return null;
     try {
@@ -86,6 +87,7 @@ class NativeAudioSyncBridge {
         'deviceAddress': deviceAddress,
         'fileId': fileId,
         'psm': psm,
+        'destinationPath': ?destinationPath,
       });
       return path;
     } catch (e) {
@@ -99,6 +101,7 @@ class NativeAudioSyncBridge {
     String ssidPattern = AppConstants.defaultApSsidPattern,
     String passphrase = AppConstants.defaultApPassword,
     int startOffset = 0,
+    String? destinationPath,
     bool keepConnected = false,
   }) async {
     if (!isPlatformAndroid) return null;
@@ -108,6 +111,7 @@ class NativeAudioSyncBridge {
         'ssidPattern': ssidPattern,
         'passphrase': passphrase,
         'startOffset': startOffset,
+        'destinationPath': ?destinationPath,
         'keepConnected': keepConnected,
       });
       return path;

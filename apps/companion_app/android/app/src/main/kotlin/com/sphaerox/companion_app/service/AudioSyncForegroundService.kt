@@ -16,9 +16,7 @@ import androidx.core.app.ServiceCompat
 import com.sphaerox.companion_app.ble.BleL2capAudioReceiver
 import com.sphaerox.companion_app.network.IotHttpClientFactory
 import com.sphaerox.companion_app.network.IotWifiManager
-import com.sphaerox.companion_app.network.WifiConnectionState
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.first
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream

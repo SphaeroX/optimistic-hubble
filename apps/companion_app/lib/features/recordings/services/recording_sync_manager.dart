@@ -262,9 +262,10 @@ class RecordingSyncManager extends ChangeNotifier {
 
     bool wifiStartedByThisCall = false;
     try {
-      // 1. If BLE is connected and Wi-Fi is currently off, start Hotspot for Turbo download
-      final bool needStartWifi = (bleService?.isConnected == true &&
-          bleService?.telemetry.state != DeviceState.wifiActive);
+      // 1. If BLE is connected and Wi-Fi is currently off, start Hotspot for Turbo download (single clip only)
+      final bool needStartWifi = !keepWifiAlive &&
+          (bleService?.isConnected == true &&
+              bleService?.telemetry.state != DeviceState.wifiActive);
 
       if (needStartWifi) {
         wifiStartedByThisCall = true;
@@ -281,10 +282,14 @@ class RecordingSyncManager extends ChangeNotifier {
       // 2. Android Native Wi-Fi Turbo Sync (via Network.socketFactory)
       if (_nativeBridge.isPlatformAndroid) {
         try {
+          final targetDir = await LocalStorageManager.getRecordingsDirectory();
+          final targetPath = '${targetDir.path}/clip_${clip.id}.wav';
+
           final String? savedPath = await _nativeBridge.startWifiSoftApSync(
             fileId: clip.id,
             ssidPattern: AppConstants.defaultApSsidPattern,
             passphrase: AppConstants.defaultApPassword,
+            destinationPath: targetPath,
             keepConnected: keepWifiAlive,
           );
 
