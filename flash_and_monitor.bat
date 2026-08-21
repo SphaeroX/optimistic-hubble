@@ -39,8 +39,9 @@ echo   (Press Ctrl+C or Ctrl+T to exit monitor)
 echo ========================================================
 echo.
 
-REM Small delay to give USB CDC time to re-enumerate
-timeout /t 2 /nobreak >nul
+REM Safe delay using ping to give USB CDC time to re-enumerate without redirection crashes
+echo Waiting for device USB serial to reconnect...
+ping -n 3 127.0.0.1 >nul
 
 pushd "%~dp0firmware"
 call pio device monitor -b 115200
