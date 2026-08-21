@@ -10,7 +10,7 @@ echo [1/2] Building and flashing firmware to XIAO ESP32C3...
 echo.
 
 pushd "%~dp0firmware"
-pio run -t upload
+call pio run -t upload
 set FLASH_ERR=%ERRORLEVEL%
 popd
 
@@ -43,7 +43,7 @@ REM Small delay to give USB CDC time to re-enumerate
 timeout /t 2 /nobreak >nul
 
 pushd "%~dp0firmware"
-pio device monitor -b 115200
+call pio device monitor -b 115200
 popd
 
 echo.

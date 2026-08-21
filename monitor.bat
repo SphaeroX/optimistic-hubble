@@ -9,7 +9,7 @@ echo   (Press Ctrl+C or Ctrl+T to exit)
 echo.
 
 pushd "%~dp0firmware"
-pio device monitor -b 115200
+call pio device monitor -b 115200
 popd
 
 echo.

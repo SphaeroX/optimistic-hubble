@@ -8,7 +8,7 @@ echo ========================================================
 echo.
 
 pushd "%~dp0firmware"
-pio run
+call pio run
 set BUILD_ERR=%ERRORLEVEL%
 popd
 
