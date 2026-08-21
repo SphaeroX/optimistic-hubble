@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:universal_ble/universal_ble.dart' hide BleCommand;
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/permission_service.dart';
 import '../../telemetry/models/device_telemetry.dart';
 import '../../telemetry/models/tap_event.dart';
 import '../models/ble_device_item.dart';
@@ -121,6 +122,13 @@ class BleService extends ChangeNotifier {
 
   Future<void> startScan({Duration timeout = const Duration(seconds: 12)}) async {
     if (_status == ConnectionStatus.scanning) return;
+
+    // Check runtime permissions first on Android
+    final hasPerm = await PermissionService.requestAppPermissions();
+    if (!hasPerm) {
+      _log('PERM', 'Bluetooth permissions not granted by user', isError: true);
+    }
+
     _discoveredDevices.clear();
     _status = ConnectionStatus.scanning;
     _statusMessage = 'Scanning for Xiao ESP32-C3...';

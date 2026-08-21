@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.net.Network
 import android.os.Build
+import android.util.Log
 import androidx.annotation.NonNull
 import com.sphaerox.companion_app.ble.BleL2capAudioReceiver
 import com.sphaerox.companion_app.network.IotHttpClientFactory
@@ -34,7 +35,11 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        iotWifiManager = IotWifiManager(applicationContext)
+        try {
+            iotWifiManager = IotWifiManager(applicationContext)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to initialize IotWifiManager: ${e.message}", e)
+        }
 
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
@@ -49,57 +54,62 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
             .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "isNativeSupported" -> {
-                        result.success(true)
-                    }
-
-                    "isL2capSupported" -> {
-                        result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-                    }
-
-                    "startBleL2capSync" -> {
-                        val deviceAddress = call.argument<String>("deviceAddress")
-                        val fileId = call.argument<Number>("fileId")?.toLong() ?: 0L
-                        val psm = call.argument<Int>("psm") ?: 0x0081
-
-                        if (deviceAddress.isNullOrEmpty()) {
-                            result.error("INVALID_ARGS", "Device address is required", null)
-                            return@setMethodCallHandler
+                try {
+                    when (call.method) {
+                        "isNativeSupported" -> {
+                            result.success(true)
                         }
 
-                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                            result.error("UNSUPPORTED", "L2CAP requires Android 10+ (API 29)", null)
-                            return@setMethodCallHandler
+                        "isL2capSupported" -> {
+                            result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
                         }
 
-                        startBleL2capSync(deviceAddress, fileId, psm, result)
-                    }
+                        "startBleL2capSync" -> {
+                            val deviceAddress = call.argument<String>("deviceAddress")
+                            val fileId = call.argument<Number>("fileId")?.toLong() ?: 0L
+                            val psm = call.argument<Int>("psm") ?: 0x0081
 
-                    "startWifiSoftApSync" -> {
-                        val ssidPattern = call.argument<String>("ssidPattern") ?: "XIAO-Audio-.*"
-                        val passphrase = call.argument<String>("passphrase") ?: "xiaoesp32c3"
-                        val fileId = call.argument<Number>("fileId")?.toLong() ?: 0L
-                        val startOffset = call.argument<Number>("startOffset")?.toLong() ?: 0L
+                            if (deviceAddress.isNullOrEmpty()) {
+                                result.error("INVALID_ARGS", "Device address is required", null)
+                                return@setMethodCallHandler
+                            }
 
-                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                            result.error("UNSUPPORTED", "WifiNetworkSpecifier requires Android 10+", null)
-                            return@setMethodCallHandler
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                                result.error("UNSUPPORTED", "L2CAP requires Android 10+ (API 29)", null)
+                                return@setMethodCallHandler
+                            }
+
+                            startBleL2capSync(deviceAddress, fileId, psm, result)
                         }
 
-                        startWifiSoftApSync(ssidPattern, passphrase, fileId, startOffset, result)
-                    }
+                        "startWifiSoftApSync" -> {
+                            val ssidPattern = call.argument<String>("ssidPattern") ?: "XIAO-Audio-.*"
+                            val passphrase = call.argument<String>("passphrase") ?: "xiaoesp32c3"
+                            val fileId = call.argument<Number>("fileId")?.toLong() ?: 0L
+                            val startOffset = call.argument<Number>("startOffset")?.toLong() ?: 0L
 
-                    "cancelSync" -> {
-                        activeSyncJob?.cancel()
-                        iotWifiManager?.disconnect()
-                        sendEvent("cancelled", 0.0, 0, 0, "Sync cancelled by user")
-                        result.success(true)
-                    }
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                                result.error("UNSUPPORTED", "WifiNetworkSpecifier requires Android 10+", null)
+                                return@setMethodCallHandler
+                            }
 
-                    else -> {
-                        result.notImplemented()
+                            startWifiSoftApSync(ssidPattern, passphrase, fileId, startOffset, result)
+                        }
+
+                        "cancelSync" -> {
+                            activeSyncJob?.cancel()
+                            try { iotWifiManager?.disconnect() } catch (_: Throwable) {}
+                            sendEvent("cancelled", 0.0, 0, 0, "Sync cancelled by user")
+                            result.success(true)
+                        }
+
+                        else -> {
+                            result.notImplemented()
+                        }
                     }
+                } catch (e: Throwable) {
+                    Log.e(TAG, "Unhandled method call exception: ${e.message}", e)
+                    result.error("EXCEPTION", e.message, null)
                 }
             }
     }
@@ -115,12 +125,13 @@ class MainActivity : FlutterActivity() {
             try {
                 sendEvent("connecting", 0.0, 0, 0, "Opening L2CAP channel (PSM 0x${psm.toString(16)})...")
 
-                val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-                val device = btManager.adapter.getRemoteDevice(deviceAddress)
+                val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+                val adapter = btManager?.adapter ?: throw IOException("Bluetooth Adapter unavailable")
+                val device = adapter.getRemoteDevice(deviceAddress)
                 val targetFile = File(filesDir, "clip_${fileId}.wav")
                 val receiver = BleL2capAudioReceiver(applicationContext)
 
-                var startTime = System.currentTimeMillis()
+                val startTime = System.currentTimeMillis()
 
                 val success = receiver.receiveAudioViaL2cap(
                     device = device,
@@ -232,7 +243,7 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
-                wifiManager.disconnect()
+                try { wifiManager.disconnect() } catch (_: Throwable) {}
 
                 if (targetFile.exists()) targetFile.delete()
                 tempFile.renameTo(targetFile)
@@ -242,7 +253,7 @@ class MainActivity : FlutterActivity() {
                     result.success(targetFile.absolutePath)
                 }
             } catch (e: Exception) {
-                iotWifiManager?.disconnect()
+                try { iotWifiManager?.disconnect() } catch (_: Throwable) {}
                 withContext(Dispatchers.Main) {
                     sendEvent("failed", 0.0, 0, 0, e.message ?: "Unknown error")
                     result.error("ERROR", e.message, null)
@@ -275,7 +286,11 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         activeSyncJob?.cancel()
         activityScope.cancel()
-        iotWifiManager?.disconnect()
+        try { iotWifiManager?.disconnect() } catch (_: Throwable) {}
         super.onDestroy()
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
     }
 }

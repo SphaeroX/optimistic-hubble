@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'core/audio/native_audio_player.dart';
 import 'core/constants/app_constants.dart';
+import 'core/services/permission_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/connection/services/ble_service.dart';
 import 'features/recordings/services/recording_sync_manager.dart';
@@ -32,6 +33,11 @@ class _XiaoCompanionAppState extends State<XiaoCompanionApp> {
       audioPlayer: _audioPlayer,
       bleService: _bleService,
     );
+
+    // Request necessary Bluetooth and location permissions right after the first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      PermissionService.requestAppPermissions();
+    });
   }
 
   @override

@@ -22,7 +22,7 @@ static PowerManager power;
 static uint16_t totalTapEvents = 0;
 
 static unsigned long lastTelemetryTime = 0;
-static const unsigned long TELEMETRY_INTERVAL_MS = 250;
+static const unsigned long TELEMETRY_INTERVAL_MS = 100; // 10 Hz real-time telemetry stream
 
 static unsigned long lastImuPollTime = 0;
 static const unsigned long IMU_POLL_INTERVAL_MS = 20; // 50 Hz tap polling
@@ -33,7 +33,7 @@ static bool lastButtonState = HIGH;
 void printBanner() {
     Serial.println(F("\n========================================================"));
     Serial.println(F("  XIAO ESP32C3 - Audio Vault (Active Debugging Mode)"));
-    Serial.println(F("  IMA-ADPCM 4:1 (8 KB/s) &bull; Continuous Standby & IMU Tap"));
+    Serial.println(F("  IMA-ADPCM 4:1 (8 KB/s) • Continuous Standby & IMU Tap"));
     Serial.println(F("========================================================"));
 }
 
@@ -53,7 +53,7 @@ void startActiveRecording() {
     recorder.startRecording(nextId);
     ble.updateState(STATE_RECORDING);
 
-    Serial.printf("\n[RECORD START] Clip #%u recording started via IMU shock trigger!\n", nextId);
+    Serial.printf("\n[RECORD START] Clip #%u recording started!\n", nextId);
 }
 
 void handleStopAndSave() {
@@ -153,18 +153,13 @@ void loop() {
                     Serial.printf("\n[TAP DETECTED] Stop trigger! Shock: %.2f g\n", shock);
                     ble.notifyTap(shock);
                     handleStopAndSave();
-                    return;
                 }
             }
         }
 
         if (!stillRecording) {
             handleStopAndSave();
-            return;
         }
-
-        // Give immediate priority back to audio draining
-        return;
     }
 
     // 2. Check Remote BLE Commands
@@ -199,14 +194,18 @@ void loop() {
                 return;
 
             case CMD_START_RECORDING:
-                Serial.println(F("\n[BLE CMD] Start Recording requested..."));
-                startActiveRecording();
-                return;
+                if (!recorder.isRecording()) {
+                    Serial.println(F("\n[BLE CMD] Start Recording requested..."));
+                    startActiveRecording();
+                }
+                break;
 
             case CMD_STOP_RECORDING:
-                Serial.println(F("\n[BLE CMD] Stop Recording requested..."));
-                handleStopAndSave();
-                return;
+                if (recorder.isRecording()) {
+                    Serial.println(F("\n[BLE CMD] Stop Recording requested..."));
+                    handleStopAndSave();
+                }
+                break;
 
             case CMD_CLEAR_STORAGE:
                 Serial.println(F("\n[BLE CMD] Clearing all audio clips from Flash..."));
@@ -252,8 +251,8 @@ void loop() {
         power.notifyActivity();
     }
 
-    // 5. IDLE State: Monitor IMU for Start Tap (when awake)
-    if (now - lastImuPollTime >= IMU_POLL_INTERVAL_MS) {
+    // 5. IDLE State: Monitor IMU for Start Tap (when not recording and awake)
+    if (!recorder.isRecording() && (now - lastImuPollTime >= IMU_POLL_INTERVAL_MS)) {
         lastImuPollTime = now;
 
         ImuMetricData imuData;
@@ -264,13 +263,12 @@ void loop() {
                 Serial.printf("\n[TAP DETECTED] Start trigger! Shock: %.2f g -> RECORDING...\n", shock);
                 ble.notifyTap(shock);
                 startActiveRecording();
-                return;
             }
         }
     }
 
     // 6. Automatic Deep Sleep Transition (Disabled for Debugging)
-    if (ENABLE_DEEP_SLEEP_AUTO && !wifiServer.isActive() && !ble.isConnected()) {
+    if (ENABLE_DEEP_SLEEP_AUTO && !recorder.isRecording() && !wifiServer.isActive() && !ble.isConnected()) {
         if (power.isIdleTimeoutExpired(INACTIVITY_SLEEP_TIMEOUT_MS)) {
             Serial.printf("[POWER] Inactivity timeout (%u s) expired with no clients. Entering Deep Sleep...\n",
                           (unsigned int)(INACTIVITY_SLEEP_TIMEOUT_MS / 1000));
@@ -280,18 +278,18 @@ void loop() {
         }
     }
 
-    // 7. Periodic Telemetry (Serial + BLE Real-Time Stream)
+    // 7. Periodic Telemetry (10 Hz BLE Stream + Serial)
     if (now - lastTelemetryTime >= TELEMETRY_INTERVAL_MS) {
         lastTelemetryTime = now;
 
         static unsigned long lastSerialPrintTime = 0;
         if (now - lastSerialPrintTime >= 1000) {
             lastSerialPrintTime = now;
-            Serial.printf("[STATUS] BLE: %s | Wi-Fi AP: %s | Flash: %u clips | Uptime: %u s\n",
+            Serial.printf("[STATUS] BLE: %s | State: %s | Flash: %u clips | Rec: %u B\n",
                           ble.isConnected() ? "ONLINE " : "STANDBY",
-                          wifiServer.isActive() ? "ACTIVE " : "OFF    ",
+                          recorder.isRecording() ? "RECORDING" : (wifiServer.isActive() ? "WIFI_AP  " : "IDLE     "),
                           storage.getClipCount(),
-                          (unsigned int)(millis() / 1000));
+                          recorder.isRecording() ? recorder.getRecordedBytes() : 0);
         }
 
         if (ble.isConnected()) {
@@ -326,3 +324,4 @@ void loop() {
         }
     }
 }
+

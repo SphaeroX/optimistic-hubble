@@ -25,6 +25,15 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
+            isShrinkResources = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 }
@@ -43,5 +52,4 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("androidx.work:work-runtime:2.9.0")
 }

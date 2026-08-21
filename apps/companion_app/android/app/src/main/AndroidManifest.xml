@@ -9,20 +9,19 @@
     <uses-permission
         android:name="android.permission.BLUETOOTH_CONNECT"
         tools:targetApi="s" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADVERTISE"
+        tools:targetApi="s" />
 
-    <!-- Legacy Bluetooth Permissions (Android 10 - 11 / API 29 - 30) -->
+    <!-- Legacy Bluetooth & Location Permissions (Android 10 - 11 / API 29 - 30) -->
     <uses-permission
         android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
     <uses-permission
         android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
-    <uses-permission
-        android:name="android.permission.ACCESS_FINE_LOCATION"
-        android:maxSdkVersion="30" />
-    <uses-permission
-        android:name="android.permission.ACCESS_COARSE_LOCATION"
-        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <!-- Wi-Fi and Multi-Network Socket Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -43,13 +42,18 @@
         android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"
         tools:targetApi="upside_down_cake" />
     <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"
+        tools:targetApi="upside_down_cake" />
+    <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS"
         tools:targetApi="tiramisu" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:label="Xiao Audio Companion"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -73,14 +77,8 @@
         <service
             android:name=".service.AudioSyncForegroundService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
-
-        <!-- WorkManager System Foreground Service Binding -->
-        <service
-            android:name="androidx.work.impl.foreground.SystemForegroundService"
-            android:exported="false"
             android:foregroundServiceType="connectedDevice"
-            tools:node="merge" />
+            tools:targetApi="upside_down_cake" />
 
         <meta-data
             android:name="flutterEmbedding"

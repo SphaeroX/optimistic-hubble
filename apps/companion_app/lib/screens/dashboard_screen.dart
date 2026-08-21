@@ -342,6 +342,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final clips = widget.syncManager.clips;
     final isSyncing = widget.syncManager.isSyncing;
     final errorMsg = widget.syncManager.errorMessage;
+    final isConnected = widget.bleService.isConnected;
+    final isWifiActive = widget.bleService.telemetry.state == DeviceState.wifiActive;
 
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -363,14 +365,87 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ],
             ),
-            ElevatedButton.icon(
-              onPressed: isSyncing ? null : () => widget.syncManager.syncAllClips(),
-              icon: const Icon(Icons.sync),
-              label: const Text('Adaptive Sync All'),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: AppTheme.primaryCyan),
+                  tooltip: 'Check Wi-Fi Clips',
+                  onPressed: () => widget.syncManager.fetchDeviceClips(showError: true),
+                ),
+                const SizedBox(width: 4),
+                ElevatedButton.icon(
+                  onPressed: isSyncing ? null : () => widget.syncManager.syncAllClips(),
+                  icon: const Icon(Icons.sync),
+                  label: const Text('Adaptive Sync All'),
+                ),
+              ],
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
+
+        // Wi-Fi Hotspot Quick Control Card
+        Card(
+          color: isWifiActive ? AppTheme.accentGreen.withAlpha(20) : const Color(0xFF131B2A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+              color: isWifiActive ? AppTheme.accentGreen : const Color(0xFF243248),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      isWifiActive ? Icons.wifi : Icons.wifi_off,
+                      color: isWifiActive ? AppTheme.accentGreen : AppTheme.textMuted,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isWifiActive ? 'Wi-Fi Hotspot Active' : 'Wi-Fi Hotspot Standby',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: isWifiActive ? AppTheme.accentGreen : Colors.white,
+                          ),
+                        ),
+                        Text(
+                          isWifiActive ? 'SSID: ${AppConstants.defaultApSsid} (192.168.4.1)' : 'Tier 1 BLE active (or toggle for Tier 2 Turbo)',
+                          style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                if (isConnected)
+                  OutlinedButton(
+                    onPressed: () {
+                      if (isWifiActive) {
+                        widget.bleService.sendCommand(BleCommand.stopWifi);
+                      } else {
+                        widget.bleService.sendCommand(BleCommand.startWifi);
+                      }
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: isWifiActive ? AppTheme.accentOrange : AppTheme.primaryCyan,
+                      side: BorderSide(color: isWifiActive ? AppTheme.accentOrange : AppTheme.primaryCyan),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    ),
+                    child: Text(isWifiActive ? 'Turn Off' : 'Turn On'),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
 
         // Error message banner if any
         if (errorMsg != null) ...[
@@ -383,13 +458,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.wifi_off, color: AppTheme.accentRed, size: 20),
+                const Icon(Icons.info_outline, color: AppTheme.accentRed, size: 20),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     errorMsg,
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 16),
+                  onPressed: () => widget.syncManager.fetchDeviceClips(showError: false),
                 ),
               ],
             ),
@@ -415,7 +494,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Icon(Icons.mic_none, size: 48, color: AppTheme.textMuted),
                   SizedBox(height: 12),
                   Text(
-                    'No recordings stored yet.\n\n• Tier 1: Silent BLE 5.0 sync for clips < 2.0 MB\n• Tier 2: Wi-Fi Turbo (>1.8 MB/s) with Range Resume for clips ≥ 2.0 MB',
+                    'No recordings stored yet.\n\n• Tap board or tap "Record" to record audio\n• Tier 1: Silent BLE sync for clips < 2.0 MB\n• Tier 2: Wi-Fi Turbo (>1.8 MB/s) with Range Resume for clips ≥ 2.0 MB',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
                   ),

@@ -28,6 +28,7 @@ class RecordingSyncManager extends ChangeNotifier {
 
   String _deviceIp = AppConstants.defaultDeviceIp;
   int _devicePort = AppConstants.defaultHttpPort;
+  int _lastKnownClipCount = 0;
 
   // Getters
   List<RecordingItem> get clips => List.unmodifiable(_clips);
@@ -44,6 +45,7 @@ class RecordingSyncManager extends ChangeNotifier {
     this.bleService,
   }) {
     audioPlayer.addListener(_onAudioPlayerUpdate);
+    bleService?.addListener(_onBleUpdate);
     _initNativeEventListener();
     loadSavedLocalRecordings();
   }
@@ -51,6 +53,7 @@ class RecordingSyncManager extends ChangeNotifier {
   @override
   void dispose() {
     audioPlayer.removeListener(_onAudioPlayerUpdate);
+    bleService?.removeListener(_onBleUpdate);
     _nativeSyncSubscription?.cancel();
     super.dispose();
   }
@@ -90,27 +93,87 @@ class RecordingSyncManager extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Automatically updates clips registry based on real-time BLE telemetry from ESP32.
+  void _onBleUpdate() async {
+    if (bleService == null) return;
+    final telem = bleService!.telemetry;
+    final totalClipsOnDevice = telem.totalClips;
+
+    if (totalClipsOnDevice != _lastKnownClipCount || totalClipsOnDevice > 0) {
+      _lastKnownClipCount = totalClipsOnDevice;
+      bool listChanged = false;
+
+      for (int i = 1; i <= totalClipsOnDevice; i++) {
+        final existingIndex = _clips.indexWhere((c) => c.id == i);
+        final localFile = await LocalStorageManager.getLocalFile('clip_$i.wav');
+        final isLocal = localFile != null && localFile.existsSync();
+
+        if (existingIndex < 0) {
+          // New clip discovered from ESP32 BLE state
+          final used = telem.usedStorageBytes ?? 0;
+          final estimatedBytes = used > 0
+              ? (used / totalClipsOnDevice).round().clamp(8000, 3000000)
+              : 64000;
+          final durSec = (estimatedBytes > 60) ? ((estimatedBytes - 60) / 8000.0) : 8.0;
+
+          _clips.add(RecordingItem(
+            id: i,
+            remoteFilename: 'clip_${i.toString().padLeft(3, '0')}.wav',
+            sizeBytes: isLocal ? localFile.lengthSync() : estimatedBytes,
+            duration: Duration(milliseconds: (durSec * 1000).round()),
+            sampleRate: 16000,
+            recordedAt: isLocal ? localFile.lastModifiedSync() : DateTime.now(),
+            syncState: isLocal ? SyncState.synced : SyncState.onDevice,
+            downloadProgress: isLocal ? 1.0 : 0.0,
+            localWavPath: isLocal ? localFile.path : null,
+            crcVerified: isLocal,
+          ));
+          listChanged = true;
+        } else if (isLocal && _clips[existingIndex].syncState != SyncState.synced) {
+          _clips[existingIndex] = _clips[existingIndex].copyWith(
+            syncState: SyncState.synced,
+            downloadProgress: 1.0,
+            localWavPath: localFile.path,
+            crcVerified: true,
+          );
+          listChanged = true;
+        }
+      }
+
+      if (listChanged) {
+        _clips.sort((a, b) => b.id.compareTo(a.id)); // Newest first
+        notifyListeners();
+      }
+    }
+  }
+
   void updateEndpoint(String ip, int port) {
     _deviceIp = ip;
     _devicePort = port;
     notifyListeners();
   }
 
-  /// Loads real WAV files previously downloaded and saved on this PC/device.
+  /// Loads real WAV files previously downloaded and saved on this device.
   Future<void> loadSavedLocalRecordings() async {
     try {
       final List<File> savedFiles = await LocalStorageManager.listSavedWavFiles();
-      _clips.clear();
 
       for (int i = 0; i < savedFiles.length; i++) {
         final file = savedFiles[i];
         final size = file.lengthSync();
-        // 16 kHz 16-bit mono PCM = 32,000 bytes/sec
         final durSec = size > 44 ? ((size - 44) / 32000.0) : 0.0;
         final name = file.uri.pathSegments.last;
 
-        _clips.add(RecordingItem(
-          id: i + 1,
+        // Try extracting clip id from clip_X.wav or clip_XXX.wav
+        int id = i + 1;
+        final match = RegExp(r'clip_(\d+)').firstMatch(name);
+        if (match != null) {
+          id = int.tryParse(match.group(1)!) ?? (i + 1);
+        }
+
+        final existingIdx = _clips.indexWhere((c) => c.id == id);
+        final item = RecordingItem(
+          id: id,
           remoteFilename: name,
           sizeBytes: size,
           duration: Duration(milliseconds: (durSec * 1000).round()),
@@ -120,49 +183,66 @@ class RecordingSyncManager extends ChangeNotifier {
           downloadProgress: 1.0,
           localWavPath: file.path,
           crcVerified: true,
-        ));
+        );
+
+        if (existingIdx >= 0) {
+          _clips[existingIdx] = item;
+        } else {
+          _clips.add(item);
+        }
       }
+      _clips.sort((a, b) => b.id.compareTo(a.id));
       notifyListeners();
     } catch (e) {
       debugPrint('[RecordingSyncManager] Error loading local recordings: $e');
     }
   }
 
-  /// Fetches real clips list from the ESP32 Wi-Fi server (http://192.168.4.1/api/clips).
-  Future<void> fetchDeviceClips() async {
-    _errorMessage = null;
-    notifyListeners();
+  /// Fetches exact metadata list from the ESP32 Wi-Fi server (http://192.168.4.1/api/clips).
+  Future<void> fetchDeviceClips({bool showError = false}) async {
+    if (showError) {
+      _errorMessage = null;
+      notifyListeners();
+    }
 
     try {
       final uri = Uri.parse('http://$_deviceIp:$_devicePort/api/clips');
-      final response = await http.get(uri).timeout(const Duration(seconds: 4));
+      final response = await http.get(uri).timeout(const Duration(seconds: 3));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final dynamic list = data is Map ? data['clips'] : data;
         if (list is List) {
-          _clips.clear();
           for (final item in list) {
             final rec = RecordingItem.fromApiJson(item as Map<String, dynamic>);
             final localFile = await LocalStorageManager.getLocalFile('clip_${rec.id}.wav');
-            if (localFile != null) {
-              _clips.add(rec.copyWith(
-                syncState: SyncState.synced,
-                localWavPath: localFile.path,
-                crcVerified: true,
-              ));
+            final isLocal = localFile != null && localFile.existsSync();
+            final existingIdx = _clips.indexWhere((c) => c.id == rec.id);
+
+            final updated = rec.copyWith(
+              syncState: isLocal ? SyncState.synced : SyncState.onDevice,
+              localWavPath: isLocal ? localFile.path : null,
+              downloadProgress: isLocal ? 1.0 : 0.0,
+              crcVerified: isLocal,
+            );
+
+            if (existingIdx >= 0) {
+              _clips[existingIdx] = updated;
             } else {
-              _clips.add(rec);
+              _clips.add(updated);
             }
           }
+          _clips.sort((a, b) => b.id.compareTo(a.id));
+          _errorMessage = null;
           notifyListeners();
           return;
         }
       }
-      throw Exception('Server returned ${response.statusCode}');
     } catch (e) {
-      _errorMessage = 'Could not reach http://$_deviceIp:$_devicePort. Turn on Wi-Fi Hotspot ("${AppConstants.defaultApSsid}").';
-      notifyListeners();
+      if (showError) {
+        _errorMessage = 'Could not reach http://$_deviceIp:$_devicePort. Turn on Wi-Fi Hotspot ("${AppConstants.defaultApSsid}").';
+        notifyListeners();
+      }
     }
   }
 
@@ -191,34 +271,38 @@ class RecordingSyncManager extends ChangeNotifier {
         _currentSpeed = 'BLE L2CAP (125 KB/s)';
         notifyListeners();
 
-        final String? savedPath = await _nativeBridge.startBleL2capSync(
-          deviceAddress: deviceAddress,
-          fileId: clip.id,
-          psm: AppConstants.bleL2capPsm,
-        );
-
-        if (savedPath != null) {
-          _clips[index] = _clips[index].copyWith(
-            syncState: SyncState.synced,
-            downloadProgress: 1.0,
-            localWavPath: savedPath,
-            crcVerified: true,
-            transferSpeed: 'Verified (BLE L2CAP)',
+        try {
+          final String? savedPath = await _nativeBridge.startBleL2capSync(
+            deviceAddress: deviceAddress,
+            fileId: clip.id,
+            psm: AppConstants.bleL2capPsm,
           );
-          notifyListeners();
-          return true;
+
+          if (savedPath != null) {
+            _clips[index] = _clips[index].copyWith(
+              syncState: SyncState.synced,
+              downloadProgress: 1.0,
+              localWavPath: savedPath,
+              crcVerified: true,
+              transferSpeed: 'Verified (BLE L2CAP)',
+            );
+            notifyListeners();
+            return true;
+          }
+        } catch (bleErr) {
+          debugPrint('[RecordingSyncManager] BLE L2CAP fallback to Wi-Fi: $bleErr');
         }
       }
 
       // 2. Android Native Tier 2: Wi-Fi SoftAP with Network.socketFactory
-      if (tier == SyncTier.wifiTurbo && _nativeBridge.isPlatformAndroid && bleService?.isConnected == true) {
+      if (_nativeBridge.isPlatformAndroid && bleService?.isConnected == true) {
         _currentSyncFile = clip.remoteFilename;
-        _currentSpeed = 'Triggering Wi-Fi Hotspot...';
+        _currentSpeed = 'Starting Wi-Fi Hotspot...';
         notifyListeners();
 
         // Signal ESP32 to power on SoftAP
         await bleService!.sendCommand(BleCommand.startWifi);
-        await Future.delayed(const Duration(milliseconds: 600));
+        await Future.delayed(const Duration(milliseconds: 1200));
 
         final String? savedPath = await _nativeBridge.startWifiSoftApSync(
           fileId: clip.id,
@@ -226,7 +310,7 @@ class RecordingSyncManager extends ChangeNotifier {
           passphrase: AppConstants.defaultApPassword,
         );
 
-        // Turn off Wi-Fi after transfer to save battery
+        // Turn off Wi-Fi after transfer to conserve battery
         await bleService!.sendCommand(BleCommand.stopWifi);
 
         if (savedPath != null) {
@@ -337,7 +421,10 @@ class RecordingSyncManager extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await fetchDeviceClips();
+      // Background query for exact metadata if reachable
+      try {
+        await fetchDeviceClips(showError: false);
+      } catch (_) {}
 
       final unsynced = _clips.where((c) => c.syncState != SyncState.synced).toList();
       if (unsynced.isEmpty) {
@@ -385,13 +472,17 @@ class RecordingSyncManager extends ChangeNotifier {
     }
   }
 
-  /// Clears recordings from the ESP32 storage.
+  /// Clears recordings from the ESP32 storage and local cache.
   Future<void> clearDeviceStorage() async {
+    if (bleService?.isConnected == true) {
+      await bleService!.sendCommand(BleCommand.clearStorage);
+    }
     try {
       final uri = Uri.parse('http://$_deviceIp:$_devicePort/api/clear');
-      await http.post(uri).timeout(const Duration(seconds: 4));
+      await http.post(uri).timeout(const Duration(seconds: 3));
     } catch (_) {}
     _clips.clear();
+    _lastKnownClipCount = 0;
     await loadSavedLocalRecordings();
     notifyListeners();
   }
