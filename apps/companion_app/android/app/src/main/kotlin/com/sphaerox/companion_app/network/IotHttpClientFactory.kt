@@ -14,12 +14,18 @@ object IotHttpClientFactory {
      * Builds an OkHttpClient bound exclusively to the IoT Wi-Fi Network.
      * Cellular WAN (5G/LTE) is preserved for all other application network traffic!
      */
-    fun createClient(iotNetwork: Network): OkHttpClient {
-        return OkHttpClient.Builder()
-            // 1. Direct all socket traffic through wlan0 interface
-            .socketFactory(iotNetwork.socketFactory)
+    fun createClient(iotNetwork: Network? = null): OkHttpClient {
+        val builder = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .writeTimeout(10, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+
+        if (iotNetwork != null) {
+            // 1. Direct all socket traffic through dedicated wlan0 interface
+            builder.socketFactory(iotNetwork.socketFactory)
             // 2. DNS resolver bypass for local SoftAP IP
-            .dns(object : Dns {
+            builder.dns(object : Dns {
                 override fun lookup(hostname: String): List<InetAddress> {
                     return if (hostname == "xiao.local" || hostname == "192.168.4.1") {
                         listOf(InetAddress.getByName(ESP32_SOFTAP_IP))
@@ -32,10 +38,18 @@ object IotHttpClientFactory {
                     }
                 }
             })
-            .connectTimeout(6, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)
-            .writeTimeout(10, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true)
-            .build()
+        } else {
+            builder.dns(object : Dns {
+                override fun lookup(hostname: String): List<InetAddress> {
+                    return if (hostname == "xiao.local" || hostname == "192.168.4.1") {
+                        listOf(InetAddress.getByName(ESP32_SOFTAP_IP))
+                    } else {
+                        Dns.SYSTEM.lookup(hostname)
+                    }
+                }
+            })
+        }
+
+        return builder.build()
     }
 }

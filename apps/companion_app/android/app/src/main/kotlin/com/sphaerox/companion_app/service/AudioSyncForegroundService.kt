@@ -90,10 +90,14 @@ class AudioSyncForegroundService : Service() {
                     // Tier 2: Dynamic Wi-Fi SoftAP Transfer (>= 2.0 MB)
                     Log.i(TAG, "Executing Tier 2 Wi-Fi SoftAP sync for file ID: $fileId")
                     val wifiManager = IotWifiManager(applicationContext)
-                    val connectionState = wifiManager.connectToEsp32SoftAp().first { it is WifiConnectionState.Connected || it is WifiConnectionState.Failed }
+                    try {
+                        val network = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            wifiManager.connect()
+                        } else {
+                            null
+                        }
 
-                    if (connectionState is WifiConnectionState.Connected) {
-                        val client = IotHttpClientFactory.createClient(connectionState.network)
+                        val client = IotHttpClientFactory.createClient(network)
                         val request = Request.Builder()
                             .url("http://192.168.4.1/api/download?id=$fileId")
                             .build()
@@ -121,6 +125,7 @@ class AudioSyncForegroundService : Service() {
                             }
                             syncSuccess = true
                         }
+                    } finally {
                         wifiManager.disconnect()
                     }
                 }

@@ -243,7 +243,11 @@ class RecordingSyncManager extends ChangeNotifier {
 
   /// Adaptive Hybrid Download for a single clip:
   /// - Automatically signals ESP32 to start Wi-Fi Hotspot if needed for >1.8 MB/s Turbo sync.
-  Future<bool> downloadClip(int clipId, {SyncTier? forcedTier}) async {
+  Future<bool> downloadClip(
+    int clipId, {
+    SyncTier? forcedTier,
+    bool keepWifiAlive = false,
+  }) async {
     final clip = _clipsMap[clipId];
     if (clip == null) return false;
 
@@ -256,12 +260,14 @@ class RecordingSyncManager extends ChangeNotifier {
     );
     notifyListeners();
 
+    bool wifiStartedByThisCall = false;
     try {
       // 1. If BLE is connected and Wi-Fi is currently off, start Hotspot for Turbo download
-      final bool wasWifiTriggered = (bleService?.isConnected == true &&
+      final bool needStartWifi = (bleService?.isConnected == true &&
           bleService?.telemetry.state != DeviceState.wifiActive);
 
-      if (wasWifiTriggered) {
+      if (needStartWifi) {
+        wifiStartedByThisCall = true;
         _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
           transferSpeed: 'Starting Wi-Fi Turbo Hotspot...',
         );
@@ -279,9 +285,10 @@ class RecordingSyncManager extends ChangeNotifier {
             fileId: clip.id,
             ssidPattern: AppConstants.defaultApSsidPattern,
             passphrase: AppConstants.defaultApPassword,
+            keepConnected: keepWifiAlive,
           );
 
-          if (wasWifiTriggered && bleService?.isConnected == true) {
+          if (!keepWifiAlive && wifiStartedByThisCall && bleService?.isConnected == true) {
             await bleService!.sendCommand(BleCommand.stopWifi);
           }
 
@@ -303,15 +310,21 @@ class RecordingSyncManager extends ChangeNotifier {
         }
       }
 
-      // 3. High-speed HTTP stream download with Range Resume support
+      // 3. High-speed HTTP stream download with Range Resume support (fallback / non-Android)
       final success = await _downloadViaHttpRange(clipId);
 
-      if (wasWifiTriggered && bleService?.isConnected == true) {
+      if (!keepWifiAlive && wifiStartedByThisCall && bleService?.isConnected == true) {
         await bleService!.sendCommand(BleCommand.stopWifi);
       }
 
       return success;
     } catch (e) {
+      if (!keepWifiAlive && wifiStartedByThisCall && bleService?.isConnected == true) {
+        try {
+          await bleService!.sendCommand(BleCommand.stopWifi);
+        } catch (_) {}
+      }
+
       _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
         syncState: SyncState.error,
         transferSpeed: 'Failed: $e',
@@ -406,6 +419,7 @@ class RecordingSyncManager extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
+    bool wifiStartedForBatch = false;
     try {
       try {
         await fetchDeviceClips(showError: false);
@@ -418,13 +432,39 @@ class RecordingSyncManager extends ChangeNotifier {
         return;
       }
 
+      // 1. If BLE is connected and Wi-Fi is off, start Hotspot ONCE for the entire batch
+      if (bleService?.isConnected == true &&
+          bleService?.telemetry.state != DeviceState.wifiActive) {
+        wifiStartedForBatch = true;
+        _currentSpeed = 'Starting Wi-Fi Hotspot for batch...';
+        notifyListeners();
+        await bleService!.sendCommand(BleCommand.startWifi);
+        await Future.delayed(const Duration(milliseconds: 1500));
+      }
+
+      // 2. Pre-connect native Wi-Fi if on Android to ensure session is active
+      if (_nativeBridge.isPlatformAndroid) {
+        try {
+          await _nativeBridge.connectWifiSoftAp(
+            ssidPattern: AppConstants.defaultApSsidPattern,
+            passphrase: AppConstants.defaultApPassword,
+          );
+        } catch (e) {
+          debugPrint('[RecordingSyncManager] Pre-connecting Wi-Fi SoftAP: $e');
+        }
+      }
+
+      // 3. Process each unsynced clip keeping Wi-Fi connection alive across the whole batch
       for (int i = 0; i < unsynced.length; i++) {
+        if (!_isSyncing) break; // Check if cancelled
+
         final clip = unsynced[i];
         _currentSyncFile = clip.remoteFilename;
         _syncProgress = (i / unsynced.length);
         notifyListeners();
 
-        await downloadClip(clip.id);
+        // Pass keepWifiAlive: true so individual downloads don't tear down Wi-Fi
+        await downloadClip(clip.id, keepWifiAlive: true);
 
         _syncProgress = ((i + 1) / unsynced.length);
         notifyListeners();
@@ -432,11 +472,45 @@ class RecordingSyncManager extends ChangeNotifier {
     } catch (e) {
       _errorMessage = 'Sync error: $e';
     } finally {
+      // 4. Clean up batch Wi-Fi session
+      if (_nativeBridge.isPlatformAndroid) {
+        try {
+          await _nativeBridge.disconnectWifiSoftAp();
+        } catch (_) {}
+      }
+
+      if (wifiStartedForBatch && bleService?.isConnected == true) {
+        try {
+          await bleService!.sendCommand(BleCommand.stopWifi);
+        } catch (_) {}
+      }
+
       _isSyncing = false;
       _currentSyncFile = '';
       _currentSpeed = null;
       notifyListeners();
     }
+  }
+
+  /// Cancels any active synchronization in progress and restores normal Wi-Fi routing.
+  Future<void> cancelSync() async {
+    if (!_isSyncing) return;
+    _isSyncing = false;
+    _errorMessage = 'Sync cancelled by user';
+
+    if (_nativeBridge.isPlatformAndroid) {
+      await _nativeBridge.cancelSync();
+    }
+
+    if (bleService?.isConnected == true) {
+      try {
+        await bleService!.sendCommand(BleCommand.stopWifi);
+      } catch (_) {}
+    }
+
+    _currentSyncFile = '';
+    _currentSpeed = null;
+    notifyListeners();
   }
 
   /// Toggles playback for a recording clip.

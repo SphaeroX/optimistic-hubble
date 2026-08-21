@@ -82,18 +82,56 @@ class MainActivity : FlutterActivity() {
                             startBleL2capSync(deviceAddress, fileId, psm, result)
                         }
 
-                        "startWifiSoftApSync" -> {
-                            val ssidPattern = call.argument<String>("ssidPattern") ?: "XIAO-Audio-.*"
+                        "connectWifiSoftAp" -> {
+                            val ssidPattern = call.argument<String>("ssidPattern") ?: "XIAO-Audio-Hotspot"
                             val passphrase = call.argument<String>("passphrase") ?: "xiaoesp32c3"
-                            val fileId = call.argument<Number>("fileId")?.toLong() ?: 0L
-                            val startOffset = call.argument<Number>("startOffset")?.toLong() ?: 0L
 
                             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                                 result.error("UNSUPPORTED", "WifiNetworkSpecifier requires Android 10+", null)
                                 return@setMethodCallHandler
                             }
 
-                            startWifiSoftApSync(ssidPattern, passphrase, fileId, startOffset, result)
+                            activityScope.launch(Dispatchers.IO) {
+                                val wifiManager = iotWifiManager ?: IotWifiManager(applicationContext)
+                                try {
+                                    wifiManager.connect(ssidPattern, passphrase)
+                                    withContext(Dispatchers.Main) {
+                                        result.success(true)
+                                    }
+                                } catch (e: Exception) {
+                                    withContext(Dispatchers.Main) {
+                                        result.error("WIFI_CONNECT_FAILED", e.message ?: "Failed to connect to SoftAP", null)
+                                    }
+                                }
+                            }
+                        }
+
+                        "disconnectWifiSoftAp" -> {
+                            try {
+                                iotWifiManager?.disconnect()
+                                result.success(true)
+                            } catch (e: Exception) {
+                                result.error("WIFI_DISCONNECT_FAILED", e.message, null)
+                            }
+                        }
+
+                        "isWifiConnected" -> {
+                            result.success(iotWifiManager?.isConnected() == true)
+                        }
+
+                        "startWifiSoftApSync" -> {
+                            val ssidPattern = call.argument<String>("ssidPattern") ?: "XIAO-Audio-Hotspot"
+                            val passphrase = call.argument<String>("passphrase") ?: "xiaoesp32c3"
+                            val fileId = call.argument<Number>("fileId")?.toLong() ?: 0L
+                            val startOffset = call.argument<Number>("startOffset")?.toLong() ?: 0L
+                            val keepConnected = call.argument<Boolean>("keepConnected") ?: false
+
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                                result.error("UNSUPPORTED", "WifiNetworkSpecifier requires Android 10+", null)
+                                return@setMethodCallHandler
+                            }
+
+                            startWifiSoftApSync(ssidPattern, passphrase, fileId, startOffset, keepConnected, result)
                         }
 
                         "cancelSync" -> {
@@ -175,44 +213,23 @@ class MainActivity : FlutterActivity() {
         passphrase: String,
         fileId: Long,
         startOffset: Long,
+        keepConnected: Boolean,
         result: MethodChannel.Result
     ) {
         activeSyncJob?.cancel()
         activeSyncJob = activityScope.launch(Dispatchers.IO) {
             val wifiManager = iotWifiManager ?: IotWifiManager(applicationContext)
             try {
-                sendEvent("connecting", 0.0, 0, 0, "Connecting to XIAO-Audio-Hotspot...")
-
-                // 1. Check if 192.168.4.1 is already directly reachable (e.g. user manually connected or already active)
-                var alreadyConnected = false
-                val directCheckClient = okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(1200, java.util.concurrent.TimeUnit.MILLISECONDS)
-                    .readTimeout(1200, java.util.concurrent.TimeUnit.MILLISECONDS)
-                    .build()
-                try {
-                    val ping = directCheckClient.newCall(Request.Builder().url("http://192.168.4.1/api/clips").build()).execute()
-                    if (ping.isSuccessful) {
-                        alreadyConnected = true
-                        Log.i(TAG, "Already connected to 192.168.4.1! Bypassing WifiNetworkSpecifier.")
-                    }
-                    ping.close()
-                } catch (_: Exception) {}
-
-                var client = directCheckClient
-                if (!alreadyConnected) {
-                    val connState = wifiManager.connectToEsp32SoftAp("XIAO-Audio-Hotspot", passphrase)
-                        .first { it is WifiConnectionState.Connected || it is WifiConnectionState.Failed }
-
-                    if (connState !is WifiConnectionState.Connected) {
-                        withContext(Dispatchers.Main) {
-                            val reason = if (connState is WifiConnectionState.Failed) connState.reason else "Could not connect to SoftAP"
-                            sendEvent("failed", 0.0, 0, 0, reason)
-                            result.error("WIFI_FAILED", reason, null)
-                        }
-                        return@launch
-                    }
-                    client = IotHttpClientFactory.createClient(connState.network)
+                val activeNet = wifiManager.getActiveNetwork()
+                val network: Network = if (wifiManager.isConnected() && activeNet != null) {
+                    Log.i(TAG, "Reusing already active IoT Wi-Fi connection: $activeNet")
+                    activeNet
+                } else {
+                    sendEvent("connecting", 0.0, 0, 0, "Connecting to XIAO-Audio-Hotspot...")
+                    wifiManager.connect(ssidPattern, passphrase)
                 }
+
+                val client = IotHttpClientFactory.createClient(network)
 
                 sendEvent("connected", 0.05, 0, 0, "SoftAP connected! Downloading audio...")
 
@@ -261,7 +278,9 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
-                try { wifiManager.disconnect() } catch (_: Throwable) {}
+                if (!keepConnected) {
+                    try { wifiManager.disconnect() } catch (_: Throwable) {}
+                }
 
                 if (targetFile.exists()) targetFile.delete()
                 tempFile.renameTo(targetFile)
@@ -271,7 +290,9 @@ class MainActivity : FlutterActivity() {
                     result.success(targetFile.absolutePath)
                 }
             } catch (e: Exception) {
-                try { iotWifiManager?.disconnect() } catch (_: Throwable) {}
+                if (!keepConnected) {
+                    try { iotWifiManager?.disconnect() } catch (_: Throwable) {}
+                }
                 withContext(Dispatchers.Main) {
                     sendEvent("failed", 0.0, 0, 0, e.message ?: "Unknown error")
                     result.error("ERROR", e.message, null)

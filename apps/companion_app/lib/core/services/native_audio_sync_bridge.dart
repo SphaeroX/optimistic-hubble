@@ -99,6 +99,7 @@ class NativeAudioSyncBridge {
     String ssidPattern = AppConstants.defaultApSsidPattern,
     String passphrase = AppConstants.defaultApPassword,
     int startOffset = 0,
+    bool keepConnected = false,
   }) async {
     if (!isPlatformAndroid) return null;
     try {
@@ -107,11 +108,48 @@ class NativeAudioSyncBridge {
         'ssidPattern': ssidPattern,
         'passphrase': passphrase,
         'startOffset': startOffset,
+        'keepConnected': keepConnected,
       });
       return path;
     } catch (e) {
       debugPrint('[NativeAudioSyncBridge] Wi-Fi SoftAP sync error: $e');
       rethrow;
+    }
+  }
+
+  Future<bool> connectWifiSoftAp({
+    String ssidPattern = AppConstants.defaultApSsidPattern,
+    String passphrase = AppConstants.defaultApPassword,
+  }) async {
+    if (!isPlatformAndroid) return false;
+    try {
+      final bool? res = await _methodChannel.invokeMethod<bool>('connectWifiSoftAp', {
+        'ssidPattern': ssidPattern,
+        'passphrase': passphrase,
+      });
+      return res ?? false;
+    } catch (e) {
+      debugPrint('[NativeAudioSyncBridge] connectWifiSoftAp error: $e');
+      return false;
+    }
+  }
+
+  Future<void> disconnectWifiSoftAp() async {
+    if (!isPlatformAndroid) return;
+    try {
+      await _methodChannel.invokeMethod('disconnectWifiSoftAp');
+    } catch (e) {
+      debugPrint('[NativeAudioSyncBridge] disconnectWifiSoftAp error: $e');
+    }
+  }
+
+  Future<bool> isWifiConnected() async {
+    if (!isPlatformAndroid) return false;
+    try {
+      final bool? res = await _methodChannel.invokeMethod<bool>('isWifiConnected');
+      return res ?? false;
+    } catch (_) {
+      return false;
     }
   }
 

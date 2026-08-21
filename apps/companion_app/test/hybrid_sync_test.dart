@@ -77,6 +77,37 @@ void main() {
       );
       expect(completedEvent.isCompleted, isTrue);
       expect(completedEvent.filePath, isNotNull);
+
+      const failedEvent = SyncProgressEvent(
+        status: 'failed',
+        progress: 0.0,
+        bytesReceived: 0,
+        totalBytes: 0,
+        message: 'Wi-Fi connection timed out',
+      );
+      expect(failedEvent.isFailed, isTrue);
+      expect(failedEvent.isCompleted, isFalse);
+    });
+
+    test('NativeAudioSyncBridge platform fallback returns safe defaults on non-Android platforms', () async {
+      final bridge = NativeAudioSyncBridge();
+      expect(bridge, isNotNull);
+
+      // On non-Android (e.g. host unit test environment), these safely return null/false without crashing
+      final l2capSupported = await bridge.isL2capSupported();
+      expect(l2capSupported, isFalse);
+
+      final isWifiConn = await bridge.isWifiConnected();
+      expect(isWifiConn, isFalse);
+
+      final connectRes = await bridge.connectWifiSoftAp();
+      expect(connectRes, isFalse);
+
+      final singleSync = await bridge.startWifiSoftApSync(
+        fileId: 10,
+        keepConnected: true,
+      );
+      expect(singleSync, isNull);
     });
   });
 }
