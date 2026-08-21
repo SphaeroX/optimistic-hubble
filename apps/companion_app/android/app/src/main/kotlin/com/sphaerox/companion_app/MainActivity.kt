@@ -266,8 +266,14 @@ class MainActivity : FlutterActivity() {
                 val url = if (fileId > 0) "http://192.168.4.1/api/download?id=$fileId" else "http://192.168.4.1/api/download"
                 
                 val reqBuilder = Request.Builder().url(url)
-                if (startOffset > 0) {
-                    reqBuilder.addHeader("Range", "bytes=$startOffset-")
+                val effectiveStartOffset = if (startOffset > 0 && tempFile.exists() && tempFile.length() == startOffset) {
+                    startOffset
+                } else {
+                    0L
+                }
+
+                if (effectiveStartOffset > 0) {
+                    reqBuilder.addHeader("Range", "bytes=$effectiveStartOffset-")
                 }
 
                 client.newCall(reqBuilder.build()).execute().use { response ->
@@ -276,10 +282,12 @@ class MainActivity : FlutterActivity() {
                     }
 
                     val body = response.body ?: throw IOException("Empty response body")
-                    val totalLength = (response.header("Content-Length")?.toLongOrNull() ?: 0L) + startOffset
+                    val isPartial = (response.code == 206 && effectiveStartOffset > 0)
+                    val actualStartOffset = if (isPartial) effectiveStartOffset else 0L
+                    val totalLength = (response.header("Content-Length")?.toLongOrNull() ?: 0L) + actualStartOffset
 
-                    var bytesReadTotal = if (startOffset > 0 && tempFile.exists()) tempFile.length() else 0L
-                    val fos = FileOutputStream(tempFile, startOffset > 0)
+                    var bytesReadTotal = actualStartOffset
+                    val fos = FileOutputStream(tempFile, isPartial)
                     val buffer = ByteArray(16384)
                     val startTime = System.currentTimeMillis()
 
@@ -294,7 +302,7 @@ class MainActivity : FlutterActivity() {
                                 bytesReadTotal += read
 
                                 val elapsedSec = (System.currentTimeMillis() - startTime) / 1000.0
-                                val speedMb = if (elapsedSec > 0) ((bytesReadTotal - startOffset) / (1024.0 * 1024.0)) / elapsedSec else 0.0
+                                val speedMb = if (elapsedSec > 0) ((bytesReadTotal - actualStartOffset) / (1024.0 * 1024.0)) / elapsedSec else 0.0
                                 val progress = if (totalLength > 0) (bytesReadTotal.toDouble() / totalLength.toDouble()).coerceIn(0.0, 1.0) else 0.5
 
                                 sendEvent(

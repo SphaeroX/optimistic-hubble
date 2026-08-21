@@ -284,11 +284,14 @@ class RecordingSyncManager extends ChangeNotifier {
         try {
           final targetDir = await LocalStorageManager.getRecordingsDirectory();
           final targetPath = '${targetDir.path}/clip_${clip.id}.wav';
+          final tempFile = File('${targetDir.path}/clip_${clip.id}.wav.part');
+          final int resumeOffset = tempFile.existsSync() ? tempFile.lengthSync() : 0;
 
           final String? savedPath = await _nativeBridge.startWifiSoftApSync(
             fileId: clip.id,
             ssidPattern: AppConstants.defaultApSsidPattern,
             passphrase: AppConstants.defaultApPassword,
+            startOffset: resumeOffset,
             destinationPath: targetPath,
             keepConnected: keepWifiAlive,
           );
@@ -351,12 +354,16 @@ class RecordingSyncManager extends ChangeNotifier {
     final client = http.Client();
     final request = http.Request('GET', uri);
 
-    final localTemp = await LocalStorageManager.getLocalFile('clip_${clip.id}.part');
-    int existingOffset = 0;
-    if (localTemp != null && localTemp.existsSync()) {
-      existingOffset = localTemp.lengthSync();
-      if (existingOffset > 0 && existingOffset < clip.sizeBytes) {
-        request.headers['Range'] = 'bytes=$existingOffset-';
+    final recordingsDir = await LocalStorageManager.getRecordingsDirectory();
+    final targetFile = File('${recordingsDir.path}/clip_${clip.id}.wav');
+    final tempFile = File('${recordingsDir.path}/clip_${clip.id}.wav.part');
+
+    int effectiveOffset = 0;
+    if (tempFile.existsSync()) {
+      final len = tempFile.lengthSync();
+      if (len > 0 && len < clip.sizeBytes) {
+        effectiveOffset = len;
+        request.headers['Range'] = 'bytes=$effectiveOffset-';
       }
     }
 
@@ -367,46 +374,58 @@ class RecordingSyncManager extends ChangeNotifier {
       throw Exception('Server returned HTTP ${response.statusCode}');
     }
 
-    final contentLength = (response.contentLength ?? clip.sizeBytes) + existingOffset;
-    final List<int> downloadedBytes = [];
+    final isPartial = (response.statusCode == 206 && effectiveOffset > 0);
+    final actualOffset = isPartial ? effectiveOffset : 0;
+    final totalLength = (response.contentLength ?? (clip.sizeBytes - actualOffset)) + actualOffset;
 
-    await for (final chunk in response.stream) {
-      downloadedBytes.addAll(chunk);
-      final totalReceived = existingOffset + downloadedBytes.length;
-      final elapsedSec = DateTime.now().difference(startTime).inMilliseconds / 1000.0;
-      final speedKb = elapsedSec > 0 ? (downloadedBytes.length / 1024.0) / elapsedSec : 0.0;
-      final speedStr = speedKb > 1024 ? '${(speedKb / 1024.0).toStringAsFixed(2)} MB/s' : '${speedKb.toStringAsFixed(1)} KB/s';
+    final sink = tempFile.openWrite(mode: isPartial ? FileMode.append : FileMode.write);
+    int bytesReceived = actualOffset;
 
-      final progress = contentLength > 0
-          ? (totalReceived / contentLength).clamp(0.0, 1.0)
-          : 0.5;
+    try {
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        bytesReceived += chunk.length;
+        final elapsedSec = DateTime.now().difference(startTime).inMilliseconds / 1000.0;
+        final speedKb = elapsedSec > 0 ? ((bytesReceived - actualOffset) / 1024.0) / elapsedSec : 0.0;
+        final speedStr = speedKb > 1024
+            ? '${(speedKb / 1024.0).toStringAsFixed(2)} MB/s'
+            : '${speedKb.toStringAsFixed(1)} KB/s';
 
-      _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
-        downloadProgress: progress,
-        transferSpeed: speedStr,
-      );
-      _currentSpeed = speedStr;
-      notifyListeners();
+        final progress = totalLength > 0 ? (bytesReceived / totalLength).clamp(0.0, 1.0) : 0.5;
+
+        _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
+          downloadProgress: progress,
+          transferSpeed: speedStr,
+        );
+        _currentSpeed = speedStr;
+        notifyListeners();
+      }
+      await sink.flush();
+    } finally {
+      await sink.close();
     }
 
-    final rawData = Uint8List.fromList(downloadedBytes);
-    Uint8List wavBytes;
-
-    if (rawData.length > 4 && rawData[0] == 0x52 && rawData[1] == 0x49 && rawData[2] == 0x46 && rawData[3] == 0x46) {
-      wavBytes = rawData;
-    } else {
-      wavBytes = AdpcmDecoder.decodeAdpcmToWav(rawData, sampleRate: clip.sampleRate);
+    if (tempFile.existsSync()) {
+      final bytes = await tempFile.readAsBytes();
+      if (bytes.length > 4 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) {
+        // Standard RIFF/WAVE header already present
+        if (targetFile.existsSync()) targetFile.deleteSync();
+        tempFile.renameSync(targetFile.path);
+      } else {
+        // Raw ADPCM - decode to Linear PCM WAV
+        final wavBytes = AdpcmDecoder.decodeAdpcmToWav(bytes, sampleRate: clip.sampleRate);
+        await LocalStorageManager.saveWavFile(
+          filename: 'clip_${clip.id}.wav',
+          wavBytes: wavBytes,
+        );
+        if (tempFile.existsSync()) tempFile.deleteSync();
+      }
     }
-
-    final savedFile = await LocalStorageManager.saveWavFile(
-      filename: 'clip_${clip.id}.wav',
-      wavBytes: wavBytes,
-    );
 
     _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
       syncState: SyncState.synced,
       downloadProgress: 1.0,
-      localWavPath: savedFile.path,
+      localWavPath: targetFile.path,
       crcVerified: true,
       transferSpeed: 'Verified',
     );

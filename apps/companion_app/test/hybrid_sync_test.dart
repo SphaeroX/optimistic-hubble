@@ -114,6 +114,14 @@ void main() {
       final connectRes = await bridge.connectWifiSoftAp();
       expect(connectRes, isFalse);
 
+      final singleSyncWithOffset = await bridge.startWifiSoftApSync(
+        fileId: 10,
+        startOffset: 16384,
+        destinationPath: '/tmp/test_clip_10.wav',
+        keepConnected: true,
+      );
+      expect(singleSyncWithOffset, isNull);
+
       final singleSync = await bridge.startWifiSoftApSync(
         fileId: 10,
         destinationPath: '/tmp/test_clip_10.wav',
@@ -130,6 +138,38 @@ void main() {
 
       await bridge.disconnectWifiSoftAp();
       await bridge.cancelSync();
+    });
+
+    test('HTTP Range calculation and partial resume progress logic', () {
+      int calculateTotal(bool isPartial, int resumeOffset, int responseContentLength) {
+        final actualOffset = isPartial ? resumeOffset : 0;
+        return responseContentLength + actualOffset;
+      }
+
+      int calculateReceived(bool isPartial, int resumeOffset, int bytesFromStream) {
+        final actualOffset = isPartial ? resumeOffset : 0;
+        return actualOffset + bytesFromStream;
+      }
+
+      const int fullFileSize = 500000;
+      const int resumeOffset = 200000;
+      const int remainingBytes = 300000;
+
+      // 1. When server returns 206 Partial Content (Range satisfied)
+      final total206 = calculateTotal(true, resumeOffset, remainingBytes);
+      expect(total206, fullFileSize);
+
+      final received206 = calculateReceived(true, resumeOffset, 150000);
+      final double progress206 = (received206 / total206).clamp(0.0, 1.0);
+      expect(progress206, 0.7);
+
+      // 2. When server returns 200 OK (server ignored Range header, sends full 500000 from 0)
+      final total200 = calculateTotal(false, resumeOffset, fullFileSize);
+      expect(total200, fullFileSize);
+
+      final received200 = calculateReceived(false, resumeOffset, 150000);
+      final double progress200 = (received200 / total200).clamp(0.0, 1.0);
+      expect(progress200, 0.3);
     });
 
     test('RecordingItem copyWith correctly preserves and updates properties', () {

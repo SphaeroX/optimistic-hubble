@@ -18,7 +18,6 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import java.io.IOException
-import java.util.concurrent.atomic.AtomicBoolean
 
 sealed class WifiConnectionState {
     object Idle : WifiConnectionState()
@@ -39,16 +38,19 @@ class IotWifiManager(private val context: Context) {
     @Volatile
     private var activeNetwork: Network? = null
 
-    private val isConnecting = AtomicBoolean(false)
     private var connectionDeferred: CompletableDeferred<Network>? = null
     private val stateLock = Any()
 
     fun isConnected(): Boolean {
-        return activeNetwork != null && activeCallback != null
+        synchronized(stateLock) {
+            return activeNetwork != null && activeCallback != null
+        }
     }
 
     fun getActiveNetwork(): Network? {
-        return activeNetwork
+        synchronized(stateLock) {
+            return activeNetwork
+        }
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
@@ -65,17 +67,11 @@ class IotWifiManager(private val context: Context) {
                 return existing
             }
 
-            if (isConnecting.get()) {
-                val inFlight = connectionDeferred
-                if (inFlight != null) {
-                    deferred = inFlight
-                } else {
-                    val newDeferred = CompletableDeferred<Network>()
-                    connectionDeferred = newDeferred
-                    deferred = newDeferred
-                }
+            val inFlight = connectionDeferred
+            if (inFlight != null && !inFlight.isCompleted) {
+                Log.i(TAG, "Reusing in-flight SoftAP connection request")
+                deferred = inFlight
             } else {
-                isConnecting.set(true)
                 val newDeferred = CompletableDeferred<Network>()
                 connectionDeferred = newDeferred
                 deferred = newDeferred
@@ -116,54 +112,54 @@ class IotWifiManager(private val context: Context) {
                             }
                             activeNetwork = network
                             activeCallback = this
-                            isConnecting.set(false)
                             connectionDeferred = null
+                            try {
+                                connectivityManager.bindProcessToNetwork(network)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Could not bind process to network: ${e.message}")
+                            }
+                            deferred.complete(network)
                         }
-                        try {
-                            connectivityManager.bindProcessToNetwork(network)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Could not bind process to network: ${e.message}")
-                        }
-                        deferred.complete(network)
                     }
 
                     override fun onLost(network: Network) {
                         Log.w(TAG, "IoT Wi-Fi Lost: $network")
                         synchronized(stateLock) {
-                            if (activeNetwork == network || activeNetwork == null) {
+                            val wasActive = (activeNetwork == network || activeCallback == this)
+                            if (wasActive) {
                                 activeNetwork = null
                                 activeCallback = null
-                                isConnecting.set(false)
                                 connectionDeferred = null
+                                try {
+                                    connectivityManager.bindProcessToNetwork(null)
+                                } catch (_: Exception) {}
                             }
-                        }
-                        try {
-                            connectivityManager.bindProcessToNetwork(null)
-                        } catch (_: Exception) {}
-                        try {
-                            connectivityManager.unregisterNetworkCallback(this)
-                        } catch (_: Exception) {}
-                        if (!deferred.isCompleted) {
-                            deferred.completeExceptionally(IOException("Wi-Fi network lost"))
+                            try {
+                                connectivityManager.unregisterNetworkCallback(this)
+                            } catch (_: Exception) {}
+                            if (!deferred.isCompleted) {
+                                deferred.completeExceptionally(IOException("Wi-Fi network lost"))
+                            }
                         }
                     }
 
                     override fun onUnavailable() {
                         Log.e(TAG, "IoT Wi-Fi Unavailable (Timeout or User Dismissed)")
                         synchronized(stateLock) {
-                            activeNetwork = null
-                            activeCallback = null
-                            isConnecting.set(false)
-                            connectionDeferred = null
-                        }
-                        try {
-                            connectivityManager.bindProcessToNetwork(null)
-                        } catch (_: Exception) {}
-                        try {
-                            connectivityManager.unregisterNetworkCallback(this)
-                        } catch (_: Exception) {}
-                        if (!deferred.isCompleted) {
-                            deferred.completeExceptionally(IOException("User cancelled or device not found"))
+                            if (activeCallback == this) {
+                                activeNetwork = null
+                                activeCallback = null
+                                connectionDeferred = null
+                                try {
+                                    connectivityManager.bindProcessToNetwork(null)
+                                } catch (_: Exception) {}
+                            }
+                            try {
+                                connectivityManager.unregisterNetworkCallback(this)
+                            } catch (_: Exception) {}
+                            if (!deferred.isCompleted) {
+                                deferred.completeExceptionally(IOException("User cancelled or device not found"))
+                            }
                         }
                     }
                 }
@@ -175,7 +171,6 @@ class IotWifiManager(private val context: Context) {
                 } catch (e: Exception) {
                     synchronized(stateLock) {
                         activeCallback = null
-                        isConnecting.set(false)
                         connectionDeferred = null
                     }
                     deferred.completeExceptionally(e)
@@ -225,7 +220,6 @@ class IotWifiManager(private val context: Context) {
             val callback = activeCallback
             activeCallback = null
             activeNetwork = null
-            isConnecting.set(false)
 
             val inFlight = connectionDeferred
             connectionDeferred = null
