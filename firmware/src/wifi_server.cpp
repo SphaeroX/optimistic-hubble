@@ -91,10 +91,8 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
     _lastRequestTime = millis();
     _softApStartTime = millis();
 
-    WiFi.disconnect(true);
-    delay(50);
     WiFi.mode(WIFI_AP);
-    delay(50);
+    delay(30);
 
     IPAddress localIp(192, 168, 4, 1);
     IPAddress gateway(192, 168, 4, 1);
@@ -132,8 +130,9 @@ bool WifiServerManager::stop() {
     _server.close();
     _server.stop();
 
-    WiFi.softAPdisconnect(true);
-    WiFi.disconnect(true);
+    WiFi.softAPdisconnect(false);
+    delay(20);
+    WiFi.enableAP(false);
     WiFi.mode(WIFI_OFF);
 
     _active = false;

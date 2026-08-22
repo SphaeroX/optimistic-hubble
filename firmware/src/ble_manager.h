@@ -47,7 +47,6 @@ public:
     void onDisconnect(NimBLEServer* pServer) override;
 
     // NimBLE Characteristic Callbacks
-    void onWrite(NimBLECharacteristic* pCharacteristic) override;
     void onWrite(NimBLECharacteristic* pCharacteristic, ble_gap_conn_desc* desc) override;
 
 private:

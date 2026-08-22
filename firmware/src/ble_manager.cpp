@@ -27,10 +27,6 @@ void BleManager::onDisconnect(NimBLEServer* pServer) {
     NimBLEDevice::startAdvertising();
 }
 
-void BleManager::onWrite(NimBLECharacteristic* pCharacteristic) {
-    handleCharacteristicWrite(pCharacteristic);
-}
-
 void BleManager::onWrite(NimBLECharacteristic* pCharacteristic, ble_gap_conn_desc* desc) {
     (void)desc;
     handleCharacteristicWrite(pCharacteristic);
