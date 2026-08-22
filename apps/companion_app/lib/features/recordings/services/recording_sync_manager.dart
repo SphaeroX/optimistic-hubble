@@ -36,6 +36,7 @@ class RecordingSyncManager extends ChangeNotifier {
   String _deviceIp = AppConstants.defaultDeviceIp;
   int _devicePort = AppConstants.defaultHttpPort;
   int _lastKnownClipCount = 0;
+  bool _isReconciling = false;
 
   // Getters
   List<RecordingItem> get clips {
@@ -74,7 +75,7 @@ class RecordingSyncManager extends ChangeNotifier {
     _initNativeEventListener();
     _initBleAudioEventListener();
     _initServerCallbacks();
-    loadSavedLocalRecordings();
+    loadSavedLocalRecordings().then((_) => _syncClipsWithTelemetry(force: true));
   }
 
   @override
@@ -195,49 +196,52 @@ class RecordingSyncManager extends ChangeNotifier {
   }
 
   /// Automatically synchronizes clips registry based on real-time BLE telemetry from ESP32.
-  void _onBleUpdate() async {
+  void _onBleUpdate() {
+    _syncClipsWithTelemetry();
+  }
+
+  /// Reconciles local recordings and remote BLE inventory into _clipsMap.
+  Future<void> _syncClipsWithTelemetry({bool force = false}) async {
+    if (_isReconciling) return;
     if (bleService == null) return;
+
     final telem = bleService!.telemetry;
     final totalClipsOnDevice = telem.totalClips;
 
-    if (totalClipsOnDevice == 0 && _lastKnownClipCount > 0) {
-      _lastKnownClipCount = 0;
-      // Remove any unsynced "on device only" clips
-      _clipsMap.removeWhere((id, clip) => clip.syncState != SyncState.synced || clip.localWavPath == null);
-      notifyListeners();
+    if (!force && totalClipsOnDevice == _lastKnownClipCount && _clipsMap.isNotEmpty) {
       return;
     }
 
-    if (totalClipsOnDevice != _lastKnownClipCount || (_clipsMap.isEmpty && totalClipsOnDevice > 0)) {
+    _isReconciling = true;
+    try {
       _lastKnownClipCount = totalClipsOnDevice;
       bool listChanged = false;
 
-      // Clean up orphaned onDevice-only clips if clip count reduced
-      if (totalClipsOnDevice < _clipsMap.values.where((c) => c.syncState == SyncState.onDevice).length) {
-        final onDeviceKeys = _clipsMap.entries
-            .where((e) => e.value.syncState == SyncState.onDevice)
-            .map((e) => e.key)
-            .toList();
-        for (final key in onDeviceKeys) {
-          if (key > totalClipsOnDevice) {
-            _clipsMap.remove(key);
-            listChanged = true;
-          }
-        }
+      // 1. Clean up unsynced clips whose ID exceeds the device's actual clip count
+      final orphanedKeys = _clipsMap.entries
+          .where((e) => e.value.syncState != SyncState.synced && (totalClipsOnDevice == 0 || e.key > totalClipsOnDevice))
+          .map((e) => e.key)
+          .toList();
+      for (final key in orphanedKeys) {
+        _clipsMap.remove(key);
+        listChanged = true;
       }
+
+      // 2. Populate / update all clips from 1 to totalClipsOnDevice
+      final used = telem.usedStorageBytes ?? 0;
+      final estimatedBytes = (used > 0 && totalClipsOnDevice > 0)
+          ? (used / totalClipsOnDevice).round().clamp(8000, 3000000)
+          : 64000;
+      final durSec = (estimatedBytes > 60) ? ((estimatedBytes - 60) / 8000.0) : 8.0;
 
       for (int i = 1; i <= totalClipsOnDevice; i++) {
         final existing = _clipsMap[i];
-        final localFile = await LocalStorageManager.getLocalFile('clip_$i.wav');
+
+        // Check local disk for both clip_001.wav and clip_1.wav
+        final localFile = await LocalStorageManager.getLocalFile('clip_${i.toString().padLeft(3, '0')}.wav');
         final isLocal = localFile != null && localFile.existsSync();
 
         if (existing == null) {
-          final used = telem.usedStorageBytes ?? 0;
-          final estimatedBytes = (used > 0 && totalClipsOnDevice > 0)
-              ? (used / totalClipsOnDevice).round().clamp(8000, 3000000)
-              : 64000;
-          final durSec = (estimatedBytes > 60) ? ((estimatedBytes - 60) / 8000.0) : 8.0;
-
           _clipsMap[i] = RecordingItem(
             id: i,
             remoteFilename: 'clip_${i.toString().padLeft(3, '0')}.wav',
@@ -259,12 +263,27 @@ class RecordingSyncManager extends ChangeNotifier {
             crcVerified: true,
           );
           listChanged = true;
+        } else if (!isLocal && existing.syncState == SyncState.synced && existing.localWavPath != null) {
+          final f = File(existing.localWavPath!);
+          if (!f.existsSync()) {
+            _clipsMap[i] = existing.copyWith(
+              syncState: SyncState.onDevice,
+              downloadProgress: 0.0,
+              localWavPath: null,
+              crcVerified: false,
+            );
+            listChanged = true;
+          }
         }
       }
 
       if (listChanged) {
         notifyListeners();
       }
+    } catch (e) {
+      debugPrint('[RecordingSyncManager] Error reconciling clips with telemetry: $e');
+    } finally {
+      _isReconciling = false;
     }
   }
 
@@ -312,14 +331,23 @@ class RecordingSyncManager extends ChangeNotifier {
     }
   }
 
-  /// Refreshes clip inventory from local storage and real-time BLE telemetry.
+  /// Refreshes clip inventory from local storage and real-time BLE telemetry directly from MCU.
   Future<void> fetchDeviceClips({bool showError = false}) async {
     if (showError) {
       _errorMessage = null;
       notifyListeners();
     }
+
+    // 1. Actively query BLE telemetry from MCU if connected
+    if (bleService != null && bleService!.isConnected) {
+      await bleService!.readTelemetry();
+    }
+
+    // 2. Reload local WAV recordings from disk
     await loadSavedLocalRecordings();
-    _onBleUpdate();
+
+    // 3. Unconditionally reconcile clips inventory with device telemetry
+    await _syncClipsWithTelemetry(force: true);
   }
 
   /// 2-Stage Wi-Fi Fast Transfer Pipeline (Phone Hotspot & MCU Upload Model)

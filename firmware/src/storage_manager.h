@@ -23,15 +23,18 @@ public:
     bool deleteClip(uint16_t id);
     bool clearAll();
 
-    size_t getClipCount();
+    size_t getClipCount() const { return _clipCount; }
     uint16_t getNextClipId() const { return _nextClipId; }
     void refresh() { scanExistingClips(); }
-    size_t getUsedBytes();
-    size_t getTotalBytes();
+    size_t getUsedBytes() const { return _usedBytes; }
+    size_t getTotalBytes() const { return _totalBytes; }
 
 private:
     bool _initialized;
     uint16_t _nextClipId;
+    size_t _clipCount;
+    size_t _usedBytes;
+    size_t _totalBytes;
 
     void scanExistingClips();
     void writeWavHeader(File& file, size_t pcmBytes, uint32_t sampleRate);

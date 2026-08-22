@@ -1,7 +1,7 @@
 #include "storage_manager.h"
 
 StorageManager::StorageManager()
-    : _initialized(false), _nextClipId(1) {}
+    : _initialized(false), _nextClipId(1), _clipCount(0), _usedBytes(0), _totalBytes(0) {}
 
 bool StorageManager::begin(bool formatOnFail) {
     if (!LittleFS.begin(formatOnFail)) {
@@ -10,6 +10,7 @@ bool StorageManager::begin(bool formatOnFail) {
     }
 
     _initialized = true;
+    _totalBytes = LittleFS.totalBytes();
     scanExistingClips();
 
     Serial.printf("[STORAGE] LittleFS mounted. Total: %u KB, Used: %u KB, Clips: %u\n",
@@ -28,6 +29,9 @@ static int extractClipIdFromFilename(const String& rawName) {
 
 void StorageManager::scanExistingClips() {
     _nextClipId = 1;
+    _clipCount = 0;
+    if (!_initialized) return;
+
     File root = LittleFS.open("/");
     if (!root || !root.isDirectory()) return;
 
@@ -35,6 +39,7 @@ void StorageManager::scanExistingClips() {
     while (file) {
         String name = file.name();
         if (name.indexOf("clip_") != -1 && name.endsWith(".wav")) {
+            _clipCount++;
             int id = extractClipIdFromFilename(name);
             if (id >= _nextClipId) {
                 _nextClipId = id + 1;
@@ -42,6 +47,8 @@ void StorageManager::scanExistingClips() {
         }
         file = root.openNextFile();
     }
+    _usedBytes = LittleFS.usedBytes();
+    _totalBytes = LittleFS.totalBytes();
 }
 
 std::vector<ClipInfo> StorageManager::listClips() {
@@ -112,14 +119,19 @@ bool StorageManager::deleteClip(uint16_t id) {
     char filename[32];
     snprintf(filename, sizeof(filename), "/clip_%03u.wav", id);
     if (LittleFS.exists(filename)) {
-        return LittleFS.remove(filename);
+        bool ok = LittleFS.remove(filename);
+        if (ok) scanExistingClips();
+        return ok;
     }
 
     snprintf(filename, sizeof(filename), "/clip_%u.wav", id);
     if (LittleFS.exists(filename)) {
-        return LittleFS.remove(filename);
+        bool ok = LittleFS.remove(filename);
+        if (ok) scanExistingClips();
+        return ok;
     }
 
+    bool removed = false;
     // Fallback scan in root directory
     File root = LittleFS.open("/");
     if (root && root.isDirectory()) {
@@ -128,13 +140,17 @@ bool StorageManager::deleteClip(uint16_t id) {
             String name = file.name();
             if (name.endsWith(".wav") && extractClipIdFromFilename(name) == (int)id) {
                 String fullPath = name.startsWith("/") ? name : ("/" + name);
-                return LittleFS.remove(fullPath);
+                removed = LittleFS.remove(fullPath);
+                break;
             }
             file = root.openNextFile();
         }
     }
 
-    return false;
+    if (removed) {
+        scanExistingClips();
+    }
+    return removed;
 }
 
 bool StorageManager::clearAll() {
@@ -159,20 +175,8 @@ bool StorageManager::clearAll() {
     }
 
     _nextClipId = 1;
+    _clipCount = 0;
+    _usedBytes = LittleFS.usedBytes();
     Serial.println(F("[STORAGE] Cleared all audio clips from Flash."));
     return true;
-}
-
-size_t StorageManager::getClipCount() {
-    return listClips().size();
-}
-
-size_t StorageManager::getUsedBytes() {
-    if (!_initialized) return 0;
-    return LittleFS.usedBytes();
-}
-
-size_t StorageManager::getTotalBytes() {
-    if (!_initialized) return 0;
-    return LittleFS.totalBytes();
 }

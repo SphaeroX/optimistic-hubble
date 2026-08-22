@@ -309,6 +309,34 @@ class BleService extends ChangeNotifier {
     }
   }
 
+  /// Reads the current State/Telemetry characteristic directly from the connected Xiao MCU over BLE GATT.
+  Future<bool> readTelemetry() async {
+    if (_isMockMode) {
+      notifyListeners();
+      return true;
+    }
+    if (!isConnected || _connectedDevice == null) {
+      return false;
+    }
+
+    try {
+      _log('GATT', 'Reading State/Telemetry Characteristic from ${_connectedDevice!.id}...');
+      final val = await UniversalBle.read(
+        _connectedDevice!.id,
+        AppConstants.bleServiceUuid,
+        AppConstants.bleCharStateUuid,
+      );
+      if (val.isNotEmpty) {
+        _parseStatePayload(val);
+        _log('GATT', 'Telemetry refreshed: ${_telemetry.state.label}, ${_telemetry.totalClips} clip(s) on device');
+        return true;
+      }
+    } catch (e) {
+      _log('GATT', 'Failed to read telemetry characteristic: $e', isError: true);
+    }
+    return false;
+  }
+
   Future<void> _readInitialState(String deviceId) async {
     try {
       _log('GATT', 'Reading initial State Characteristic...');

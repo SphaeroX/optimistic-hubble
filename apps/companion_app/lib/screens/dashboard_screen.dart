@@ -84,6 +84,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
         targetClipId: targetClipId,
       ),
     );
+  bool _isRefreshingInventory = false;
+
+  Future<void> _handleRefreshInventory() async {
+    if (_isRefreshingInventory) return;
+    setState(() => _isRefreshingInventory = true);
+    try {
+      await widget.syncManager.fetchDeviceClips(showError: true);
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 2),
+            content: Text(
+              'Aufnahmen aktualisiert: ${widget.syncManager.clips.length} Clip(s) gefunden',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isRefreshingInventory = false);
+      }
+    }
   }
 
   @override

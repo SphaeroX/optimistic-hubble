@@ -20,12 +20,13 @@ optimistic-hubble/
 │   ├── platformio.ini           # Board definitions, partition tables & compiler flags
 │   └── xiao_esp32c3_hw_test.ino # Hardware test & validation sketch
 ├── research/                    # IoT transfer studies, BLE/Wi-Fi benchmarks & protocol docs
-├── build.bat                    # Compiles ESP32-C3 firmware
-├── flash_and_monitor.bat        # Builds, flashes and monitors XIAO ESP32-C3
-├── erase_flash.bat              # Completely wipes ESP32 Flash memory and resets LittleFS
-├── monitor.bat                  # Starts serial monitor (115200 baud)
-├── run_flutter_windows.bat      # Launches Flutter companion app on Windows desktop
-└── start_app.bat                # Starts legacy web prototype
+├── flash_mcu.bat               # Builds, flashes and monitors XIAO ESP32-C3
+├── build_apk.bat               # Builds Flutter Android Release APK
+├── flash_and_build_apk.bat     # Flashes ESP32-C3 firmware and builds Android APK
+├── erase_flash.bat             # Completely wipes ESP32 Flash memory and resets LittleFS
+├── monitor.bat                 # Starts serial monitor (115200 baud)
+├── run_flutter_windows.bat     # Launches Flutter companion app on Windows desktop
+└── start_app.bat               # Starts legacy web prototype
 ```
 
 ---
@@ -51,10 +52,11 @@ optimistic-hubble/
   flutter run -d ios
   ```
 
-### 2. Building, Flashing & Resetting Firmware
-* **Build Firmware:** Double-click `build.bat` or run `cd firmware; pio run`
-* **Flash & Monitor:** Double-click `flash_and_monitor.bat` or run `cd firmware; pio run -t upload; pio device monitor`
-* **Full Flash Erase & Reset:** Double-click `erase_flash.bat` or run `cd firmware; pio run -t erase`
+### 2. Building, Flashing & Packaging
+* **Flash MCU & Build Android APK (All-in-One):** Double-click `flash_and_build_apk.bat`
+* **Build Android APK Only:** Double-click `build_apk.bat`
+* **Flash MCU & Monitor:** Double-click `flash_mcu.bat`
+* **Full Flash Erase & Reset:** Double-click `erase_flash.bat`
 
 ---
 

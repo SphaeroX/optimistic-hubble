@@ -39,6 +39,36 @@ void printBanner() {
     Serial.println(F("========================================================"));
 }
 
+void pushTelemetryUpdate(DeviceState state, uint32_t audioBytes = 0) {
+    if (!ble.isConnected()) return;
+
+    ImuMetricData imuMetrics{};
+    bool hasImu = imu.readSensorData(imuMetrics);
+    float mag = hasImu 
+        ? sqrtf(imuMetrics.accelX_g * imuMetrics.accelX_g + 
+                imuMetrics.accelY_g * imuMetrics.accelY_g + 
+                imuMetrics.accelZ_g * imuMetrics.accelZ_g)
+        : 1.0f;
+
+    ble.sendTelemetry(
+        state,
+        audioBytes,
+        AUDIO_SAMPLE_RATE,
+        4180, // 4.18V nominal
+        98,   // 98%
+        true, // USB Powered
+        ESP.getFreeHeap(),
+        storage.getUsedBytes(),
+        storage.getTotalBytes(),
+        storage.getClipCount(),
+        (int16_t)(imuMetrics.accelX_g * 1000.0f),
+        (int16_t)(imuMetrics.accelY_g * 1000.0f),
+        (int16_t)(imuMetrics.accelZ_g * 1000.0f),
+        (uint16_t)(mag * 1000.0f),
+        totalTapEvents
+    );
+}
+
 void startActiveRecording() {
     power.notifyActivity();
 
@@ -53,7 +83,7 @@ void startActiveRecording() {
     // 3. Start Recording Clip
     uint16_t nextId = storage.getNextClipId();
     recorder.startRecording(nextId);
-    ble.updateState(STATE_RECORDING);
+    pushTelemetryUpdate(STATE_RECORDING, 0);
 
     Serial.printf("\n[RECORD START] Clip #%u recording started!\n", nextId);
 }
@@ -71,7 +101,7 @@ void handleStopAndSave() {
     Serial.printf("\n[RECORD STOP] Clip #%u saved! Total in Flash: %u (Free: %u KB)\n", 
                   clipId, totalClips, (storage.getTotalBytes() - storage.getUsedBytes()) / 1024);
 
-    ble.updateState(STATE_DONE, clipId, totalClips);
+    pushTelemetryUpdate(STATE_DONE, 0);
     power.notifyActivity();
 }
 
@@ -332,24 +362,7 @@ void loop() {
         if (ble.isConnected()) {
             DeviceState curState = recorder.isRecording() ? STATE_RECORDING : 
                                    (wifiServer.isActive() ? STATE_WIFI_ACTIVE : STATE_IDLE);
-
-            ble.sendTelemetry(
-                curState,
-                recorder.isRecording() ? recorder.getRecordedBytes() : 0,
-                AUDIO_SAMPLE_RATE,
-                4180, // 4.18V USB-C / LiPo nominal
-                98,   // 98%
-                true, // USB Powered
-                ESP.getFreeHeap(),
-                storage.getUsedBytes(),
-                storage.getTotalBytes(),
-                storage.getClipCount(),
-                (int16_t)(imuMetrics.accelX_g * 1000.0f),
-                (int16_t)(imuMetrics.accelY_g * 1000.0f),
-                (int16_t)(imuMetrics.accelZ_g * 1000.0f),
-                (uint16_t)(mag * 1000.0f),
-                totalTapEvents
-            );
+            pushTelemetryUpdate(curState, recorder.isRecording() ? recorder.getRecordedBytes() : 0);
         }
     }
 }

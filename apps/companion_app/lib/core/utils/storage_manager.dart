@@ -50,10 +50,8 @@ class LocalStorageManager {
 
   /// Checks if a file exists locally.
   static Future<bool> hasLocalFile(String filename) async {
-    final dir = await getRecordingsDirectory();
-    final String cleanName = filename.endsWith('.wav') ? filename : '$filename.wav';
-    final file = File(p.join(dir.path, cleanName));
-    return file.existsSync();
+    final file = await getLocalFile(filename);
+    return file != null && file.existsSync();
   }
 
   /// Gets the local File if it exists.
@@ -61,7 +59,23 @@ class LocalStorageManager {
     final dir = await getRecordingsDirectory();
     final String cleanName = filename.endsWith('.wav') ? filename : '$filename.wav';
     final file = File(p.join(dir.path, cleanName));
-    return file.existsSync() ? file : null;
+    if (file.existsSync()) return file;
+
+    // Fallback: Check padded / unpadded variants (e.g. clip_1.wav vs clip_001.wav)
+    final match = RegExp(r'clip_(\d+)\.wav').firstMatch(cleanName);
+    if (match != null) {
+      final numVal = int.tryParse(match.group(1)!);
+      if (numVal != null) {
+        final paddedName = 'clip_${numVal.toString().padLeft(3, '0')}.wav';
+        final paddedFile = File(p.join(dir.path, paddedName));
+        if (paddedFile.existsSync()) return paddedFile;
+
+        final unpaddedName = 'clip_$numVal.wav';
+        final unpaddedFile = File(p.join(dir.path, unpaddedName));
+        if (unpaddedFile.existsSync()) return unpaddedFile;
+      }
+    }
+    return null;
   }
 
   /// Returns the target File instance in the recordings directory, regardless of whether it already exists on disk.
