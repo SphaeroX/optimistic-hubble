@@ -84,6 +84,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         targetClipId: targetClipId,
       ),
     );
+  }
+
   bool _isRefreshingInventory = false;
 
   Future<void> _handleRefreshInventory() async {
@@ -559,9 +561,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(width: 8),
             IconButton.outlined(
-              onPressed: () => widget.syncManager.fetchDeviceClips(showError: true),
-              icon: const Icon(Icons.refresh, size: 18, color: AppTheme.primaryCyan),
-              tooltip: 'Refresh Inventory',
+              onPressed: _isRefreshingInventory ? null : _handleRefreshInventory,
+              icon: _isRefreshingInventory
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppTheme.primaryCyan,
+                      ),
+                    )
+                  : const Icon(Icons.refresh, size: 18, color: AppTheme.primaryCyan),
+              tooltip: 'Aktualisieren (Clips vom Gerät abrufen)',
             ),
           ],
         ),
