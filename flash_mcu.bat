@@ -23,8 +23,8 @@ if %FLASH_ERR% NEQ 0 (
     echo   1. Check if the XIAO ESP32C3 is firmly plugged into USB.
     echo   2. Make sure no other Serial Monitor / COM tool is open.
     echo   3. If needed, enter Bootloader Mode:
-    echo      Hold the 'B' (Boot) button, press and release 'R' (Reset),
-    echo      then release 'B'.
+    echo      Hold the B [Boot] button, press and release R [Reset],
+    echo      then release B.
     echo ========================================================
     echo.
     pause

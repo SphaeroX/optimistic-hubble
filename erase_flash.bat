@@ -1,9 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
-title Xiao ESP32-C3 - Full Flash Erase & Reset Tool
+title Xiao ESP32-C3 - Full Flash Erase and Reset Tool
 
 echo ======================================================================
-echo   Seeed Studio XIAO ESP32C3 - Full Flash Erase & Storage Reset Tool
+echo   Seeed Studio XIAO ESP32C3 - Full Flash Erase and Storage Reset Tool
 echo ======================================================================
 echo.
 echo [WARNING] This tool will completely wipe the entire Flash memory
@@ -41,8 +41,8 @@ if %ERASE_ERR% NEQ 0 (
     echo   1. Check if the XIAO ESP32C3 is firmly plugged into USB.
     echo   2. Make sure no other Serial Monitor / COM tool is open.
     echo   3. If needed, enter Bootloader Mode:
-    echo      Hold the 'B' (Boot) button, press and release 'R' (Reset),
-    echo      then release 'B'.
+    echo      Hold the B [Boot] button, press and release R [Reset],
+    echo      then release B.
     echo ======================================================================
     echo.
     pause

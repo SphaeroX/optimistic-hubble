@@ -1,9 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
-title Xiao ESP32-C3 - Flash Firmware & Build Android APK
+title Xiao ESP32-C3 - Flash Firmware and Build Android APK
 
 echo ======================================================================
-echo   Seeed Studio XIAO ESP32C3 - All-in-One Flash & Android APK Builder
+echo   Seeed Studio XIAO ESP32C3 - All-in-One Flash and Android APK Builder
 echo ======================================================================
 echo.
 
@@ -12,14 +12,14 @@ set "FIRMWARE_DIR=%SCRIPT_DIR%firmware"
 set "APP_DIR=%SCRIPT_DIR%apps\companion_app"
 set "OUTPUT_DIR=%SCRIPT_DIR%output\main"
 
-:: -------------------------------------------------------------------------
-:: [Phase 1/3] Pre-flight Tool Checks
-:: -------------------------------------------------------------------------
-echo [1/3] Checking prerequisites (PlatformIO & Flutter SDK)...
+REM -------------------------------------------------------------------------
+REM [Phase 1/3] Pre-flight Tool Checks
+REM -------------------------------------------------------------------------
+echo [1/3] Checking prerequisites: PlatformIO and Flutter SDK...
 
 where pio >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
-    echo [WARNING] PlatformIO CLI ('pio') not found in system PATH.
+    echo [WARNING] PlatformIO CLI was not found in system PATH.
     echo Attempting build via PlatformIO if available in standard locations...
 )
 
@@ -35,11 +35,11 @@ if %ERRORLEVEL% NEQ 0 (
 echo       - Prerequisites verified.
 echo.
 
-:: -------------------------------------------------------------------------
-:: [Phase 2/3] Build & Flash ESP32-C3 Firmware
-:: -------------------------------------------------------------------------
+REM -------------------------------------------------------------------------
+REM [Phase 2/3] Build and Flash ESP32-C3 Firmware
+REM -------------------------------------------------------------------------
 echo ======================================================================
-echo [2/3] Building & Flashing Firmware to XIAO ESP32C3...
+echo [2/3] Building and Flashing Firmware to XIAO ESP32C3...
 echo ======================================================================
 echo.
 
@@ -51,14 +51,14 @@ popd
 if %FLASH_ERR% NEQ 0 (
     echo.
     echo ======================================================================
-    echo   [ERROR] Firmware Flashing Failed! (Exit Code: %FLASH_ERR%)
+    echo   [ERROR] Firmware Flashing Failed!
     echo ======================================================================
     echo   Troubleshooting Tips:
     echo   1. Ensure the XIAO ESP32C3 is firmly plugged into USB.
     echo   2. Close any open Serial Monitor or COM port connections.
     echo   3. Put device into Bootloader Mode:
-    echo      Hold the 'B' (Boot) button, press and release 'R' (Reset),
-    echo      then release 'B'.
+    echo      Hold the B [Boot] button, press and release R [Reset],
+    echo      then release B.
     echo ======================================================================
     echo.
     pause
@@ -69,11 +69,11 @@ echo.
 echo   [OK] Firmware successfully compiled and flashed to XIAO ESP32C3!
 echo.
 
-:: -------------------------------------------------------------------------
-:: [Phase 3/3] Build Flutter Android APK (Release mode)
-:: -------------------------------------------------------------------------
+REM -------------------------------------------------------------------------
+REM [Phase 3/3] Build Flutter Android APK Release mode
+REM -------------------------------------------------------------------------
 echo ======================================================================
-echo [3/3] Building Android Companion App APK (Release mode)...
+echo [3/3] Building Android Companion App APK Release mode...
 echo ======================================================================
 echo.
 
@@ -92,7 +92,7 @@ if %BUILD_STATUS% NEQ 0 (
     exit /b %BUILD_STATUS%
 )
 
-:: Ensure output directory exists and copy release APK
+REM Ensure output directory exists and copy release APK
 if not exist "%OUTPUT_DIR%" (
     mkdir "%OUTPUT_DIR%"
 )
@@ -108,9 +108,9 @@ if exist "%SOURCE_APK%" (
     echo [WARNING] Source APK was not found at: %SOURCE_APK%
 )
 
-:: -------------------------------------------------------------------------
-:: Final Summary & Next Steps
-:: -------------------------------------------------------------------------
+REM -------------------------------------------------------------------------
+REM Final Summary and Next Steps
+REM -------------------------------------------------------------------------
 echo.
 echo ======================================================================
 echo   [SUCCESS] All tasks completed successfully!
@@ -126,10 +126,10 @@ echo.
 echo Installation Options:
 echo   - Direct ADB install:
 echo       adb install -r "%DEST_APK%"
-echo   - Or copy 'xiao-companion-app.apk' to your phone via USB/Cloud.
+echo   - Or copy xiao-companion-app.apk to your phone via USB or Cloud.
 echo.
 
-:: Check ADB device availability
+REM Check ADB device availability
 where adb >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo Checking for connected Android devices via ADB:
@@ -137,7 +137,7 @@ if %ERRORLEVEL% EQU 0 (
     echo.
 )
 
-:: Open output folder in Windows Explorer
+REM Open output folder in Windows Explorer
 if exist "%OUTPUT_DIR%" (
     explorer "%OUTPUT_DIR%"
 )
