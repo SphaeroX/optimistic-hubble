@@ -69,7 +69,8 @@ enum BleCommand {
   stopRecording(5),
   clearStorage(6),
   startL2capStream(7),
-  connectHotspot(8);
+  connectHotspot(8),
+  deleteClip(9);
 
   final int rawValue;
   const BleCommand(this.rawValue);

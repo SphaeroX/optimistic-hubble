@@ -605,6 +605,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         else
           ...clips.map((clip) => ClipCard(
                 clip: clip,
+                isConnectedToMcu: isConnected,
                 onPlayToggle: () => widget.syncManager.togglePlayback(clip),
                 onDownload: () {
                   if (clip.isFastTransferRecommended) {
@@ -613,6 +614,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     widget.syncManager.downloadClip(clip.id);
                   }
                 },
+                onDeleteLocal: () => widget.syncManager.deleteClipLocally(clip.id),
+                onDeleteRemote: () => widget.syncManager.deleteClipOnDevice(clip.id),
+                onDeleteEverywhere: () => widget.syncManager.deleteClipEverywhere(clip.id),
               )),
       ],
     );

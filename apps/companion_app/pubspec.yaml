@@ -41,6 +41,8 @@ dependencies:
   path_provider: ^2.1.6
   path: ^1.9.1
   ffi: ^2.2.0
+  audioplayers: ^6.8.1
+  open_file: ^4.0.0
 
 dev_dependencies:
   flutter_test:

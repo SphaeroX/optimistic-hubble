@@ -235,6 +235,20 @@ void loop() {
                 break;
             }
 
+            case CMD_DELETE_CLIP:
+            {
+                uint16_t clipId = ble.getCommandClipId();
+                Serial.printf("\n[BLE CMD] Delete Clip #%u requested from Flash...\n", clipId);
+                bool ok = storage.deleteClip(clipId);
+                storage.refresh();
+                Serial.printf("[BLE CMD] Delete Clip #%u %s. Remaining clips in Flash: %u (Free: %u KB)\n",
+                              clipId, ok ? "SUCCESSFUL" : "NOT FOUND",
+                              storage.getClipCount(),
+                              (storage.getTotalBytes() - storage.getUsedBytes()) / 1024);
+                ble.updateState(STATE_IDLE);
+                break;
+            }
+
             default:
                 break;
         }

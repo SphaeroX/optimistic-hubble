@@ -200,9 +200,31 @@ class RecordingSyncManager extends ChangeNotifier {
     final telem = bleService!.telemetry;
     final totalClipsOnDevice = telem.totalClips;
 
+    if (totalClipsOnDevice == 0 && _lastKnownClipCount > 0) {
+      _lastKnownClipCount = 0;
+      // Remove any unsynced "on device only" clips
+      _clipsMap.removeWhere((id, clip) => clip.syncState != SyncState.synced || clip.localWavPath == null);
+      notifyListeners();
+      return;
+    }
+
     if (totalClipsOnDevice != _lastKnownClipCount || (_clipsMap.isEmpty && totalClipsOnDevice > 0)) {
       _lastKnownClipCount = totalClipsOnDevice;
       bool listChanged = false;
+
+      // Clean up orphaned onDevice-only clips if clip count reduced
+      if (totalClipsOnDevice < _clipsMap.values.where((c) => c.syncState == SyncState.onDevice).length) {
+        final onDeviceKeys = _clipsMap.entries
+            .where((e) => e.value.syncState == SyncState.onDevice)
+            .map((e) => e.key)
+            .toList();
+        for (final key in onDeviceKeys) {
+          if (key > totalClipsOnDevice) {
+            _clipsMap.remove(key);
+            listChanged = true;
+          }
+        }
+      }
 
       for (int i = 1; i <= totalClipsOnDevice; i++) {
         final existing = _clipsMap[i];
@@ -613,6 +635,83 @@ class RecordingSyncManager extends ChangeNotifier {
     if (updated?.localWavPath != null) {
       await audioPlayer.playFile(updated!.localWavPath!, duration: updated.duration);
     }
+  }
+
+  /// Deletes the local downloaded WAV file for a clip.
+  Future<bool> deleteClipLocally(int clipId) async {
+    final clip = _clipsMap[clipId];
+    if (clip == null) return false;
+
+    if (clip.isPlaying || audioPlayer.currentFilePath == clip.localWavPath) {
+      audioPlayer.stop();
+    }
+
+    if (clip.localWavPath != null) {
+      await LocalStorageManager.deleteLocalFileByPath(clip.localWavPath!);
+    } else {
+      await LocalStorageManager.deleteLocalFile('clip_$clipId.wav');
+      await LocalStorageManager.deleteLocalFile('clip_${clipId.toString().padLeft(3, '0')}.wav');
+    }
+
+    final isConnected = bleService?.isConnected == true;
+    final totalOnDevice = bleService?.telemetry.totalClips ?? 0;
+
+    if (isConnected && clipId <= totalOnDevice) {
+      _clipsMap[clipId] = clip.copyWith(
+        syncState: SyncState.onDevice,
+        downloadProgress: 0.0,
+        localWavPath: null,
+        transferSpeed: null,
+        isPlaying: false,
+      );
+    } else {
+      _clipsMap.remove(clipId);
+    }
+
+    notifyListeners();
+    return true;
+  }
+
+  /// Deletes a clip remotely from the ESP32 LittleFS Flash over BLE.
+  Future<bool> deleteClipOnDevice(int clipId) async {
+    if (bleService?.isConnected == true) {
+      await bleService!.sendCommand(BleCommand.deleteClip, clipId: clipId);
+    }
+
+    final clip = _clipsMap[clipId];
+    if (clip != null) {
+      if (clip.syncState == SyncState.synced && clip.localWavPath != null) {
+        // Kept as local synced
+      } else {
+        _clipsMap.remove(clipId);
+      }
+    }
+
+    notifyListeners();
+    return true;
+  }
+
+  /// Deletes a clip both locally from disk and remotely from ESP32 Flash.
+  Future<bool> deleteClipEverywhere(int clipId) async {
+    final clip = _clipsMap[clipId];
+    if (clip?.isPlaying == true || audioPlayer.currentFilePath == clip?.localWavPath) {
+      audioPlayer.stop();
+    }
+
+    if (clip?.localWavPath != null) {
+      await LocalStorageManager.deleteLocalFileByPath(clip!.localWavPath!);
+    } else {
+      await LocalStorageManager.deleteLocalFile('clip_$clipId.wav');
+      await LocalStorageManager.deleteLocalFile('clip_${clipId.toString().padLeft(3, '0')}.wav');
+    }
+
+    if (bleService?.isConnected == true) {
+      await bleService!.sendCommand(BleCommand.deleteClip, clipId: clipId);
+    }
+
+    _clipsMap.remove(clipId);
+    notifyListeners();
+    return true;
   }
 
   /// Clears recordings from the ESP32 storage and local cache.

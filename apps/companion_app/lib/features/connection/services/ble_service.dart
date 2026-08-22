@@ -774,6 +774,12 @@ class BleService extends ChangeNotifier {
         _statusMessage = 'ESP32 connected to Phone Hotspot (Uploading clips)';
         _log('MOCK', 'State -> TRANSFERRING (ESP32 Upload via Phone Hotspot)');
         break;
+      case BleCommand.deleteClip:
+        final newCount = (_telemetry.totalClips > 0) ? _telemetry.totalClips - 1 : 0;
+        _telemetry = _telemetry.copyWith(totalClips: newCount);
+        _statusMessage = 'Clip deleted from storage';
+        _log('MOCK', 'Clip deleted from storage (Remaining: $newCount)');
+        break;
       case BleCommand.none:
         break;
     }

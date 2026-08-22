@@ -229,5 +229,10 @@ void main() {
       expect(synced.localWavPath, '/recordings/clip_42.wav');
       expect(synced.crcVerified, isTrue);
     });
+
+    test('BleCommand enum contains deleteClip with rawValue 9', () {
+      expect(BleCommand.deleteClip.rawValue, 9);
+      expect(BleCommand.values.contains(BleCommand.deleteClip), isTrue);
+    });
   });
 }

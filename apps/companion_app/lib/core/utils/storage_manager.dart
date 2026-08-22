@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -70,6 +71,35 @@ class LocalStorageManager {
     return File(p.join(dir.path, cleanName));
   }
 
+  /// Deletes a local WAV file from disk if it exists.
+  static Future<bool> deleteLocalFile(String filename) async {
+    final file = await getLocalFile(filename);
+    if (file != null && file.existsSync()) {
+      try {
+        await file.delete();
+        return true;
+      } catch (e) {
+        debugPrint('[LocalStorageManager] Error deleting $filename: $e');
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /// Deletes a local file by its absolute path.
+  static Future<bool> deleteLocalFileByPath(String filePath) async {
+    try {
+      final file = File(filePath);
+      if (file.existsSync()) {
+        await file.delete();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('[LocalStorageManager] Error deleting file at $filePath: $e');
+    }
+    return false;
+  }
+
   /// Lists all local saved WAV recording files.
   static Future<List<File>> listSavedWavFiles() async {
     final dir = await getRecordingsDirectory();
@@ -82,12 +112,26 @@ class LocalStorageManager {
   /// Opens the recordings folder in Windows Explorer or system file manager.
   static Future<void> openInFileManager() async {
     final dir = await getRecordingsDirectory();
-    if (Platform.isWindows) {
-      await Process.run('explorer.exe', [dir.path]);
-    } else if (Platform.isMacOS) {
-      await Process.run('open', [dir.path]);
-    } else if (Platform.isLinux) {
-      await Process.run('xdg-open', [dir.path]);
+    try {
+      if (Platform.isWindows) {
+        final winPath = p.normalize(dir.path).replaceAll('/', '\\');
+        await Process.run('explorer.exe', [winPath]);
+      } else if (Platform.isMacOS) {
+        await Process.run('open', [dir.path]);
+      } else if (Platform.isLinux) {
+        await Process.run('xdg-open', [dir.path]);
+      } else {
+        await OpenFile.open(dir.path);
+      }
+    } catch (e) {
+      debugPrint('[LocalStorageManager] Fallback opening directory with OpenFile: $e');
+      await OpenFile.open(dir.path);
     }
   }
+
+  /// Opens a specific file with system default application.
+  static Future<void> openFile(String filePath) async {
+    await OpenFile.open(filePath);
+  }
 }
+

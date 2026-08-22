@@ -95,6 +95,7 @@ enum BleCommand : uint8_t
     CMD_STOP_RECORDING = 5,
     CMD_CLEAR_STORAGE = 6,
     CMD_START_L2CAP_STREAM = 7,
-    CMD_CONNECT_HOTSPOT = 8
+    CMD_CONNECT_HOTSPOT = 8,
+    CMD_DELETE_CLIP = 9
 };
 

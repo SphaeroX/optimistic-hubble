@@ -9,15 +9,104 @@ class ClipCard extends StatelessWidget {
   final RecordingItem clip;
   final VoidCallback onPlayToggle;
   final VoidCallback onDownload;
+  final VoidCallback? onDeleteLocal;
+  final VoidCallback? onDeleteRemote;
+  final VoidCallback? onDeleteEverywhere;
   final Function(SyncTier tier)? onDownloadWithTier;
+  final bool isConnectedToMcu;
 
   const ClipCard({
     super.key,
     required this.clip,
     required this.onPlayToggle,
     required this.onDownload,
+    this.onDeleteLocal,
+    this.onDeleteRemote,
+    this.onDeleteEverywhere,
     this.onDownloadWithTier,
+    this.isConnectedToMcu = false,
   });
+
+  void _showDeleteDialog(BuildContext context) {
+    final isSynced = clip.syncState == SyncState.synced && clip.localWavPath != null;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131B2A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.accentRed.withAlpha(40),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.delete_outline, color: AppTheme.accentRed, size: 22),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Aufnahme #${clip.id} löschen',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Wie möchtest du Clip #${clip.id} (${clip.remoteFilename}) löschen?',
+              style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+            ),
+            const SizedBox(height: 16),
+            if (isSynced && onDeleteLocal != null)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.phone_android, color: AppTheme.primaryCyan),
+                title: const Text('Nur lokal löschen', style: TextStyle(fontSize: 14, color: Colors.white)),
+                subtitle: const Text('WAV-Datei vom Smartphone/PC entfernen', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onDeleteLocal?.call();
+                },
+              ),
+            if (onDeleteRemote != null && isConnectedToMcu)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.memory, color: AppTheme.accentOrange),
+                title: const Text('Vom ESP32 Flash löschen', style: TextStyle(fontSize: 14, color: Colors.white)),
+                subtitle: const Text('Aus dem internen Speicher des XIAO entfernen', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onDeleteRemote?.call();
+                },
+              ),
+            if (onDeleteEverywhere != null)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.delete_forever, color: AppTheme.accentRed),
+                title: const Text('Überall löschen', style: TextStyle(fontSize: 14, color: AppTheme.accentRed, fontWeight: FontWeight.bold)),
+                subtitle: const Text('Sowohl lokal als auch vom XIAO Flash löschen', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onDeleteEverywhere?.call();
+                },
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen', style: TextStyle(color: AppTheme.textMuted)),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -89,9 +178,15 @@ class ClipCard extends StatelessWidget {
                             ),
                           ),
                           _buildStatusBadge(isSynced, isDownloading),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: AppTheme.textMuted, size: 18),
+                            visualDensity: VisualDensity.compact,
+                            tooltip: 'Clip löschen',
+                            onPressed: () => _showDeleteDialog(context),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Wrap(
                         crossAxisAlignment: WrapCrossAlignment.center,
                         spacing: 8,
@@ -106,7 +201,7 @@ class ClipCard extends StatelessWidget {
                                 Formatters.formatDuration(clip.duration),
                                 style: const TextStyle(
                                   color: AppTheme.primaryCyan,
-                                  fontWeight: FontWeight.w700,
+                                  fontWeight: FontWeight.bold,
                                   fontSize: 12,
                                 ),
                               ),
@@ -124,24 +219,25 @@ class ClipCard extends StatelessWidget {
                             ],
                           ),
                           // Tier Recommendation Badge
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: (isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan).withAlpha(30),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(
-                                color: (isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan).withAlpha(80),
+                          if (!isSynced)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: (isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan).withAlpha(30),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: (isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan).withAlpha(80),
+                                ),
+                              ),
+                              child: Text(
+                                isFastTransfer ? 'Fast Transfer (Wi-Fi)' : 'BLE Auto-Sync',
+                                style: TextStyle(
+                                  color: isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
-                            child: Text(
-                              isFastTransfer ? 'Fast Transfer (Wi-Fi)' : 'BLE Auto-Sync',
-                              style: TextStyle(
-                                color: isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     ],
@@ -193,7 +289,7 @@ class ClipCard extends StatelessWidget {
                       const Icon(Icons.verified, size: 14, color: AppTheme.accentGreen),
                       const SizedBox(width: 4),
                       Text(
-                        'CRC32 Verified PCM WAV',
+                        'PCM WAV (16 kHz)',
                         style: TextStyle(color: AppTheme.textMuted.withAlpha(200), fontSize: 11),
                       ),
                     ],
@@ -252,7 +348,7 @@ class ClipCard extends StatelessWidget {
           children: [
             Icon(Icons.check_circle, size: 12, color: AppTheme.accentGreen),
             SizedBox(width: 4),
-            Text('Synced (WAV)', style: TextStyle(fontSize: 11, color: AppTheme.accentGreen, fontWeight: FontWeight.bold)),
+            Text('Lokal (WAV)', style: TextStyle(fontSize: 11, color: AppTheme.accentGreen, fontWeight: FontWeight.bold)),
           ],
         ),
       );
@@ -263,8 +359,17 @@ class ClipCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF243248),
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF384C6C)),
       ),
-      child: const Text('Flash Only', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.memory, size: 12, color: AppTheme.accentOrange),
+          SizedBox(width: 4),
+          Text('Nur auf MCU', style: TextStyle(fontSize: 11, color: AppTheme.accentOrange, fontWeight: FontWeight.bold)),
+        ],
+      ),
     );
   }
 }
+
