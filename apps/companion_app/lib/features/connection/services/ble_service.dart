@@ -904,5 +904,13 @@ class BleService extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  @override
+  void dispose() {
+    _mockTelemetryTimer?.cancel();
+    _mockTelemetryTimer = null;
+    _audioProgressController.close();
+    super.dispose();
+  }
 }
 

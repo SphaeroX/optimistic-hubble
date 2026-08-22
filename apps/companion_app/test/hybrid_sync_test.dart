@@ -1,9 +1,15 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:companion_app/core/audio/native_audio_player.dart';
 import 'package:companion_app/core/constants/app_constants.dart';
 import 'package:companion_app/core/services/native_audio_sync_bridge.dart';
+import 'package:companion_app/features/connection/services/ble_service.dart';
 import 'package:companion_app/features/recordings/models/recording_item.dart';
+import 'package:companion_app/features/recordings/services/recording_sync_manager.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('2-Stage Plaud Note Hybrid Sync Tests', () {
     test('Clips correctly categorize into BLE Standard or WiFi Fast Transfer tier', () {
       final smallClip = RecordingItem(
@@ -234,5 +240,93 @@ void main() {
       expect(BleCommand.deleteClip.rawValue, 9);
       expect(BleCommand.values.contains(BleCommand.deleteClip), isTrue);
     });
+
+    test('RecordingSyncManager resetFastTransferState resets phase to none and clears progress/errors', () async {
+      final audioPlayer = FakeNativeAudioPlayer();
+      final bleService = BleService();
+      bleService.enableMockMode();
+      final manager = RecordingSyncManager(
+        audioPlayer: audioPlayer,
+        bleService: bleService,
+      );
+
+      // Perform a simulated fast transfer to put it into completed state
+      await manager.loadSimulatedClipsForTesting();
+      final ok = await manager.startFastTransfer();
+      expect(ok, isTrue);
+      expect(manager.fastTransferPhase, FastTransferPhase.completed);
+
+      // Reset state
+      manager.resetFastTransferState();
+      expect(manager.fastTransferPhase, FastTransferPhase.none);
+      expect(manager.errorMessage, isNull);
+      expect(manager.syncProgress, 0.0);
+      expect(manager.currentSyncFile, isEmpty);
+      expect(manager.currentSpeed, isNull);
+
+      // Verify that after reset, a new transfer can be initiated
+      final okAgain = await manager.startFastTransfer();
+      expect(okAgain, isTrue);
+      expect(manager.fastTransferPhase, FastTransferPhase.completed);
+
+      manager.dispose();
+      bleService.dispose();
+      audioPlayer.dispose();
+    });
+
+    test('RecordingSyncManager fetchDeviceClips resets fast transfer state when idle', () async {
+      final audioPlayer = FakeNativeAudioPlayer();
+      final bleService = BleService();
+      bleService.enableMockMode();
+      final manager = RecordingSyncManager(
+        audioPlayer: audioPlayer,
+        bleService: bleService,
+      );
+
+      await manager.loadSimulatedClipsForTesting();
+      await manager.startFastTransfer();
+      expect(manager.fastTransferPhase, FastTransferPhase.completed);
+
+      // Fetch clips should reset phase to none
+      await manager.fetchDeviceClips();
+      expect(manager.fastTransferPhase, FastTransferPhase.none);
+
+      manager.dispose();
+      bleService.dispose();
+      audioPlayer.dispose();
+    });
   });
 }
+
+class FakeNativeAudioPlayer extends ChangeNotifier implements NativeAudioPlayer {
+  @override
+  bool get isPlaying => false;
+
+  @override
+  String? get currentFilePath => null;
+
+  @override
+  Duration get currentPosition => Duration.zero;
+
+  @override
+  Duration get totalDuration => Duration.zero;
+
+  @override
+  double get progressFraction => 0.0;
+
+  @override
+  Future<bool> playFile(String filePath, {Duration? duration}) async => true;
+
+  @override
+  Future<void> pause() async {}
+
+  @override
+  void stop() {}
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+}
+
+

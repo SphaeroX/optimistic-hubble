@@ -74,6 +74,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _openFastTransferSheet({int? targetClipId}) {
+    if (!widget.syncManager.isSyncing) {
+      widget.syncManager.resetFastTransferState();
+    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -83,7 +86,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         syncManager: widget.syncManager,
         targetClipId: targetClipId,
       ),
-    );
+    ).whenComplete(() {
+      if (!widget.syncManager.isSyncing) {
+        widget.syncManager.resetFastTransferState();
+      }
+    });
   }
 
   bool _isRefreshingInventory = false;

@@ -342,6 +342,9 @@ class RecordingSyncManager extends ChangeNotifier {
       _errorMessage = null;
       notifyListeners();
     }
+    if (!_isSyncing) {
+      resetFastTransferState();
+    }
 
     // 1. Actively query BLE telemetry from MCU if connected
     if (bleService != null && bleService!.isConnected) {
@@ -353,6 +356,17 @@ class RecordingSyncManager extends ChangeNotifier {
 
     // 3. Unconditionally reconcile clips inventory with device telemetry
     await _syncClipsWithTelemetry(force: true);
+  }
+
+  /// Resets the Fast Transfer phase, progress, and error message back to idle / standby state.
+  void resetFastTransferState() {
+    if (_isSyncing) return;
+    _fastTransferPhase = FastTransferPhase.none;
+    _errorMessage = null;
+    _syncProgress = 0.0;
+    _currentSyncFile = '';
+    _currentSpeed = null;
+    notifyListeners();
   }
 
   /// 2-Stage Wi-Fi Fast Transfer Pipeline (Phone Hotspot & MCU Upload Model)

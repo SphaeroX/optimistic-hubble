@@ -49,3 +49,5 @@ Thumbs.db
 # Build Outputs & APKs
 output/
 *.apk
+**/recordings/
+

@@ -80,7 +80,10 @@ class FastTransferSheet extends StatelessWidget {
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, color: AppTheme.textMuted),
-                    onPressed: isSyncing ? null : () => Navigator.pop(context),
+                    onPressed: isSyncing ? null : () {
+                      syncManager.resetFastTransferState();
+                      Navigator.pop(context);
+                    },
                   ),
                 ],
               ),
@@ -188,18 +191,55 @@ class FastTransferSheet extends StatelessWidget {
               const SizedBox(height: 12),
 
               // Action Buttons
-              if (isDone)
+              if (isDone) ...[
                 ElevatedButton.icon(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.check, size: 18),
-                  label: const Text('Transfer Complete'),
+                  onPressed: () {
+                    syncManager.resetFastTransferState();
+                    Navigator.pop(context);
+                  },
+                  icon: const Icon(Icons.check_circle, size: 18),
+                  label: const Text('Transfer Complete — Close'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.accentGreen,
                     foregroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
-                )
-              else if (isSyncing)
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => syncManager.resetFastTransferState(),
+                  icon: const Icon(Icons.refresh, size: 18, color: AppTheme.primaryCyan),
+                  label: const Text('Start Another Transfer', style: TextStyle(color: AppTheme.primaryCyan)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppTheme.primaryCyan),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
+              ] else if (isError && !isSyncing) ...[
+                ElevatedButton.icon(
+                  onPressed: () => syncManager.startFastTransfer(targetClipId: targetClipId),
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Retry Fast Transfer'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.accentOrange,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    syncManager.resetFastTransferState();
+                    Navigator.pop(context);
+                  },
+                  icon: const Icon(Icons.close, size: 18, color: AppTheme.textMuted),
+                  label: const Text('Close', style: TextStyle(color: AppTheme.textMuted)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFF243248)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
+              ] else if (isSyncing)
                 OutlinedButton.icon(
                   onPressed: () => syncManager.cancelSync(),
                   icon: const Icon(Icons.stop, size: 18, color: AppTheme.accentRed),
