@@ -17,6 +17,15 @@ bool StorageManager::begin(bool formatOnFail) {
     return true;
 }
 
+static int extractClipIdFromFilename(const String& rawName) {
+    int idx = rawName.indexOf("clip_");
+    if (idx == -1) return -1;
+    int dotIdx = rawName.indexOf('.', idx);
+    if (dotIdx == -1) return -1;
+    String numStr = rawName.substring(idx + 5, dotIdx);
+    return numStr.toInt();
+}
+
 void StorageManager::scanExistingClips() {
     _nextClipId = 1;
     File root = LittleFS.open("/");
@@ -25,8 +34,8 @@ void StorageManager::scanExistingClips() {
     File file = root.openNextFile();
     while (file) {
         String name = file.name();
-        if (name.startsWith("clip_") && name.endsWith(".wav")) {
-            int id = name.substring(5, name.indexOf('.')).toInt();
+        if (name.indexOf("clip_") != -1 && name.endsWith(".wav")) {
+            int id = extractClipIdFromFilename(name);
             if (id >= _nextClipId) {
                 _nextClipId = id + 1;
             }
@@ -45,19 +54,21 @@ std::vector<ClipInfo> StorageManager::listClips() {
     File file = root.openNextFile();
     while (file) {
         String name = file.name();
-        if (name.startsWith("clip_") && name.endsWith(".wav")) {
-            ClipInfo info;
-            int id = name.substring(5, name.indexOf('.')).toInt();
-            info.id = (uint16_t)id;
-            snprintf(info.filename, sizeof(info.filename), "%s", name.c_str());
-            info.fileSize = file.size();
-            info.sampleRate = 16000;
-            
-            // 4-bit Mono IMA-ADPCM at 16 kHz = 8,000 bytes per second
-            size_t dataBytes = (info.fileSize > 60) ? (info.fileSize - 60) : ((info.fileSize > 44) ? (info.fileSize - 44) : 0);
-            info.duration = (float)dataBytes / 8000.0f;
+        if (name.indexOf("clip_") != -1 && name.endsWith(".wav")) {
+            int id = extractClipIdFromFilename(name);
+            if (id > 0) {
+                ClipInfo info;
+                info.id = (uint16_t)id;
+                snprintf(info.filename, sizeof(info.filename), "%s", name.c_str());
+                info.fileSize = file.size();
+                info.sampleRate = 16000;
+                
+                // 4-bit Mono IMA-ADPCM at 16 kHz = 8,000 bytes per second
+                size_t dataBytes = (info.fileSize > 60) ? (info.fileSize - 60) : ((info.fileSize > 44) ? (info.fileSize - 44) : 0);
+                info.duration = (float)dataBytes / 8000.0f;
 
-            clips.push_back(info);
+                clips.push_back(info);
+            }
         }
         file = root.openNextFile();
     }
@@ -69,12 +80,30 @@ File StorageManager::getClipFile(uint16_t id) {
 
     char filename[32];
     snprintf(filename, sizeof(filename), "/clip_%03u.wav", id);
-
-    if (!LittleFS.exists(filename)) {
-        return File();
+    if (LittleFS.exists(filename)) {
+        return LittleFS.open(filename, FILE_READ);
     }
 
-    return LittleFS.open(filename, FILE_READ);
+    snprintf(filename, sizeof(filename), "/clip_%u.wav", id);
+    if (LittleFS.exists(filename)) {
+        return LittleFS.open(filename, FILE_READ);
+    }
+
+    // Fallback search in root directory
+    File root = LittleFS.open("/");
+    if (root && root.isDirectory()) {
+        File file = root.openNextFile();
+        while (file) {
+            String name = file.name();
+            if (name.endsWith(".wav") && extractClipIdFromFilename(name) == (int)id) {
+                String fullPath = name.startsWith("/") ? name : ("/" + name);
+                return LittleFS.open(fullPath, FILE_READ);
+            }
+            file = root.openNextFile();
+        }
+    }
+
+    return File();
 }
 
 bool StorageManager::deleteClip(uint16_t id) {
@@ -82,10 +111,29 @@ bool StorageManager::deleteClip(uint16_t id) {
 
     char filename[32];
     snprintf(filename, sizeof(filename), "/clip_%03u.wav", id);
-
     if (LittleFS.exists(filename)) {
         return LittleFS.remove(filename);
     }
+
+    snprintf(filename, sizeof(filename), "/clip_%u.wav", id);
+    if (LittleFS.exists(filename)) {
+        return LittleFS.remove(filename);
+    }
+
+    // Fallback scan in root directory
+    File root = LittleFS.open("/");
+    if (root && root.isDirectory()) {
+        File file = root.openNextFile();
+        while (file) {
+            String name = file.name();
+            if (name.endsWith(".wav") && extractClipIdFromFilename(name) == (int)id) {
+                String fullPath = name.startsWith("/") ? name : ("/" + name);
+                return LittleFS.remove(fullPath);
+            }
+            file = root.openNextFile();
+        }
+    }
+
     return false;
 }
 
@@ -99,8 +147,9 @@ bool StorageManager::clearAll() {
     File file = root.openNextFile();
     while (file) {
         String name = file.name();
-        if (name.startsWith("clip_") && name.endsWith(".wav")) {
-            filesToDelete.push_back("/" + name);
+        if (name.endsWith(".wav") || name.indexOf("clip_") != -1) {
+            String fullPath = name.startsWith("/") ? name : ("/" + name);
+            filesToDelete.push_back(fullPath);
         }
         file = root.openNextFile();
     }

@@ -22,6 +22,7 @@ optimistic-hubble/
 ├── research/                    # IoT transfer studies, BLE/Wi-Fi benchmarks & protocol docs
 ├── build.bat                    # Compiles ESP32-C3 firmware
 ├── flash_and_monitor.bat        # Builds, flashes and monitors XIAO ESP32-C3
+├── erase_flash.bat              # Completely wipes ESP32 Flash memory and resets LittleFS
 ├── monitor.bat                  # Starts serial monitor (115200 baud)
 ├── run_flutter_windows.bat      # Launches Flutter companion app on Windows desktop
 └── start_app.bat                # Starts legacy web prototype
@@ -50,9 +51,10 @@ optimistic-hubble/
   flutter run -d ios
   ```
 
-### 2. Building and Flashing Firmware
+### 2. Building, Flashing & Resetting Firmware
 * **Build Firmware:** Double-click `build.bat` or run `cd firmware; pio run`
 * **Flash & Monitor:** Double-click `flash_and_monitor.bat` or run `cd firmware; pio run -t upload; pio device monitor`
+* **Full Flash Erase & Reset:** Double-click `erase_flash.bat` or run `cd firmware; pio run -t erase`
 
 ---
 
