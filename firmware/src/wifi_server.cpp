@@ -106,7 +106,7 @@ bool WifiServerManager::begin(const char* ssid, const char* pass, uint16_t port)
         apOk = WiFi.softAP(_ssid);
     }
 
-    WiFi.setSleep(false);
+    WiFi.setSleep(true);
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
     // Start DNS Server for Captive Portal

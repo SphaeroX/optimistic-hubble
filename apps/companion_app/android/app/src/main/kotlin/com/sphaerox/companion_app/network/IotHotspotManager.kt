@@ -169,37 +169,40 @@ class IotHotspotManager(private val context: Context) {
     }
 
     private fun getLocalIpAddress(): String {
-        var fallbackIp = "192.168.43.1"
+        var apIp: String? = null
+        var tetherIp: String? = null
+        val fallbackIp = "192.168.43.1"
+
         try {
-            val interfaces = NetworkInterface.getNetworkInterfaces()
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return fallbackIp
             while (interfaces.hasMoreElements()) {
                 val iface = interfaces.nextElement()
                 if (!iface.isUp || iface.isLoopback) continue
 
                 val name = iface.name.lowercase()
-                val isHotspotCandidate = name.contains("ap") ||
-                        name.contains("wlan") ||
-                        name.contains("swlan") ||
-                        name.contains("p2p") ||
-                        name.contains("local") ||
-                        name.contains("rndis")
-
                 val addresses = iface.inetAddresses
+
                 while (addresses.hasMoreElements()) {
                     val addr = addresses.nextElement()
                     if (!addr.isLoopbackAddress && addr is Inet4Address) {
                         val hostAddr = addr.hostAddress ?: continue
-                        if (isHotspotCandidate && (hostAddr.startsWith("192.168.") || hostAddr.startsWith("10.") || hostAddr.startsWith("172."))) {
-                            return hostAddr
+
+                        // Specific Hotspot AP / Tethering interfaces on Android (e.g. ap0, swlan0, softap0, wlan1, tether, p2p)
+                        if (name.startsWith("ap") || name.startsWith("swlan") || name.startsWith("softap") || name.contains("tether")) {
+                            apIp = hostAddr
+                        } else if (hostAddr.startsWith("192.168.43.") || hostAddr.startsWith("192.168.49.") || hostAddr.startsWith("192.168.50.")) {
+                            tetherIp = hostAddr
+                        } else if (apIp == null && tetherIp == null && (name.contains("wlan1") || name.contains("p2p"))) {
+                            tetherIp = hostAddr
                         }
-                        fallbackIp = hostAddr
                     }
                 }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Error determining local IP address: ${e.message}")
         }
-        return fallbackIp
+
+        return apIp ?: tetherIp ?: fallbackIp
     }
 
     companion object {

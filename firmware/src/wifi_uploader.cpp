@@ -15,7 +15,7 @@ bool WifiUploader::connectToHotspot(const char* ssid, const char* pass, uint32_t
     WiFi.disconnect(true);
     delay(50);
     WiFi.mode(WIFI_STA);
-    WiFi.setSleep(false);
+    WiFi.setSleep(true); // Mandatory for ESP32 Wi-Fi + BLE Coexistence
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
     if (pass != nullptr && strlen(pass) > 0) {
@@ -148,18 +148,27 @@ void WifiUploader::sendCompleteSignal(const char* host, uint16_t port) {
 bool WifiUploader::uploadClips(const HotspotUploadConfig& config) {
     _aborted = false;
 
-    const char* targetHost = config.serverIp;
-    if (strlen(targetHost) == 0) {
-        targetHost = "192.168.43.1"; // Standard Android Hotspot Gateway
-    }
-    uint16_t targetPort = (config.serverPort > 0) ? config.serverPort : 8080;
-
     bool connected = connectToHotspot(config.ssid, config.pass, 15000);
     if (!connected) {
         WiFi.disconnect(true);
         WiFi.mode(WIFI_OFF);
         return false;
     }
+
+    // Resolve target server IP: Phone hotspot gateway is the primary target
+    String serverHostStr;
+    IPAddress gateway = WiFi.gatewayIP();
+    if (gateway != INADDR_NONE && gateway != IPAddress(0, 0, 0, 0)) {
+        serverHostStr = gateway.toString();
+        Serial.printf("[WIFI UPLOADER] Using Phone Hotspot Gateway as target: %s\n", serverHostStr.c_str());
+    } else if (strlen(config.serverIp) > 0) {
+        serverHostStr = config.serverIp;
+    } else {
+        serverHostStr = "192.168.43.1";
+    }
+
+    const char* targetHost = serverHostStr.c_str();
+    uint16_t targetPort = (config.serverPort > 0) ? config.serverPort : 8080;
 
     std::vector<ClipInfo> allClips = _storage.listClips();
     std::vector<ClipInfo> targetClips;
