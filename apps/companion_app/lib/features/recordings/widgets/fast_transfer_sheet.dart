@@ -92,8 +92,8 @@ class FastTransferSheet extends StatelessWidget {
               // 5-Phase Connection Flow List
               _buildPhaseRow(
                 stepNum: 1,
-                title: '1. Activating ESP32 Hotspot',
-                description: 'BLE command sent • SoftAP starting (192.168.4.1)',
+                title: '1. Activating Phone Hotspot',
+                description: 'Starting Local-Only Hotspot & HTTP Server',
                 isActive: phase == FastTransferPhase.activatingHotspot,
                 isDone: phase.stepIndex > FastTransferPhase.activatingHotspot.stepIndex,
               ),
@@ -101,8 +101,8 @@ class FastTransferSheet extends StatelessWidget {
 
               _buildPhaseRow(
                 stepNum: 2,
-                title: '2. Connecting to Wi-Fi',
-                description: 'Android WifiNetworkSpecifier link negotiation',
+                title: '2. Connecting ESP32',
+                description: 'Transmitting credentials over BLE link',
                 isActive: phase == FastTransferPhase.connectingWifi,
                 isDone: phase.stepIndex > FastTransferPhase.connectingWifi.stepIndex,
               ),
@@ -110,8 +110,8 @@ class FastTransferSheet extends StatelessWidget {
 
               _buildPhaseRow(
                 stepNum: 3,
-                title: '3. Handshaking & Device Catalog',
-                description: 'Verifying HTTP /api/handshake endpoint',
+                title: '3. Hotspot Link Established',
+                description: 'ESP32 connected to phone hotspot',
                 isActive: phase == FastTransferPhase.handshaking,
                 isDone: phase.stepIndex > FastTransferPhase.handshaking.stepIndex,
               ),
@@ -119,8 +119,8 @@ class FastTransferSheet extends StatelessWidget {
 
               _buildPhaseRow(
                 stepNum: 4,
-                title: '4. Ready for Transfer',
-                description: 'High-speed TCP connection established',
+                title: '4. Ready for Upload',
+                description: 'High-speed TCP connection ready on port 8080',
                 isActive: phase == FastTransferPhase.ready,
                 isDone: phase.stepIndex > FastTransferPhase.ready.stepIndex,
               ),
@@ -128,10 +128,10 @@ class FastTransferSheet extends StatelessWidget {
 
               _buildPhaseRow(
                 stepNum: 5,
-                title: '5. Turbo Transfer',
+                title: '5. Turbo Upload',
                 description: isSyncing && syncManager.currentSyncFile.isNotEmpty
                     ? '${syncManager.currentSyncFile} • ${(syncManager.syncProgress * 100).toStringAsFixed(0)}%'
-                    : 'High-Speed streaming (~2.4 MB/s)',
+                    : 'ESP32 streaming audio to phone (~2.4 MB/s)',
                 trailingText: isSyncing ? (syncManager.currentSpeed ?? '2.4 MB/s') : null,
                 isActive: phase == FastTransferPhase.transferring,
                 isDone: isDone,

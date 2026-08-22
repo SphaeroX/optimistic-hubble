@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:universal_ble/universal_ble.dart' hide BleCommand;
 import '../../../core/constants/app_constants.dart';
@@ -262,6 +263,71 @@ class BleService extends ChangeNotifier {
     _currentGattDeviceId = null;
     _telemetry = DeviceTelemetry.initial();
     notifyListeners();
+  }
+
+  Future<void> sendConnectHotspotCommand({
+    required String ssid,
+    required String passphrase,
+    required String hostIp,
+    required int port,
+    int clipId = 0,
+    bool autoDelete = false,
+  }) async {
+    _log('CMD', 'Sending Hotspot Connect Info to MCU: SSID="$ssid", IP=$hostIp:$port, Clip=$clipId, Delete=$autoDelete');
+
+    if (_isMockMode) {
+      _simulateCommand(BleCommand.connectHotspot);
+      return;
+    }
+
+    if (!isConnected || _connectedDevice == null) {
+      _log('CMD', 'Cannot send hotspot command: No device connected', isError: true);
+      return;
+    }
+
+    final Map<String, dynamic> jsonPayload = {
+      'cmd': BleCommand.connectHotspot.rawValue,
+      'ssid': ssid,
+      'pass': passphrase,
+      'ip': hostIp,
+      'port': port,
+      'id': clipId,
+      'del': autoDelete,
+    };
+
+    final String jsonStr = jsonEncode(jsonPayload);
+    final bytes = Uint8List.fromList(utf8.encode(jsonStr));
+
+    bool success = false;
+    try {
+      await UniversalBle.write(
+        _connectedDevice!.id,
+        AppConstants.bleServiceUuid,
+        AppConstants.bleCharCmdUuid,
+        bytes,
+        withoutResponse: false,
+      );
+      success = true;
+    } catch (_) {
+      try {
+        await UniversalBle.write(
+          _connectedDevice!.id,
+          AppConstants.bleServiceUuid,
+          AppConstants.bleCharCmdUuid,
+          bytes,
+          withoutResponse: true,
+        );
+        success = true;
+      } catch (e) {
+        _log('CMD', 'Failed to send Hotspot Connect command: $e', isError: true);
+      }
+    }
+
+    if (success) {
+      _statusMessage = 'Transmitted Hotspot credentials to MCU';
+      _log('CMD', 'Hotspot credentials received by MCU, awaiting STA Wi-Fi upload...');
+      notifyListeners();
+    }
   }
 
   Future<void> sendCommand(BleCommand cmd, {int clipId = 0, int offset = 0}) async {
@@ -702,6 +768,11 @@ class BleService extends ChangeNotifier {
         _telemetry = _telemetry.copyWith(state: DeviceState.transferring);
         _statusMessage = 'L2CAP Stream active';
         _log('MOCK', 'State -> TRANSFERRING (L2CAP CoC)');
+        break;
+      case BleCommand.connectHotspot:
+        _telemetry = _telemetry.copyWith(state: DeviceState.transferring);
+        _statusMessage = 'ESP32 connected to Phone Hotspot (Uploading clips)';
+        _log('MOCK', 'State -> TRANSFERRING (ESP32 Upload via Phone Hotspot)');
         break;
       case BleCommand.none:
         break;

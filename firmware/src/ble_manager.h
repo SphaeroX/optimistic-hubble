@@ -4,6 +4,15 @@
 #include "config.h"
 #include "nimble_l2cap_server.h"
 
+struct HotspotUploadConfig {
+    char ssid[64];
+    char pass[64];
+    char serverIp[32];
+    uint16_t serverPort;
+    uint16_t clipId;
+    bool autoDelete;
+};
+
 class BleManager : public NimBLEServerCallbacks, public NimBLECharacteristicCallbacks {
 public:
     BleManager();
@@ -39,6 +48,7 @@ public:
     BleCommand getPendingCommand();
     uint16_t getCommandClipId() const { return _cmdClipId; }
     uint32_t getCommandOffset() const { return _cmdOffset; }
+    HotspotUploadConfig getHotspotUploadConfig() const { return _hotspotConfig; }
     void clearPendingCommand() { _pendingCmd = CMD_NONE; }
 
     // NimBLE Server Callbacks
@@ -64,4 +74,5 @@ private:
     volatile BleCommand _pendingCmd;
     uint16_t _cmdClipId;
     uint32_t _cmdOffset;
+    HotspotUploadConfig _hotspotConfig;
 };

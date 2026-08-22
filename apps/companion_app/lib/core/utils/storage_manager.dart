@@ -63,6 +63,13 @@ class LocalStorageManager {
     return file.existsSync() ? file : null;
   }
 
+  /// Returns the target File instance in the recordings directory, regardless of whether it already exists on disk.
+  static Future<File> getTargetFile(String filename) async {
+    final dir = await getRecordingsDirectory();
+    final String cleanName = filename.endsWith('.wav') ? filename : '$filename.wav';
+    return File(p.join(dir.path, cleanName));
+  }
+
   /// Lists all local saved WAV recording files.
   static Future<List<File>> listSavedWavFiles() async {
     final dir = await getRecordingsDirectory();

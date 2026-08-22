@@ -8,6 +8,7 @@
 #include "storage_manager.h"
 #include "ble_manager.h"
 #include "wifi_server.h"
+#include "wifi_uploader.h"
 #include "power_manager.h"
 
 // Global Hardware Modules
@@ -18,6 +19,7 @@ static AudioRecorder recorder(PIN_STATUS_LED);
 static StorageManager storage;
 static BleManager ble;
 static WifiServerManager wifiServer(storage);
+static WifiUploader wifiUploader(storage);
 static PowerManager power;
 static uint16_t totalTapEvents = 0;
 
@@ -219,6 +221,19 @@ void loop() {
                               ble.getCommandClipId(), ble.getCommandOffset());
                 ble.streamAudioFileFromStorage(ble.getCommandClipId(), ble.getCommandOffset());
                 break;
+
+            case CMD_CONNECT_HOTSPOT:
+            {
+                HotspotUploadConfig cfg = ble.getHotspotUploadConfig();
+                Serial.printf("\n[BLE CMD] Connecting to Phone Hotspot \"%s\" for High-Speed Audio Upload...\n", cfg.ssid);
+                ble.updateState(STATE_TRANSFERRING);
+                bool uploadOk = wifiUploader.uploadClips(cfg);
+                storage.refresh();
+                ble.updateState(uploadOk ? STATE_DONE : STATE_IDLE, 0, AUDIO_SAMPLE_RATE);
+                delay(100);
+                ble.updateState(STATE_IDLE);
+                break;
+            }
 
             default:
                 break;

@@ -68,7 +68,8 @@ enum BleCommand {
   startRecording(4),
   stopRecording(5),
   clearStorage(6),
-  startL2capStream(7);
+  startL2capStream(7),
+  connectHotspot(8);
 
   final int rawValue;
   const BleCommand(this.rawValue);
@@ -87,12 +88,12 @@ enum SyncTier {
 /// 5-Phase Wi-Fi Fast Transfer State Machine
 enum FastTransferPhase {
   none(0, 'Standby', 'Ready to initiate Fast Transfer'),
-  activatingHotspot(1, 'Activating Hotspot', 'Sending BLE command to start ESP32 Access Point...'),
-  connectingWifi(2, 'Connecting Wi-Fi', 'Connecting to XIAO-Audio-Hotspot...'),
-  handshaking(3, 'Handshaking', 'Verifying device connection and storage index...'),
-  ready(4, 'Ready', 'Device ready for high-speed streaming'),
-  transferring(5, 'Turbo Transfer', 'Downloading audio data via high-speed HTTP stream...'),
-  completed(6, 'Complete', 'Fast Transfer successfully verified and saved!'),
+  activatingHotspot(1, 'Activating Phone Hotspot', 'Starting Android Local-Only Hotspot & HTTP Server...'),
+  connectingWifi(2, 'Connecting ESP32', 'Sending BLE credentials • ESP32 connecting to phone hotspot...'),
+  handshaking(3, 'Link Established', 'ESP32 associated with phone hotspot'),
+  ready(4, 'Ready', 'Ready to receive high-speed audio upload stream'),
+  transferring(5, 'Turbo Upload', 'ESP32 streaming audio files to phone (> 2.0 MB/s)...'),
+  completed(6, 'Complete', 'Fast Transfer successfully uploaded and verified!'),
   failed(7, 'Error', 'Transfer failed or was cancelled');
 
   final int stepIndex;

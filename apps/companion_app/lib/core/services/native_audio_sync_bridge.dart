@@ -55,6 +55,23 @@ class SyncProgressEvent {
   }
 }
 
+class HotspotInfo {
+  final String ssid;
+  final String passphrase;
+  final String ip;
+  final int port;
+
+  const HotspotInfo({
+    required this.ssid,
+    required this.passphrase,
+    required this.ip,
+    required this.port,
+  });
+
+  @override
+  String toString() => 'HotspotInfo(ssid: $ssid, ip: $ip, port: $port)';
+}
+
 class NativeAudioSyncBridge {
   static const MethodChannel _methodChannel = MethodChannel('com.sphaerox.companion_app/audio_sync');
   static const EventChannel _eventChannel = EventChannel('com.sphaerox.companion_app/sync_events');
@@ -91,6 +108,48 @@ class NativeAudioSyncBridge {
       });
     }
     return _eventStream ?? const Stream.empty();
+  }
+
+  Future<HotspotInfo?> startLocalOnlyHotspot({int port = 8080}) async {
+    if (!isPlatformAndroid) return null;
+    try {
+      final res = await _methodChannel.invokeMapMethod<String, dynamic>('startLocalOnlyHotspot', {
+        'port': port,
+      });
+      if (res != null) {
+        return HotspotInfo(
+          ssid: res['ssid']?.toString() ?? '',
+          passphrase: res['passphrase']?.toString() ?? '',
+          ip: res['ip']?.toString() ?? '192.168.43.1',
+          port: (res['port'] as num?)?.toInt() ?? port,
+        );
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[NativeAudioSyncBridge] startLocalOnlyHotspot error: $e');
+      rethrow;
+    }
+  }
+
+  Future<bool> stopLocalOnlyHotspot() async {
+    if (!isPlatformAndroid) return true;
+    try {
+      final bool? res = await _methodChannel.invokeMethod<bool>('stopLocalOnlyHotspot');
+      return res ?? true;
+    } catch (e) {
+      debugPrint('[NativeAudioSyncBridge] stopLocalOnlyHotspot error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> isHotspotActive() async {
+    if (!isPlatformAndroid) return false;
+    try {
+      final bool? res = await _methodChannel.invokeMethod<bool>('isHotspotActive');
+      return res ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<bool> isL2capSupported() async {

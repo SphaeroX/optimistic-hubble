@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.annotation.NonNull
 import com.sphaerox.companion_app.ble.BleL2capAudioReceiver
 import com.sphaerox.companion_app.network.IotHttpClientFactory
+import com.sphaerox.companion_app.network.IotHotspotManager
 import com.sphaerox.companion_app.network.IotWifiManager
 import com.sphaerox.companion_app.network.WifiConnectionState
 import com.sphaerox.companion_app.service.AudioSyncForegroundService
@@ -32,12 +33,22 @@ class MainActivity : FlutterActivity() {
     private val activityScope = CoroutineScope(Dispatchers.Main + Job())
     private var activeSyncJob: Job? = null
     private var iotWifiManager: IotWifiManager? = null
+    private var iotHotspotManager: IotHotspotManager? = null
 
     private fun getWifiManager(): IotWifiManager {
         var manager = iotWifiManager
         if (manager == null) {
             manager = IotWifiManager(applicationContext)
             iotWifiManager = manager
+        }
+        return manager
+    }
+
+    private fun getHotspotManager(): IotHotspotManager {
+        var manager = iotHotspotManager
+        if (manager == null) {
+            manager = IotHotspotManager(applicationContext)
+            iotHotspotManager = manager
         }
         return manager
     }
@@ -72,6 +83,46 @@ class MainActivity : FlutterActivity() {
 
                         "isL2capSupported" -> {
                             result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                        }
+
+                        "startLocalOnlyHotspot" -> {
+                            val port = call.argument<Int>("port") ?: 8080
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                                result.error("UNSUPPORTED", "Local-Only Hotspot requires Android 8.0+ (API 26)", null)
+                                return@setMethodCallHandler
+                            }
+
+                            activityScope.launch(Dispatchers.IO) {
+                                val hotspotManager = getHotspotManager()
+                                try {
+                                    val creds = hotspotManager.startHotspot(port)
+                                    withContext(Dispatchers.Main) {
+                                        result.success(mapOf(
+                                            "ssid" to creds.ssid,
+                                            "passphrase" to creds.passphrase,
+                                            "ip" to creds.ip,
+                                            "port" to creds.port
+                                        ))
+                                    }
+                                } catch (e: Exception) {
+                                    withContext(Dispatchers.Main) {
+                                        result.error("HOTSPOT_START_FAILED", e.message ?: "Failed to start Local-Only Hotspot", null)
+                                    }
+                                }
+                            }
+                        }
+
+                        "stopLocalOnlyHotspot" -> {
+                            try {
+                                getHotspotManager().stopHotspot()
+                                result.success(true)
+                            } catch (e: Exception) {
+                                result.error("HOTSPOT_STOP_FAILED", e.message, null)
+                            }
+                        }
+
+                        "isHotspotActive" -> {
+                            result.success(getHotspotManager().isHotspotActive())
                         }
 
                         "startBleL2capSync" -> {
@@ -468,6 +519,7 @@ class MainActivity : FlutterActivity() {
         activeSyncJob?.cancel()
         activityScope.cancel()
         try { iotWifiManager?.disconnect() } catch (_: Throwable) {}
+        try { iotHotspotManager?.stopHotspot() } catch (_: Throwable) {}
         super.onDestroy()
     }
 

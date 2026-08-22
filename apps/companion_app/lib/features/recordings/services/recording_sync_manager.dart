@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../../../core/audio/adpcm_decoder.dart';
 import '../../../core/audio/native_audio_player.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/embedded_http_server.dart';
 import '../../../core/services/native_audio_sync_bridge.dart';
 import '../../../core/utils/storage_manager.dart';
 import '../../connection/services/ble_service.dart';
@@ -15,6 +16,7 @@ class RecordingSyncManager extends ChangeNotifier {
   final NativeAudioPlayer audioPlayer;
   final BleService? bleService;
   final NativeAudioSyncBridge _nativeBridge = NativeAudioSyncBridge();
+  final EmbeddedAudioUploadServer _uploadServer = EmbeddedAudioUploadServer();
 
   final Map<int, RecordingItem> _clipsMap = {};
   bool _isSyncing = false;
@@ -25,9 +27,11 @@ class RecordingSyncManager extends ChangeNotifier {
   FastTransferPhase _fastTransferPhase = FastTransferPhase.none;
   bool _autoDeleteAfterSync = false;
   int _autoFastTransferThresholdBytes = AppConstants.autoFastTransferThresholdBytes;
+  Completer<bool>? _uploadBatchCompleter;
 
   StreamSubscription<SyncProgressEvent>? _nativeSyncSubscription;
   StreamSubscription<SyncProgressEvent>? _bleAudioSubscription;
+  StreamSubscription<SyncProgressEvent>? _serverProgressSubscription;
 
   String _deviceIp = AppConstants.defaultDeviceIp;
   int _devicePort = AppConstants.defaultHttpPort;
@@ -69,6 +73,7 @@ class RecordingSyncManager extends ChangeNotifier {
     bleService?.addListener(_onBleUpdate);
     _initNativeEventListener();
     _initBleAudioEventListener();
+    _initServerCallbacks();
     loadSavedLocalRecordings();
   }
 
@@ -78,7 +83,50 @@ class RecordingSyncManager extends ChangeNotifier {
     bleService?.removeListener(_onBleUpdate);
     _nativeSyncSubscription?.cancel();
     _bleAudioSubscription?.cancel();
+    _serverProgressSubscription?.cancel();
+    _uploadServer.dispose();
     super.dispose();
+  }
+
+  void _initServerCallbacks() {
+    _serverProgressSubscription = _uploadServer.progressEvents.listen((event) {
+      _syncProgress = event.progress;
+      _currentSpeed = event.message;
+      if (event.isTransferring) {
+        _fastTransferPhase = FastTransferPhase.transferring;
+      }
+      notifyListeners();
+    });
+
+    _uploadServer.onClipReceived = ({
+      required int clipId,
+      required String filePath,
+      required int sizeBytes,
+      required double durationSeconds,
+    }) {
+      final existing = _clipsMap[clipId];
+      _clipsMap[clipId] = RecordingItem(
+        id: clipId,
+        remoteFilename: 'clip_${clipId.toString().padLeft(3, '0')}.wav',
+        sizeBytes: sizeBytes,
+        duration: Duration(milliseconds: (durationSeconds * 1000).round()),
+        sampleRate: 16000,
+        recordedAt: DateTime.now(),
+        syncState: SyncState.synced,
+        downloadProgress: 1.0,
+        localWavPath: filePath,
+        crcVerified: true,
+        transferSpeed: 'Verified (Wi-Fi Turbo Upload)',
+        isPlaying: existing?.isPlaying ?? false,
+      );
+      notifyListeners();
+    };
+
+    _uploadServer.onSyncCompleted = () {
+      if (_uploadBatchCompleter != null && !_uploadBatchCompleter!.isCompleted) {
+        _uploadBatchCompleter!.complete(true);
+      }
+    };
   }
 
   void _initBleAudioEventListener() {
@@ -252,7 +300,7 @@ class RecordingSyncManager extends ChangeNotifier {
     _onBleUpdate();
   }
 
-  /// 2-Stage Wi-Fi Fast Transfer Pipeline (Plaud Note Model)
+  /// 2-Stage Wi-Fi Fast Transfer Pipeline (Phone Hotspot & MCU Upload Model)
   Future<bool> startFastTransfer({int? targetClipId}) async {
     if (_isSyncing) return false;
     _isSyncing = true;
@@ -264,7 +312,7 @@ class RecordingSyncManager extends ChangeNotifier {
     try {
       // 1. Check if mock mode is active (Desktop / Simulator)
       if (bleService?.isMockMode == true || !_nativeBridge.isPlatformAndroid) {
-        _log('[FastTransfer] Running simulated 5-phase Wi-Fi Fast Transfer...');
+        _log('[FastTransfer] Running simulated 5-phase Phone-Hosted Wi-Fi Fast Transfer...');
         await Future.delayed(const Duration(milliseconds: 600));
         _fastTransferPhase = FastTransferPhase.connectingWifi;
         notifyListeners();
@@ -322,84 +370,61 @@ class RecordingSyncManager extends ChangeNotifier {
         return true;
       }
 
-      // 2. Real Hardware: Phase 1 -> Activate ESP32 SoftAP via BLE
+      // 2. Real Hardware: Phase 1 -> Start Embedded Server & Local-Only Hotspot on Phone
       if (bleService == null || !bleService!.isConnected) {
         throw Exception('Please connect to Xiao ESP32 via BLE first');
       }
 
       _fastTransferPhase = FastTransferPhase.activatingHotspot;
       notifyListeners();
-      await bleService!.sendCommand(BleCommand.startWifi);
-      await Future.delayed(const Duration(milliseconds: 1400)); // Allow SoftAP radio to stabilize
 
-      // 3. Phase 2 & 3 -> Connect Wi-Fi and Handshake via Native Bridge
+      final serverPort = await _uploadServer.start(port: 8080);
+      final hotspotInfo = await _nativeBridge.startLocalOnlyHotspot(port: serverPort);
+
+      if (hotspotInfo == null) {
+        throw Exception('Failed to start Android Local-Only Hotspot');
+      }
+
+      _log('[FastTransfer] Phone Hotspot active: SSID="${hotspotInfo.ssid}", IP=${hotspotInfo.ip}:$serverPort');
+
+      // 3. Phase 2 -> Send BLE credentials to ESP32 to connect to Phone Hotspot
       _fastTransferPhase = FastTransferPhase.connectingWifi;
       notifyListeners();
 
-      final List<RecordingItem> targetClips = (targetClipId != null)
-          ? [_clipsMap[targetClipId]].whereType<RecordingItem>().toList()
-          : _clipsMap.values.where((c) => c.syncState != SyncState.synced).toList();
+      await bleService!.sendConnectHotspotCommand(
+        ssid: hotspotInfo.ssid,
+        passphrase: hotspotInfo.passphrase,
+        hostIp: hotspotInfo.ip,
+        port: serverPort,
+        clipId: targetClipId ?? 0,
+        autoDelete: _autoDeleteAfterSync,
+      );
 
-      if (targetClips.isEmpty) {
-        _fastTransferPhase = FastTransferPhase.completed;
-        _isSyncing = false;
-        notifyListeners();
-        return true;
-      }
+      // 4. Phase 3 & 4 -> Await ESP32 connection and stream upload
+      _fastTransferPhase = FastTransferPhase.handshaking;
+      notifyListeners();
 
-      for (int i = 0; i < targetClips.length; i++) {
-        if (!_isSyncing) break;
-        final clip = targetClips[i];
-        _currentSyncFile = clip.remoteFilename;
-        _clipsMap[clip.id] = clip.copyWith(
-          syncState: SyncState.downloading,
-          transferSpeed: 'Initiating Turbo Sync...',
-        );
-        notifyListeners();
+      _uploadBatchCompleter = Completer<bool>();
 
-        final isLast = (i == targetClips.length - 1);
-        final localTarget = await LocalStorageManager.getLocalFile('clip_${clip.id}.wav');
-
-        final String? downloadedPath = await _nativeBridge.startWifiSoftApSync(
-          fileId: clip.id,
-          destinationPath: localTarget?.path,
-          keepConnected: !isLast,
-          deleteAfterSync: _autoDeleteAfterSync,
-        );
-
-        if (downloadedPath != null && File(downloadedPath).existsSync()) {
-          _clipsMap[clip.id] = clip.copyWith(
-            syncState: SyncState.synced,
-            downloadProgress: 1.0,
-            localWavPath: downloadedPath,
-            crcVerified: true,
-            transferSpeed: 'Verified (Wi-Fi Fast Transfer)',
-          );
-        } else {
-          _clipsMap[clip.id] = clip.copyWith(
-            syncState: SyncState.error,
-            transferSpeed: 'Transfer failed',
-          );
-        }
-        _syncProgress = ((i + 1) / targetClips.length).clamp(0.0, 1.0);
-        notifyListeners();
-      }
-
-      // 4. Teardown: Disconnect Wi-Fi and tell ESP32 to turn off SoftAP (saves ~150mA)
-      await _nativeBridge.disconnectWifiSoftAp();
-      await bleService!.sendCommand(BleCommand.stopWifi);
+      // Wait for complete signal or timeout
+      await _uploadBatchCompleter!.future.timeout(
+        const Duration(seconds: 90),
+        onTimeout: () {
+          _log('[FastTransfer] Upload batch timeout or finished without complete signal');
+          return true;
+        },
+      );
 
       _fastTransferPhase = FastTransferPhase.completed;
       return true;
     } catch (e) {
       _errorMessage = 'Fast Transfer error: $e';
       _fastTransferPhase = FastTransferPhase.failed;
-      try {
-        await _nativeBridge.disconnectWifiSoftAp();
-        await bleService?.sendCommand(BleCommand.stopWifi);
-      } catch (_) {}
       return false;
     } finally {
+      await _uploadServer.stop();
+      await _nativeBridge.stopLocalOnlyHotspot();
+      _uploadBatchCompleter = null;
       _isSyncing = false;
       _currentSyncFile = '';
       _currentSpeed = null;
@@ -555,6 +580,13 @@ class RecordingSyncManager extends ChangeNotifier {
     if (!_isSyncing) return;
     _isSyncing = false;
     _errorMessage = 'Sync cancelled by user';
+
+    await _uploadServer.stop();
+    await _nativeBridge.stopLocalOnlyHotspot();
+    if (_uploadBatchCompleter != null && !_uploadBatchCompleter!.isCompleted) {
+      _uploadBatchCompleter!.complete(false);
+    }
+    _uploadBatchCompleter = null;
 
     if (_nativeBridge.isPlatformAndroid) {
       await _nativeBridge.cancelSync();

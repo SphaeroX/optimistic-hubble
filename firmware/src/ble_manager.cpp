@@ -1,11 +1,50 @@
 #include "ble_manager.h"
 #include <LittleFS.h>
 
+static bool extractJsonString(const char* json, const char* key, char* out, size_t maxLen) {
+    char pattern[32];
+    snprintf(pattern, sizeof(pattern), "\"%s\":\"", key);
+    const char* pos = strstr(json, pattern);
+    if (!pos) return false;
+    pos += strlen(pattern);
+    const char* end = strchr(pos, '\"');
+    if (!end) return false;
+    size_t len = end - pos;
+    if (len >= maxLen) len = maxLen - 1;
+    strncpy(out, pos, len);
+    out[len] = '\0';
+    return true;
+}
+
+static int extractJsonInt(const char* json, const char* key, int defaultVal = 0) {
+    char pattern[32];
+    snprintf(pattern, sizeof(pattern), "\"%s\":", key);
+    const char* pos = strstr(json, pattern);
+    if (!pos) return defaultVal;
+    pos += strlen(pattern);
+    while (*pos == ' ' || *pos == '\t') pos++;
+    return atoi(pos);
+}
+
+static bool extractJsonBool(const char* json, const char* key, bool defaultVal = false) {
+    char pattern[32];
+    snprintf(pattern, sizeof(pattern), "\"%s\":", key);
+    const char* pos = strstr(json, pattern);
+    if (!pos) return defaultVal;
+    pos += strlen(pattern);
+    while (*pos == ' ' || *pos == '\t') pos++;
+    if (strncmp(pos, "true", 4) == 0 || strncmp(pos, "1", 1) == 0) return true;
+    if (strncmp(pos, "false", 5) == 0 || strncmp(pos, "0", 1) == 0) return false;
+    return defaultVal;
+}
+
 BleManager::BleManager()
     : _pServer(nullptr), _pService(nullptr), _pCharState(nullptr),
       _pCharAudio(nullptr), _pCharTap(nullptr), _pCharCmd(nullptr),
       _connected(false), _currentState(STATE_IDLE), _pendingCmd(CMD_NONE),
-      _cmdClipId(0), _cmdOffset(0) {}
+      _cmdClipId(0), _cmdOffset(0) {
+    memset(&_hotspotConfig, 0, sizeof(_hotspotConfig));
+}
 
 void BleManager::onConnect(NimBLEServer* pServer) {
     _connected = true;
@@ -40,6 +79,26 @@ void BleManager::handleCharacteristicWrite(NimBLECharacteristic* pCharacteristic
 
     const uint8_t* data = val.data();
     if (!data) return;
+
+    // Check for JSON payload (e.g. from sendConnectHotspotCommand)
+    if (data[0] == '{' || (val.size() > 1 && data[0] == (uint8_t)CMD_CONNECT_HOTSPOT && data[1] == '{')) {
+        const char* jsonStr = (data[0] == '{') ? (const char*)data : (const char*)&data[1];
+        if (strstr(jsonStr, "\"ssid\"") != nullptr) {
+            _pendingCmd = CMD_CONNECT_HOTSPOT;
+            memset(&_hotspotConfig, 0, sizeof(_hotspotConfig));
+            extractJsonString(jsonStr, "ssid", _hotspotConfig.ssid, sizeof(_hotspotConfig.ssid));
+            extractJsonString(jsonStr, "pass", _hotspotConfig.pass, sizeof(_hotspotConfig.pass));
+            extractJsonString(jsonStr, "ip", _hotspotConfig.serverIp, sizeof(_hotspotConfig.serverIp));
+            _hotspotConfig.serverPort = (uint16_t)extractJsonInt(jsonStr, "port", 8080);
+            _hotspotConfig.clipId = (uint16_t)extractJsonInt(jsonStr, "id", 0);
+            _hotspotConfig.autoDelete = extractJsonBool(jsonStr, "del", false);
+
+            Serial.printf("\n[BLE] >>> Received Hotspot Config: SSID=\"%s\", Server=%s:%u, Clip=%u, AutoDelete=%s <<<\n",
+                          _hotspotConfig.ssid, _hotspotConfig.serverIp, _hotspotConfig.serverPort,
+                          _hotspotConfig.clipId, _hotspotConfig.autoDelete ? "YES" : "NO");
+            return;
+        }
+    }
 
     uint8_t cmdByte = data[0];
     _pendingCmd = (BleCommand)cmdByte;

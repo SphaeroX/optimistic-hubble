@@ -125,6 +125,15 @@ void main() {
       final isWifiConn = await bridge.isWifiConnected();
       expect(isWifiConn, isFalse);
 
+      final isHotspot = await bridge.isHotspotActive();
+      expect(isHotspot, isFalse);
+
+      final hotspotInfo = await bridge.startLocalOnlyHotspot(port: 8080);
+      expect(hotspotInfo, isNull);
+
+      final stopRes = await bridge.stopLocalOnlyHotspot();
+      expect(stopRes, isTrue);
+
       final connectRes = await bridge.connectWifiSoftAp();
       expect(connectRes, isFalse);
 
