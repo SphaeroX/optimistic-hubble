@@ -137,13 +137,72 @@ class MainActivity : FlutterActivity() {
                             val startOffset = call.argument<Number>("startOffset")?.toLong() ?: 0L
                             val destinationPath = call.argument<String>("destinationPath")
                             val keepConnected = call.argument<Boolean>("keepConnected") ?: false
+                            val deleteAfterSync = call.argument<Boolean>("deleteAfterSync") ?: false
 
                             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                                 result.error("UNSUPPORTED", "WifiNetworkSpecifier requires Android 10+", null)
                                 return@setMethodCallHandler
                             }
 
-                            startWifiSoftApSync(ssidPattern, passphrase, fileId, startOffset, destinationPath, keepConnected, result)
+                            startWifiSoftApSync(ssidPattern, passphrase, fileId, startOffset, destinationPath, keepConnected, deleteAfterSync, result)
+                        }
+
+                        "performHandshake" -> {
+                            activityScope.launch(Dispatchers.IO) {
+                                try {
+                                    val wifiManager = getWifiManager()
+                                    val activeNet = wifiManager.getActiveNetwork()
+                                    if (activeNet == null) {
+                                        withContext(Dispatchers.Main) {
+                                            result.error("NOT_CONNECTED", "Wi-Fi not connected to ESP32", null)
+                                        }
+                                        return@launch
+                                    }
+                                    val client = IotHttpClientFactory.createClient(activeNet)
+                                    val req = Request.Builder().url("http://192.168.4.1/api/handshake").build()
+                                    client.newCall(req).execute().use { response ->
+                                        val body = response.body?.string() ?: "{}"
+                                        withContext(Dispatchers.Main) {
+                                            result.success(body)
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    withContext(Dispatchers.Main) {
+                                        result.error("HANDSHAKE_FAILED", e.message, null)
+                                    }
+                                }
+                            }
+                        }
+
+                        "deleteRemoteClip" -> {
+                            val fileId = call.argument<Number>("fileId")?.toLong() ?: 0L
+                            activityScope.launch(Dispatchers.IO) {
+                                try {
+                                    val wifiManager = getWifiManager()
+                                    val activeNet = wifiManager.getActiveNetwork()
+                                    if (activeNet == null) {
+                                        withContext(Dispatchers.Main) {
+                                            result.error("NOT_CONNECTED", "Wi-Fi not connected to ESP32", null)
+                                        }
+                                        return@launch
+                                    }
+                                    val client = IotHttpClientFactory.createClient(activeNet)
+                                    val req = Request.Builder()
+                                        .url("http://192.168.4.1/api/delete?id=$fileId")
+                                        .post(okhttp3.RequestBody.create(null, ByteArray(0)))
+                                        .build()
+                                    client.newCall(req).execute().use { response ->
+                                        val success = response.isSuccessful
+                                        withContext(Dispatchers.Main) {
+                                            result.success(success)
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    withContext(Dispatchers.Main) {
+                                        result.error("DELETE_FAILED", e.message, null)
+                                    }
+                                }
+                            }
                         }
 
                         "cancelSync" -> {
@@ -240,6 +299,7 @@ class MainActivity : FlutterActivity() {
         startOffset: Long,
         destinationPath: String?,
         keepConnected: Boolean,
+        deleteAfterSync: Boolean,
         result: MethodChannel.Result
     ) {
         activeSyncJob?.cancel()
@@ -256,15 +316,31 @@ class MainActivity : FlutterActivity() {
                 val activeNet = wifiManager.getActiveNetwork()
                 val network: Network = if (wifiManager.isConnected() && activeNet != null) {
                     Log.i(TAG, "Reusing already active IoT Wi-Fi connection: $activeNet")
+                    sendEvent("connected_wifi", 0.35, 0, 0, "Reusing active Wi-Fi connection")
                     activeNet
                 } else {
-                    sendEvent("connecting", 0.0, 0, 0, "Connecting to XIAO-Audio-Hotspot...")
-                    wifiManager.connect(ssidPattern, passphrase)
+                    sendEvent("connecting_wifi", 0.15, 0, 0, "Connecting to XIAO-Audio-Hotspot...")
+                    val net = wifiManager.connect(ssidPattern, passphrase)
+                    sendEvent("connected_wifi", 0.35, 0, 0, "Wi-Fi link established!")
+                    net
                 }
 
                 val client = IotHttpClientFactory.createClient(network)
 
-                sendEvent("connected", 0.05, 0, 0, "SoftAP connected! Downloading audio...")
+                // Handshake step
+                sendEvent("handshaking", 0.50, 0, 0, "Performing device handshake...")
+                try {
+                    val handshakeReq = Request.Builder().url("http://192.168.4.1/api/handshake").build()
+                    client.newCall(handshakeReq).execute().use { hsResp ->
+                        if (hsResp.isSuccessful) {
+                            Log.i(TAG, "Handshake successful: ${hsResp.body?.string()}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Handshake check non-fatal warning: ${e.message}")
+                }
+
+                sendEvent("ready", 0.65, 0, 0, "Device ready! Starting high-speed transfer...")
 
                 val url = if (fileId > 0) "http://192.168.4.1/api/download?id=$fileId" else "http://192.168.4.1/api/download"
                 
@@ -313,16 +389,12 @@ class MainActivity : FlutterActivity() {
                                     progress = progress,
                                     bytesReceived = bytesReadTotal,
                                     totalBytes = totalLength,
-                                    message = "${String.format(Locale.US, "%.2f", speedMb)} MB/s (Wi-Fi Turbo)",
+                                    message = "${String.format(Locale.US, "%.2f", speedMb)} MB/s (Wi-Fi Fast Transfer)",
                                     filePath = targetFile.absolutePath
                                 )
                             }
                         }
                     }
-                }
-
-                if (!keepConnected) {
-                    try { wifiManager.disconnect() } catch (_: Throwable) {}
                 }
 
                 if (!isActive) return@launch
@@ -331,6 +403,23 @@ class MainActivity : FlutterActivity() {
                 if (!tempFile.renameTo(targetFile)) {
                     tempFile.copyTo(targetFile, overwrite = true)
                     tempFile.delete()
+                }
+
+                if (deleteAfterSync && fileId > 0) {
+                    try {
+                        val delReq = Request.Builder()
+                            .url("http://192.168.4.1/api/delete?id=$fileId")
+                            .post(okhttp3.RequestBody.create(null, ByteArray(0)))
+                            .build()
+                        client.newCall(delReq).execute().close()
+                        Log.i(TAG, "Successfully deleted remote clip #$fileId from ESP32 after sync")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to auto-delete clip #$fileId after sync: ${e.message}")
+                    }
+                }
+
+                if (!keepConnected) {
+                    try { wifiManager.disconnect() } catch (_: Throwable) {}
                 }
 
                 withContext(Dispatchers.Main) {

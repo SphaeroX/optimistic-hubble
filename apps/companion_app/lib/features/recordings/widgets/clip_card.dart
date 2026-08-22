@@ -23,7 +23,7 @@ class ClipCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isSynced = clip.syncState == SyncState.synced;
     final isDownloading = clip.syncState == SyncState.downloading;
-    final isBleTier = clip.recommendedTier == SyncTier.bleL2cap;
+    final isFastTransfer = clip.isFastTransferRecommended;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -51,17 +51,17 @@ class ClipCard extends StatelessWidget {
                       ? AppTheme.accentGreen
                       : isSynced
                           ? AppTheme.primaryCyan.withAlpha(40)
-                          : (isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange).withAlpha(40),
+                          : (isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan).withAlpha(40),
                   child: IconButton(
                     icon: Icon(
                       clip.isPlaying
                           ? Icons.pause
-                          : (isSynced ? Icons.play_arrow : (isBleTier ? Icons.bluetooth_audio : Icons.wifi_protected_setup)),
+                          : (isSynced ? Icons.play_arrow : (isFastTransfer ? Icons.bolt : Icons.bluetooth_audio)),
                       color: clip.isPlaying
                           ? Colors.black
                           : (isSynced
                               ? AppTheme.primaryCyan
-                              : (isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange)),
+                              : (isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan)),
                       size: 24,
                     ),
                     onPressed: isSynced ? onPlayToggle : onDownload,
@@ -127,16 +127,16 @@ class ClipCard extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: (isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange).withAlpha(30),
+                              color: (isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan).withAlpha(30),
                               borderRadius: BorderRadius.circular(4),
                               border: Border.all(
-                                color: (isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange).withAlpha(80),
+                                color: (isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan).withAlpha(80),
                               ),
                             ),
                             child: Text(
-                              isBleTier ? 'Tier 1: BLE (<2MB)' : 'Tier 2: Wi-Fi Turbo (>=2MB)',
+                              isFastTransfer ? 'Fast Transfer (Wi-Fi)' : 'BLE Auto-Sync',
                               style: TextStyle(
-                                color: isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange,
+                                color: isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -163,7 +163,7 @@ class ClipCard extends StatelessWidget {
                       minHeight: 6,
                       backgroundColor: const Color(0xFF243248),
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange,
+                        !isFastTransfer ? AppTheme.primaryCyan : AppTheme.accentOrange,
                       ),
                     ),
                   ),
@@ -173,7 +173,7 @@ class ClipCard extends StatelessWidget {
                       clip.transferSpeed!,
                       style: TextStyle(
                         fontSize: 11,
-                        color: isBleTier ? AppTheme.primaryCyan : AppTheme.accentOrange,
+                        color: !isFastTransfer ? AppTheme.primaryCyan : AppTheme.accentOrange,
                       ),
                     ),
                   ],

@@ -17,10 +17,11 @@ class AppConstants {
   // BLE L2CAP Connection-Oriented Channels (CoC)
   static const int bleL2capPsm = 0x0081;
 
-  // Hybrid Sync Thresholds (Section 4.1 & 4.2)
-  // Clips < 2.0 MB: Tier 1 BLE 5.0 (Silent Background Sync, < 18s)
-  // Clips >= 2.0 MB: Tier 2 Wi-Fi SoftAP (High-Speed Turbo Sync, > 1.8 MB/s)
-  static const int tier1MaxSizeBytes = 2097152; // 2.0 MB (approx. 4 min audio)
+  // 2-Stage Plaud Note Hybrid Sync Thresholds
+  // Clips < 500 KB: Tier 1 BLE Standard Auto-Sync (Silent, no user action required)
+  // Clips >= 500 KB or Manual Fast Transfer: Tier 2 Wi-Fi Fast Transfer (> 2.0 MB/s)
+  static const int autoFastTransferThresholdBytes = 524288; // 512 KB (approx. 1 min audio)
+  static const int tier1MaxSizeBytes = 2097152; // 2.0 MB
 
   // Wi-Fi SoftAP Sync Defaults
   static const String defaultApSsid = 'XIAO-Audio-Hotspot';
@@ -73,12 +74,33 @@ enum BleCommand {
   const BleCommand(this.rawValue);
 }
 
-/// Audio Sync Strategy (BLE 5.0 High-Throughput L2CAP CoC)
+/// 2-Stage Sync Architecture Tiers (Plaud Note Model)
 enum SyncTier {
-  bleL2cap('BLE 5.0 High-Throughput', 'High-Speed BLE 5.0 L2CAP CoC Channel (125-175 KB/s)'),
-  wifiTurbo('Wi-Fi Legacy', 'Legacy SoftAP Mode (Disabled / Deprecated)');
+  bleStandard('BLE 5.0 Auto-Sync', 'Silent background sync & live telemetry (<5 mA)'),
+  wifiFast('WiFi Fast Transfer', 'On-demand high-speed Wi-Fi Turbo sync (>2.0 MB/s)');
 
   final String label;
   final String description;
   const SyncTier(this.label, this.description);
+}
+
+/// 5-Phase Wi-Fi Fast Transfer State Machine
+enum FastTransferPhase {
+  none(0, 'Standby', 'Ready to initiate Fast Transfer'),
+  activatingHotspot(1, 'Activating Hotspot', 'Sending BLE command to start ESP32 Access Point...'),
+  connectingWifi(2, 'Connecting Wi-Fi', 'Connecting to XIAO-Audio-Hotspot...'),
+  handshaking(3, 'Handshaking', 'Verifying device connection and storage index...'),
+  ready(4, 'Ready', 'Device ready for high-speed streaming'),
+  transferring(5, 'Turbo Transfer', 'Downloading audio data via high-speed HTTP stream...'),
+  completed(6, 'Complete', 'Fast Transfer successfully verified and saved!'),
+  failed(7, 'Error', 'Transfer failed or was cancelled');
+
+  final int stepIndex;
+  final String title;
+  final String description;
+  const FastTransferPhase(this.stepIndex, this.title, this.description);
+
+  bool get isActive => this == activatingHotspot || this == connectingWifi || this == handshaking || this == ready || this == transferring;
+  bool get isDone => this == completed;
+  bool get isError => this == failed;
 }

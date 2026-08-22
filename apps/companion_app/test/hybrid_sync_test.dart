@@ -4,12 +4,12 @@ import 'package:companion_app/core/services/native_audio_sync_bridge.dart';
 import 'package:companion_app/features/recordings/models/recording_item.dart';
 
 void main() {
-  group('BLE 5.0 High-Throughput Sync Tests', () {
-    test('All clips default to BLE 5.0 High-Throughput tier', () {
+  group('2-Stage Plaud Note Hybrid Sync Tests', () {
+    test('Clips correctly categorize into BLE Standard or WiFi Fast Transfer tier', () {
       final smallClip = RecordingItem(
         id: 1,
         remoteFilename: 'clip_001.wav',
-        sizeBytes: 192000,
+        sizeBytes: 192000, // 192 KB (< 512 KB threshold)
         duration: const Duration(seconds: 24),
         sampleRate: 16000,
         recordedAt: DateTime.now(),
@@ -18,17 +18,19 @@ void main() {
       final largeClip = RecordingItem(
         id: 2,
         remoteFilename: 'clip_002.wav',
-        sizeBytes: 4800000,
+        sizeBytes: 4800000, // 4.8 MB (>= 512 KB threshold)
         duration: const Duration(minutes: 10),
         sampleRate: 16000,
         recordedAt: DateTime.now(),
       );
 
-      expect(smallClip.recommendedTier, SyncTier.bleL2cap);
-      expect(largeClip.recommendedTier, SyncTier.bleL2cap);
+      expect(smallClip.recommendedTier, SyncTier.bleStandard);
+      expect(smallClip.isFastTransferRecommended, isFalse);
+      expect(largeClip.recommendedTier, SyncTier.wifiFast);
+      expect(largeClip.isFastTransferRecommended, isTrue);
     });
 
-    test('RecordingItem fromApiJson creates valid model with BLE tier', () {
+    test('RecordingItem fromApiJson creates valid model with dynamic tier', () {
       final json = {
         'id': 105,
         'filename': 'clip_105.wav',
@@ -42,7 +44,8 @@ void main() {
       expect(item.id, 105);
       expect(item.remoteFilename, 'clip_105.wav');
       expect(item.sizeBytes, 2400000);
-      expect(item.recommendedTier, SyncTier.bleL2cap);
+      expect(item.recommendedTier, SyncTier.wifiFast);
+      expect(item.isFastTransferRecommended, isTrue);
       expect(item.syncState, SyncState.onDevice);
     });
 
@@ -97,7 +100,18 @@ void main() {
       );
       expect(cancelledEvent.status, 'cancelled');
       expect(cancelledEvent.isCompleted, isFalse);
-      expect(cancelledEvent.isFailed, isFalse);
+      expect(cancelledEvent.isFailed, isTrue);
+      expect(cancelledEvent.currentPhase, FastTransferPhase.failed);
+
+      const hsEvent = SyncProgressEvent(
+        status: 'handshaking',
+        progress: 0.5,
+        bytesReceived: 0,
+        totalBytes: 0,
+        message: 'Handshaking...',
+      );
+      expect(hsEvent.isHandshaking, isTrue);
+      expect(hsEvent.currentPhase, FastTransferPhase.handshaking);
     });
 
     test('NativeAudioSyncBridge platform fallback returns safe defaults on non-Android platforms', () async {

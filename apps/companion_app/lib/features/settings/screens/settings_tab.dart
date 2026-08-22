@@ -25,7 +25,7 @@ class _SettingsTabState extends State<SettingsTab> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        // BLE 5.0 High-Throughput Sync Overview
+        // Plaud Note 2-Stage Sync Architecture Overview
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -37,36 +37,75 @@ class _SettingsTabState extends State<SettingsTab> {
                     Icon(Icons.bolt, color: AppTheme.primaryCyan, size: 22),
                     SizedBox(width: 8),
                     Text(
-                      'BLE 5.0 High-Throughput Sync Architecture',
+                      '2-Stage Sync Architecture (Plaud Note Model)',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'All audio recordings are synchronized directly over BLE 5.0 with zero Wi-Fi state disruption or captive portal issues:',
+                  'Optimized two-stage data transfer designed for battery efficiency and high-speed audio synchronization:',
                   style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
                 ),
                 const SizedBox(height: 12),
                 _buildSyncTierRow(
                   icon: Icons.bluetooth_audio,
                   color: AppTheme.primaryCyan,
-                  title: 'BLE 5.0 2M PHY & DLE',
-                  desc: 'Physical link operates at 2 Mbps with Data Length Extension (251-byte Link Layer PDU) for maximum radio throughput.',
+                  title: 'Stage 1: BLE 5.0 Auto-Sync (<5 mA)',
+                  desc: 'Permanent low-energy connection. Telemetry (10 Hz), remote commands, and silent auto-sync of small clips (< 500 KB).',
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 _buildSyncTierRow(
-                  icon: Icons.speed,
-                  color: AppTheme.accentGreen,
-                  title: 'L2CAP Credit-Based Channels (SPSM 0x0081)',
-                  desc: 'High-speed binary stream (~125-175 KB/s). Transfers a 1-minute audio clip in ~3.8s (~15x real-time).',
+                  icon: Icons.wifi_tethering,
+                  color: AppTheme.accentOrange,
+                  title: 'Stage 2: WiFi Fast Transfer (> 2.0 MB/s)',
+                  desc: 'On-demand high-speed SoftAP transfer (~10-20x faster than BLE). 5-phase handshake state machine with RFC 7233 Range resume.',
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 _buildSyncTierRow(
                   icon: Icons.verified_user,
                   color: AppTheme.accentPurple,
-                  title: 'Per-Chunk & File-Level CRC32',
-                  desc: 'Every 512-byte frame is hardware CRC32 checked, with full-file validation before saving to local disk.',
+                  title: 'Data Integrity & CRC32 Verification',
+                  desc: 'Every audio frame and completed WAV file is CRC32 verified before saving to local disk.',
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Fast Transfer Options & Preferences
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.tune, color: AppTheme.primaryCyan, size: 22),
+                    SizedBox(width: 8),
+                    Text(
+                      'Fast Transfer Preferences',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Auto-Delete after Sync', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: const Text(
+                    'Automatically delete audio clips from ESP32 flash memory once downloaded and verified locally (Plaud style).',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                  ),
+                  value: widget.syncManager.autoDeleteAfterSync,
+                  activeThumbColor: AppTheme.primaryCyan,
+                  onChanged: (val) {
+                    setState(() {
+                      widget.syncManager.autoDeleteAfterSync = val;
+                    });
+                  },
                 ),
               ],
             ),
@@ -194,10 +233,10 @@ class _SettingsTabState extends State<SettingsTab> {
                 ),
                 const SizedBox(height: 12),
                 _buildInfoRow('Target MCU', 'Seeed Studio XIAO ESP32-C3 (RISC-V 160MHz)'),
-                _buildInfoRow('Sync Architecture', '100% BLE 5.0 High-Throughput (L2CAP CoC)'),
-                _buildInfoRow('BLE Physical Layer', '2M PHY + Data Length Extension (DLE 251B)'),
-                _buildInfoRow('BLE L2CAP SPSM', '0x0081 (Credit-Based Flow Control, MTU 512)'),
-                _buildInfoRow('Throughput Rate', '~125 - 175 KB/s (~15x real-time speed)'),
+                _buildInfoRow('Sync Architecture', '2-Stage Plaud Note Hybrid (BLE 5.0 + Wi-Fi SoftAP)'),
+                _buildInfoRow('Stage 1 (BLE 5.0)', 'GATT / L2CAP CoC Auto-Sync (<5 mA)'),
+                _buildInfoRow('Stage 2 (Wi-Fi Fast)', 'SoftAP 802.11 b/g/n (>2.0 MB/s Turbo HTTP)'),
+                _buildInfoRow('Handshake Protocol', '5-Phase State Machine (NONE->CONN->HS->READY->XFER)'),
                 _buildInfoRow('Audio Codec', '16 kHz IMA-ADPCM 4-bit Mono (8 KB/s)'),
                 _buildInfoRow('Microphone', 'I2S Stereo/Mono Digital MEMS'),
                 _buildInfoRow('IMU Sensor', 'LSM6DS3 / BMI160 6-Axis + Tap Detector'),

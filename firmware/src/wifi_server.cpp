@@ -47,6 +47,7 @@ void WifiServerManager::setupRoutes() {
     _server.on("/api/complete", HTTP_POST, [this]() { notifyActivity(); handleApiDelete(); });
     _server.on("/api/clear", HTTP_GET, [this]() { notifyActivity(); handleApiClear(); });
     _server.on("/api/clear", HTTP_POST, [this]() { notifyActivity(); handleApiClear(); });
+    _server.on("/api/handshake", HTTP_GET, [this]() { notifyActivity(); handleHandshake(); });
     _server.on("/api/status", HTTP_GET, [this]() { notifyActivity(); handleStatus(); });
 
     // Explicit CORS Preflight (OPTIONS)
@@ -56,6 +57,7 @@ void WifiServerManager::setupRoutes() {
     _server.on("/api/delete", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
     _server.on("/api/complete", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
     _server.on("/api/clear", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
+    _server.on("/api/handshake", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
     _server.on("/api/status", HTTP_OPTIONS, [this]() { notifyActivity(); handleOptions(); });
 
     // Favicon & Browser Icons (204 No Content to avoid 302 redirect loops)
@@ -227,6 +229,22 @@ void WifiServerManager::handleNotFound() {
     _server.sendHeader("Access-Control-Allow-Origin", "*");
     String message = "404 Not Found: " + _server.uri();
     _server.send(404, "text/plain", message);
+}
+
+void WifiServerManager::handleHandshake() {
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
+    _server.sendHeader("Content-Type", "application/json");
+
+    size_t total = _storage.getTotalBytes();
+    size_t used = _storage.getUsedBytes();
+    size_t count = _storage.getClipCount();
+
+    char json[256];
+    snprintf(json, sizeof(json),
+             "{\"status\":\"READY\",\"deviceId\":\"XIAO-ESP32C3\",\"fwVersion\":\"2.1.0\",\"protocol\":\"PLAUD_HYBRID_V2\",\"totalClips\":%u,\"usedBytes\":%u,\"totalBytes\":%u,\"freeBytes\":%u}",
+             count, used, total, (total > used) ? (total - used) : 0);
+
+    _server.send(200, "application/json", json);
 }
 
 void WifiServerManager::handleStatus() {

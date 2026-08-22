@@ -42,6 +42,7 @@ private:
     void handleApiDownload();
     void handleApiDelete();
     void handleApiClear();
+    void handleHandshake();
     void handleStatus();
     void handleOptions();
     void handleFavicon();

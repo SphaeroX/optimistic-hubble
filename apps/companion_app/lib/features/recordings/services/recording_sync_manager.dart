@@ -22,6 +22,10 @@ class RecordingSyncManager extends ChangeNotifier {
   String _currentSyncFile = '';
   String? _currentSpeed;
   String? _errorMessage;
+  FastTransferPhase _fastTransferPhase = FastTransferPhase.none;
+  bool _autoDeleteAfterSync = false;
+  int _autoFastTransferThresholdBytes = AppConstants.autoFastTransferThresholdBytes;
+
   StreamSubscription<SyncProgressEvent>? _nativeSyncSubscription;
   StreamSubscription<SyncProgressEvent>? _bleAudioSubscription;
 
@@ -41,8 +45,21 @@ class RecordingSyncManager extends ChangeNotifier {
   String get currentSyncFile => _currentSyncFile;
   String? get currentSpeed => _currentSpeed;
   String? get errorMessage => _errorMessage;
+  FastTransferPhase get fastTransferPhase => _fastTransferPhase;
+  bool get autoDeleteAfterSync => _autoDeleteAfterSync;
+  int get autoFastTransferThresholdBytes => _autoFastTransferThresholdBytes;
   String get deviceIp => _deviceIp;
   int get devicePort => _devicePort;
+
+  set autoDeleteAfterSync(bool val) {
+    _autoDeleteAfterSync = val;
+    notifyListeners();
+  }
+
+  set autoFastTransferThresholdBytes(int val) {
+    _autoFastTransferThresholdBytes = val;
+    notifyListeners();
+  }
 
   RecordingSyncManager({
     required this.audioPlayer,
@@ -91,6 +108,7 @@ class RecordingSyncManager extends ChangeNotifier {
       _nativeSyncSubscription = _nativeBridge.syncEvents.listen((event) {
         _syncProgress = event.progress;
         _currentSpeed = event.message;
+        _fastTransferPhase = event.currentPhase;
 
         if (event.isTransferring && _currentSyncFile.isNotEmpty) {
           final target = _clipsMap.values.cast<RecordingItem?>().firstWhere(
@@ -234,7 +252,166 @@ class RecordingSyncManager extends ChangeNotifier {
     _onBleUpdate();
   }
 
-  /// BLE 5.0 High-Throughput Download for a single clip:
+  /// 2-Stage Wi-Fi Fast Transfer Pipeline (Plaud Note Model)
+  Future<bool> startFastTransfer({int? targetClipId}) async {
+    if (_isSyncing) return false;
+    _isSyncing = true;
+    _errorMessage = null;
+    _syncProgress = 0.0;
+    _fastTransferPhase = FastTransferPhase.activatingHotspot;
+    notifyListeners();
+
+    try {
+      // 1. Check if mock mode is active (Desktop / Simulator)
+      if (bleService?.isMockMode == true || !_nativeBridge.isPlatformAndroid) {
+        _log('[FastTransfer] Running simulated 5-phase Wi-Fi Fast Transfer...');
+        await Future.delayed(const Duration(milliseconds: 600));
+        _fastTransferPhase = FastTransferPhase.connectingWifi;
+        notifyListeners();
+        await Future.delayed(const Duration(milliseconds: 800));
+        _fastTransferPhase = FastTransferPhase.handshaking;
+        notifyListeners();
+        await Future.delayed(const Duration(milliseconds: 500));
+        _fastTransferPhase = FastTransferPhase.ready;
+        notifyListeners();
+        await Future.delayed(const Duration(milliseconds: 400));
+        _fastTransferPhase = FastTransferPhase.transferring;
+
+        final targetClips = (targetClipId != null)
+            ? [_clipsMap[targetClipId]].whereType<RecordingItem>().toList()
+            : _clipsMap.values.where((c) => c.syncState != SyncState.synced).toList();
+
+        for (int i = 0; i < targetClips.length; i++) {
+          final clip = targetClips[i];
+          _currentSyncFile = clip.remoteFilename;
+          _clipsMap[clip.id] = clip.copyWith(
+            syncState: SyncState.downloading,
+            transferSpeed: '2.4 MB/s (Wi-Fi Turbo)',
+          );
+          notifyListeners();
+
+          for (int s = 1; s <= 10; s++) {
+            await Future.delayed(const Duration(milliseconds: 60));
+            _syncProgress = ((i + (s / 10.0)) / targetClips.length).clamp(0.0, 1.0);
+            notifyListeners();
+          }
+
+          final syntheticWav = _generateSyntheticAudioWav(
+            durationSeconds: clip.duration.inSeconds > 0 ? clip.duration.inSeconds : 6,
+          );
+          final savedFile = await LocalStorageManager.saveWavFile(
+            filename: 'clip_${clip.id}.wav',
+            wavBytes: syntheticWav,
+          );
+
+          _clipsMap[clip.id] = clip.copyWith(
+            syncState: SyncState.synced,
+            downloadProgress: 1.0,
+            localWavPath: savedFile.path,
+            crcVerified: true,
+            transferSpeed: 'Verified (2.4 MB/s Wi-Fi)',
+          );
+          notifyListeners();
+        }
+
+        _fastTransferPhase = FastTransferPhase.completed;
+        _isSyncing = false;
+        _currentSyncFile = '';
+        _currentSpeed = null;
+        notifyListeners();
+        return true;
+      }
+
+      // 2. Real Hardware: Phase 1 -> Activate ESP32 SoftAP via BLE
+      if (bleService == null || !bleService!.isConnected) {
+        throw Exception('Please connect to Xiao ESP32 via BLE first');
+      }
+
+      _fastTransferPhase = FastTransferPhase.activatingHotspot;
+      notifyListeners();
+      await bleService!.sendCommand(BleCommand.startWifi);
+      await Future.delayed(const Duration(milliseconds: 1400)); // Allow SoftAP radio to stabilize
+
+      // 3. Phase 2 & 3 -> Connect Wi-Fi and Handshake via Native Bridge
+      _fastTransferPhase = FastTransferPhase.connectingWifi;
+      notifyListeners();
+
+      final List<RecordingItem> targetClips = (targetClipId != null)
+          ? [_clipsMap[targetClipId]].whereType<RecordingItem>().toList()
+          : _clipsMap.values.where((c) => c.syncState != SyncState.synced).toList();
+
+      if (targetClips.isEmpty) {
+        _fastTransferPhase = FastTransferPhase.completed;
+        _isSyncing = false;
+        notifyListeners();
+        return true;
+      }
+
+      for (int i = 0; i < targetClips.length; i++) {
+        if (!_isSyncing) break;
+        final clip = targetClips[i];
+        _currentSyncFile = clip.remoteFilename;
+        _clipsMap[clip.id] = clip.copyWith(
+          syncState: SyncState.downloading,
+          transferSpeed: 'Initiating Turbo Sync...',
+        );
+        notifyListeners();
+
+        final isLast = (i == targetClips.length - 1);
+        final localTarget = await LocalStorageManager.getLocalFile('clip_${clip.id}.wav');
+
+        final String? downloadedPath = await _nativeBridge.startWifiSoftApSync(
+          fileId: clip.id,
+          destinationPath: localTarget?.path,
+          keepConnected: !isLast,
+          deleteAfterSync: _autoDeleteAfterSync,
+        );
+
+        if (downloadedPath != null && File(downloadedPath).existsSync()) {
+          _clipsMap[clip.id] = clip.copyWith(
+            syncState: SyncState.synced,
+            downloadProgress: 1.0,
+            localWavPath: downloadedPath,
+            crcVerified: true,
+            transferSpeed: 'Verified (Wi-Fi Fast Transfer)',
+          );
+        } else {
+          _clipsMap[clip.id] = clip.copyWith(
+            syncState: SyncState.error,
+            transferSpeed: 'Transfer failed',
+          );
+        }
+        _syncProgress = ((i + 1) / targetClips.length).clamp(0.0, 1.0);
+        notifyListeners();
+      }
+
+      // 4. Teardown: Disconnect Wi-Fi and tell ESP32 to turn off SoftAP (saves ~150mA)
+      await _nativeBridge.disconnectWifiSoftAp();
+      await bleService!.sendCommand(BleCommand.stopWifi);
+
+      _fastTransferPhase = FastTransferPhase.completed;
+      return true;
+    } catch (e) {
+      _errorMessage = 'Fast Transfer error: $e';
+      _fastTransferPhase = FastTransferPhase.failed;
+      try {
+        await _nativeBridge.disconnectWifiSoftAp();
+        await bleService?.sendCommand(BleCommand.stopWifi);
+      } catch (_) {}
+      return false;
+    } finally {
+      _isSyncing = false;
+      _currentSyncFile = '';
+      _currentSpeed = null;
+      notifyListeners();
+    }
+  }
+
+  void _log(String msg) {
+    debugPrint('[RecordingSyncManager] $msg');
+  }
+
+  /// Download a single clip using smart 2-stage routing
   Future<bool> downloadClip(
     int clipId, {
     SyncTier? forcedTier,
@@ -243,6 +420,12 @@ class RecordingSyncManager extends ChangeNotifier {
     final clip = _clipsMap[clipId];
     if (clip == null) return false;
 
+    // Smart routing: Large clips or explicit Wi-Fi tier trigger Fast Transfer
+    if (forcedTier == SyncTier.wifiFast || (forcedTier == null && clip.isFastTransferRecommended)) {
+      return await startFastTransfer(targetClipId: clipId);
+    }
+
+    // Small clips / standard route: BLE 5.0 GATT / L2CAP
     if (bleService == null || !bleService!.isConnected) {
       _errorMessage = 'Please connect to Xiao ESP32 via BLE first';
       notifyListeners();
@@ -259,7 +442,6 @@ class RecordingSyncManager extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. Simulated or Host Fallback (Mock Mode for PC/Testing)
       if (bleService?.isMockMode == true) {
         final syntheticWav = _generateSyntheticAudioWav(
           durationSeconds: clip.duration.inSeconds > 0 ? clip.duration.inSeconds : 5,
@@ -281,7 +463,6 @@ class RecordingSyncManager extends ChangeNotifier {
         return true;
       }
 
-      // 2. High-speed BLE GATT Stream transfer
       final Uint8List? rawBytes = await bleService!.streamClipOverGatt(clip.id);
       if (rawBytes == null || rawBytes.isEmpty) {
         throw Exception('BLE audio stream timed out or returned no data');
@@ -293,10 +474,8 @@ class RecordingSyncManager extends ChangeNotifier {
           rawBytes[1] == 0x49 &&
           rawBytes[2] == 0x46 &&
           rawBytes[3] == 0x46) {
-        // Standard RIFF/WAVE header
         finalWavBytes = rawBytes;
       } else {
-        // Raw ADPCM - decode to Linear 16-bit PCM WAV
         finalWavBytes = AdpcmDecoder.decodeAdpcmToWav(rawBytes, sampleRate: clip.sampleRate);
       }
 
@@ -310,7 +489,7 @@ class RecordingSyncManager extends ChangeNotifier {
         downloadProgress: 1.0,
         localWavPath: savedFile.path,
         crcVerified: true,
-        transferSpeed: 'Verified (BLE 5.0 High-Throughput)',
+        transferSpeed: 'Verified (BLE 5.0 Auto-Sync)',
       );
       _currentSyncFile = '';
       _currentSpeed = null;
@@ -329,8 +508,18 @@ class RecordingSyncManager extends ChangeNotifier {
     }
   }
 
-  /// BLE 5.0 High-Throughput Sequential Sync for all unsynced clips
-  Future<void> syncAllClips() async {
+  /// Sequential Sync for all unsynced clips
+  Future<void> syncAllClips({bool forceWifiFast = false}) async {
+    final unsynced = _clipsMap.values.where((c) => c.syncState != SyncState.synced).toList();
+    if (unsynced.isEmpty) return;
+
+    // Check if any clip is large enough to warrant Fast Transfer, or forced
+    final hasLargeClips = unsynced.any((c) => c.isFastTransferRecommended);
+    if (forceWifiFast || hasLargeClips) {
+      await startFastTransfer();
+      return;
+    }
+
     if (_isSyncing) return;
     _isSyncing = true;
     _syncProgress = 0.0;
@@ -338,22 +527,15 @@ class RecordingSyncManager extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final unsynced = _clipsMap.values.where((c) => c.syncState != SyncState.synced).toList();
-      if (unsynced.isEmpty) {
-        _isSyncing = false;
-        notifyListeners();
-        return;
-      }
-
       for (int i = 0; i < unsynced.length; i++) {
-        if (!_isSyncing) break; // Check if cancelled
+        if (!_isSyncing) break;
 
         final clip = unsynced[i];
         _currentSyncFile = clip.remoteFilename;
         _syncProgress = (i / unsynced.length);
         notifyListeners();
 
-        await downloadClip(clip.id);
+        await downloadClip(clip.id, forcedTier: SyncTier.bleStandard);
 
         _syncProgress = ((i + 1) / unsynced.length);
         notifyListeners();

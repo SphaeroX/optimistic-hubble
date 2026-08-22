@@ -22,9 +22,37 @@ class SyncProgressEvent {
   });
 
   bool get isCompleted => status == 'completed';
-  bool get isFailed => status == 'failed';
-  bool get isConnecting => status == 'connecting';
+  bool get isFailed => status == 'failed' || status == 'cancelled';
+  bool get isConnecting => status == 'connecting' || status == 'connecting_wifi';
+  bool get isConnected => status == 'connected' || status == 'connected_wifi';
+  bool get isHandshaking => status == 'handshaking';
+  bool get isReady => status == 'ready';
   bool get isTransferring => status == 'transferring';
+
+  FastTransferPhase get currentPhase {
+    switch (status) {
+      case 'activating_hotspot':
+        return FastTransferPhase.activatingHotspot;
+      case 'connecting':
+      case 'connecting_wifi':
+        return FastTransferPhase.connectingWifi;
+      case 'connected':
+      case 'connected_wifi':
+      case 'handshaking':
+        return FastTransferPhase.handshaking;
+      case 'ready':
+        return FastTransferPhase.ready;
+      case 'transferring':
+        return FastTransferPhase.transferring;
+      case 'completed':
+        return FastTransferPhase.completed;
+      case 'failed':
+      case 'cancelled':
+        return FastTransferPhase.failed;
+      default:
+        return FastTransferPhase.none;
+    }
+  }
 }
 
 class NativeAudioSyncBridge {
@@ -103,6 +131,7 @@ class NativeAudioSyncBridge {
     int startOffset = 0,
     String? destinationPath,
     bool keepConnected = false,
+    bool deleteAfterSync = false,
   }) async {
     if (!isPlatformAndroid) return null;
     try {
@@ -113,6 +142,7 @@ class NativeAudioSyncBridge {
         'startOffset': startOffset,
         'destinationPath': ?destinationPath,
         'keepConnected': keepConnected,
+        'deleteAfterSync': deleteAfterSync,
       });
       return path;
     } catch (e) {
@@ -153,6 +183,28 @@ class NativeAudioSyncBridge {
       final bool? res = await _methodChannel.invokeMethod<bool>('isWifiConnected');
       return res ?? false;
     } catch (_) {
+      return false;
+    }
+  }
+
+  Future<String?> performHandshake() async {
+    if (!isPlatformAndroid) return null;
+    try {
+      final String? res = await _methodChannel.invokeMethod<String>('performHandshake');
+      return res;
+    } catch (e) {
+      debugPrint('[NativeAudioSyncBridge] performHandshake error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> deleteRemoteClip(int fileId) async {
+    if (!isPlatformAndroid) return false;
+    try {
+      final bool? res = await _methodChannel.invokeMethod<bool>('deleteRemoteClip', {'fileId': fileId});
+      return res ?? false;
+    } catch (e) {
+      debugPrint('[NativeAudioSyncBridge] deleteRemoteClip error: $e');
       return false;
     }
   }
