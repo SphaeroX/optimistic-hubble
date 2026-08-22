@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import '../models/ble_device_item.dart';
 import '../services/ble_service.dart';
 
 class DeviceScannerSheet extends StatelessWidget {
@@ -12,8 +13,15 @@ class DeviceScannerSheet extends StatelessWidget {
     return AnimatedBuilder(
       animation: bleService,
       builder: (context, _) {
-        final devices = bleService.discoveredDevices;
+        final devices = List<BleDeviceItem>.from(bleService.discoveredDevices)
+          ..sort((a, b) {
+            if (a.isXiaoDevice != b.isXiaoDevice) {
+              return a.isXiaoDevice ? -1 : 1;
+            }
+            return b.rssi.compareTo(a.rssi);
+          });
         final isScanning = bleService.isScanning;
+        final hasXiaoDevice = devices.any((d) => d.isXiaoDevice);
 
         return Container(
           decoration: const BoxDecoration(
@@ -66,6 +74,34 @@ class DeviceScannerSheet extends StatelessWidget {
                     ),
                 ],
               ),
+              const SizedBox(height: 10),
+
+              // Quick Auto-Connect Button
+              ElevatedButton.icon(
+                onPressed: (bleService.isConnecting || bleService.isAutoConnecting)
+                    ? null
+                    : () async {
+                        final nav = Navigator.of(context);
+                        final success = await bleService.autoConnectNearestXiao();
+                        if (success && nav.canPop()) {
+                          nav.pop();
+                        }
+                      },
+                icon: const Icon(Icons.flash_on, size: 18, color: Colors.black),
+                label: Text(
+                  bleService.isAutoConnecting
+                      ? 'Selecting nearest Xiao...'
+                      : (hasXiaoDevice
+                          ? 'Auto-Connect Strongest Signal'
+                          : 'Smart Auto-Connect (Nearest Xiao)'),
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryCyan,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
               const SizedBox(height: 8),
 
               // Mock Button for quick PC testing
@@ -105,6 +141,19 @@ class DeviceScannerSheet extends StatelessWidget {
                     separatorBuilder: (_, _) => const Divider(color: Color(0xFF243248)),
                     itemBuilder: (context, index) {
                       final dev = devices[index];
+                      final signalColor = dev.rssi >= -60
+                          ? AppTheme.accentGreen
+                          : (dev.rssi >= -75
+                              ? AppTheme.primaryCyan
+                              : (dev.rssi >= -88
+                                  ? AppTheme.accentOrange
+                                  : AppTheme.accentRed));
+                      final signalLabel = dev.rssi >= -60
+                          ? 'Excellent'
+                          : (dev.rssi >= -75
+                              ? 'Good'
+                              : (dev.rssi >= -88 ? 'Fair' : 'Weak'));
+
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: dev.isXiaoDevice
@@ -115,16 +164,46 @@ class DeviceScannerSheet extends StatelessWidget {
                             color: dev.isXiaoDevice ? AppTheme.primaryCyan : AppTheme.textMuted,
                           ),
                         ),
-                        title: Text(
-                          dev.name,
-                          style: TextStyle(
-                            fontWeight: dev.isXiaoDevice ? FontWeight.bold : FontWeight.normal,
-                            color: dev.isXiaoDevice ? Colors.white : AppTheme.textMuted,
-                          ),
+                        title: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                dev.name,
+                                style: TextStyle(
+                                  fontWeight: dev.isXiaoDevice ? FontWeight.bold : FontWeight.normal,
+                                  color: dev.isXiaoDevice ? Colors.white : AppTheme.textMuted,
+                                ),
+                              ),
+                            ),
+                            if (index == 0 && dev.isXiaoDevice)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                margin: const EdgeInsets.only(left: 6),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.accentGreen.withAlpha(40),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: AppTheme.accentGreen, width: 0.8),
+                                ),
+                                child: const Text(
+                                  'NEAREST',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.accentGreen,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                        subtitle: Text(
-                          'RSSI: ${dev.rssi} dBm | ID: ${dev.id}',
-                          style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                        subtitle: Row(
+                          children: [
+                            Icon(Icons.network_wifi_sharp, size: 13, color: signalColor),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${dev.rssi} dBm ($signalLabel) • ID: ${dev.id}',
+                              style: TextStyle(fontSize: 12, color: signalColor.withAlpha(200)),
+                            ),
+                          ],
                         ),
                         trailing: ElevatedButton(
                           onPressed: bleService.isConnecting

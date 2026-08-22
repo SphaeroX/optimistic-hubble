@@ -38,6 +38,8 @@ class BleService extends ChangeNotifier {
   String _statusMessage = 'Disconnected';
   bool _isMockMode = false;
   Timer? _mockTelemetryTimer;
+  bool _isAutoConnecting = false;
+  bool _autoConnectEnabled = true;
 
   bool _isGattConfigured = false;
   String? _currentGattDeviceId;
@@ -55,6 +57,12 @@ class BleService extends ChangeNotifier {
   bool get isConnected => _status == ConnectionStatus.connected;
   bool get isScanning => _status == ConnectionStatus.scanning;
   bool get isConnecting => _status == ConnectionStatus.connecting;
+  bool get isAutoConnecting => _isAutoConnecting;
+  bool get autoConnectEnabled => _autoConnectEnabled;
+  set autoConnectEnabled(bool value) {
+    _autoConnectEnabled = value;
+    notifyListeners();
+  }
   bool get isMockMode => _isMockMode;
   BleDeviceItem? get connectedDevice => _connectedDevice;
   List<BleDeviceItem> get discoveredDevices => List.unmodifiable(_discoveredDevices);
@@ -158,6 +166,7 @@ class BleService extends ChangeNotifier {
   }
 
   Future<void> stopScan() async {
+    _isAutoConnecting = false;
     try {
       await UniversalBle.stopScan();
     } catch (_) {}
@@ -166,6 +175,88 @@ class BleService extends ChangeNotifier {
       _statusMessage = 'Scan stopped';
       _log('SCAN', 'Scan stopped');
       notifyListeners();
+    }
+  }
+
+  /// Automatically scan for nearby Xiao devices, select the one with the strongest signal
+  /// (highest RSSI / closest proximity), and establish connection without manual picker.
+  Future<bool> autoConnectNearestXiao({
+    Duration scanWindow = const Duration(milliseconds: 1500),
+    Duration totalTimeout = const Duration(seconds: 6),
+  }) async {
+    if (isConnected) return true;
+
+    if (_isMockMode) {
+      enableMockMode();
+      return true;
+    }
+
+    final hasPerm = await PermissionService.requestAppPermissions();
+    if (!hasPerm) {
+      _log('PERM', 'Bluetooth permissions not granted for auto-connect', isError: true);
+    }
+
+    _isAutoConnecting = true;
+    _status = ConnectionStatus.scanning;
+    _statusMessage = 'Searching for nearest Xiao device...';
+    _discoveredDevices.clear();
+    _log('AUTOCONNECT', 'Starting proximity scan for nearest Xiao ESP32 (RSSI auto-selection)...');
+    notifyListeners();
+
+    try {
+      await UniversalBle.startScan();
+    } catch (e) {
+      _isAutoConnecting = false;
+      _status = ConnectionStatus.disconnected;
+      _statusMessage = 'Auto-connect scan failed: $e';
+      _log('AUTOCONNECT', 'Scan failed: $e', isError: true);
+      notifyListeners();
+      return false;
+    }
+
+    final startTime = DateTime.now();
+    final deadline = startTime.add(totalTimeout);
+    BleDeviceItem? targetDevice;
+
+    while (DateTime.now().isBefore(deadline) && _isAutoConnecting) {
+      final xiaoCandidates = _discoveredDevices.where((d) =>
+        d.isXiaoDevice ||
+        d.name.toLowerCase().contains('xiao') ||
+        d.name == AppConstants.bleDeviceName
+      ).toList();
+
+      final elapsed = DateTime.now().difference(startTime);
+      if (xiaoCandidates.isNotEmpty && elapsed >= scanWindow) {
+        // Sort descending by RSSI (closest / best radio link first, e.g. -45 dBm > -75 dBm)
+        xiaoCandidates.sort((a, b) => b.rssi.compareTo(a.rssi));
+        targetDevice = xiaoCandidates.first;
+        _log('AUTOCONNECT', 'Found ${xiaoCandidates.length} candidate(s). Selected strongest: ${targetDevice.name} (${targetDevice.id}) with RSSI: ${targetDevice.rssi} dBm');
+        break;
+      }
+
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+
+    if (!_isAutoConnecting) {
+      await stopScan();
+      return false;
+    }
+
+    if (targetDevice != null) {
+      _statusMessage = 'Connecting to nearest: ${targetDevice.name} (${targetDevice.rssi} dBm)...';
+      notifyListeners();
+      await connect(targetDevice);
+      _isAutoConnecting = false;
+      notifyListeners();
+      return isConnected;
+    } else {
+      await stopScan();
+      _isAutoConnecting = false;
+      _status = ConnectionStatus.disconnected;
+      _statusMessage = 'No Xiao device found in range';
+      _log('AUTOCONNECT', 'No matching Xiao device discovered within range', isError: true);
+      notifyListeners();
+      return false;
     }
   }
 

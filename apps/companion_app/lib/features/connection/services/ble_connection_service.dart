@@ -101,6 +101,59 @@ class BleConnectionService extends ChangeNotifier {
     }
   }
 
+  /// Automatically connect to the nearest discovered Xiao device with the highest RSSI
+  Future<bool> autoConnectNearestXiao({
+    Duration scanWindow = const Duration(milliseconds: 1500),
+    Duration totalTimeout = const Duration(seconds: 6),
+  }) async {
+    if (isConnected) return true;
+
+    _status = ConnectionStatus.scanning;
+    _statusMessage = 'Searching for nearest Xiao device...';
+    _discoveredDevices.clear();
+    notifyListeners();
+
+    try {
+      await UniversalBle.startScan();
+    } catch (e) {
+      _status = ConnectionStatus.disconnected;
+      _statusMessage = 'Auto-connect scan failed: $e';
+      notifyListeners();
+      return false;
+    }
+
+    final startTime = DateTime.now();
+    final deadline = startTime.add(totalTimeout);
+    BleDeviceItem? targetDevice;
+
+    while (DateTime.now().isBefore(deadline) && _status == ConnectionStatus.scanning) {
+      final xiaoCandidates = _discoveredDevices.where((d) =>
+        d.isXiaoDevice ||
+        d.name.toLowerCase().contains('xiao') ||
+        d.name == AppConstants.bleDeviceName
+      ).toList();
+
+      final elapsed = DateTime.now().difference(startTime);
+      if (xiaoCandidates.isNotEmpty && elapsed >= scanWindow) {
+        xiaoCandidates.sort((a, b) => b.rssi.compareTo(a.rssi));
+        targetDevice = xiaoCandidates.first;
+        break;
+      }
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+
+    if (targetDevice != null) {
+      await connect(targetDevice);
+      return isConnected;
+    } else {
+      await stopScan();
+      _status = ConnectionStatus.disconnected;
+      _statusMessage = 'No Xiao device found in range';
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<void> connect(BleDeviceItem device) async {
     await stopScan();
     _status = ConnectionStatus.connecting;
@@ -226,6 +279,13 @@ class BleConnectionService extends ChangeNotifier {
       case BleCommand.startL2capStream:
         _deviceState = DeviceState.transferring;
         _statusMessage = 'L2CAP Stream active';
+        break;
+      case BleCommand.connectHotspot:
+        _deviceState = DeviceState.transferring;
+        _statusMessage = 'ESP32 connected to Phone Hotspot';
+        break;
+      case BleCommand.deleteClip:
+        _statusMessage = 'Clip deleted';
         break;
       case BleCommand.none:
         break;

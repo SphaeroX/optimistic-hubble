@@ -113,6 +113,64 @@ class _SettingsTabState extends State<SettingsTab> {
         ),
         const SizedBox(height: 16),
 
+        // Bluetooth & Auto-Connect Preferences
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.bluetooth_searching, color: AppTheme.primaryCyan, size: 22),
+                    SizedBox(width: 8),
+                    Text(
+                      'Bluetooth & Connection Preferences',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Auto-Connect Nearest Device (RSSI)',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    'When tapping "Connect", automatically pair with the closest Xiao ESP32 with the strongest radio signal, bypassing manual device selection.',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                  ),
+                  value: widget.bleService.autoConnectEnabled,
+                  activeThumbColor: AppTheme.primaryCyan,
+                  onChanged: (val) {
+                    setState(() {
+                      widget.bleService.autoConnectEnabled = val;
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        widget.bleService.autoConnectNearestXiao();
+                      },
+                      icon: const Icon(Icons.flash_on, size: 16),
+                      label: const Text('Test Auto-Connect', style: TextStyle(fontSize: 12)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primaryCyan,
+                        side: const BorderSide(color: AppTheme.primaryCyan),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
         // Device Remote Control
         Card(
           child: Padding(

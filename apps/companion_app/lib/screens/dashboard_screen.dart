@@ -45,6 +45,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
     widget.bleService.startScan();
   }
 
+  Future<void> _handleConnect() async {
+    if (widget.bleService.autoConnectEnabled) {
+      final success = await widget.bleService.autoConnectNearestXiao();
+      if (!success && mounted && !widget.bleService.isConnected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('No Xiao ESP32 found in range.'),
+            action: SnackBarAction(
+              label: 'Manual Scan',
+              onPressed: _openDeviceScanner,
+            ),
+          ),
+        );
+      }
+    } else {
+      _openDeviceScanner();
+    }
+  }
+
   void _openDebugConsole() {
     showModalBottomSheet(
       context: context,
@@ -116,16 +135,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Text(
                         isConnected
                             ? (widget.bleService.connectedDevice?.name ?? 'Connected')
-                            : (widget.bleService.isConnecting
-                                ? 'Connecting...'
-                                : 'Disconnected'),
+                            : (widget.bleService.isAutoConnecting
+                                ? 'Searching nearest...'
+                                : (widget.bleService.isConnecting
+                                    ? 'Connecting...'
+                                    : 'Disconnected')),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,
                         style: TextStyle(
                           fontSize: 11,
                           color: isConnected
                               ? AppTheme.accentGreen
-                              : (widget.bleService.isConnecting
+                              : ((widget.bleService.isConnecting || widget.bleService.isAutoConnecting)
                                   ? AppTheme.accentOrange
                                   : AppTheme.textMuted),
                         ),
@@ -167,7 +188,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: ActionChip(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                  avatar: widget.bleService.isConnecting
+                  avatar: (widget.bleService.isConnecting || widget.bleService.isAutoConnecting)
                       ? const SizedBox(
                           width: 12,
                           height: 12,
@@ -182,12 +203,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   label: Text(
                     isConnected
                       ? 'Connected'
-                      : (widget.bleService.isConnecting ? '...' : 'Scan'),
+                      : (widget.bleService.isAutoConnecting
+                          ? 'Searching'
+                          : (widget.bleService.isConnecting ? '...' : 'Connect')),
                     style: TextStyle(
                       fontSize: 11,
                       color: isConnected
                           ? AppTheme.accentGreen
-                          : (widget.bleService.isConnecting
+                          : ((widget.bleService.isConnecting || widget.bleService.isAutoConnecting)
                               ? AppTheme.accentOrange
                               : AppTheme.primaryCyan),
                       fontWeight: FontWeight.bold,
@@ -197,13 +220,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   side: BorderSide(
                     color: isConnected
                         ? AppTheme.accentGreen
-                        : (widget.bleService.isConnecting
+                        : ((widget.bleService.isConnecting || widget.bleService.isAutoConnecting)
                             ? AppTheme.accentOrange
                             : AppTheme.primaryCyan),
                   ),
                   onPressed: isConnected
                       ? () => widget.bleService.disconnect()
-                      : (widget.bleService.isConnecting ? null : _openDeviceScanner),
+                      : ((widget.bleService.isConnecting || widget.bleService.isAutoConnecting)
+                          ? null
+                          : _handleConnect),
                 ),
               ),
             ],
@@ -348,7 +373,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           const SizedBox(height: 2),
                           Text(
                             !isConnected
-                                ? 'Click "Scan" in top bar to connect your XIAO'
+                                ? (widget.bleService.isAutoConnecting
+                                    ? 'Scanning for nearest Xiao device (RSSI proximity)...'
+                                    : (widget.bleService.isConnecting
+                                        ? 'Establishing connection to Xiao peripheral...'
+                                        : 'Click "Connect" to automatically pair with nearest Xiao'))
                                 : (isRecording
                                     ? '${Formatters.formatBytes(telem.totalAudioBytes)} captured @ 16kHz'
                                     : devState.description),
@@ -361,19 +390,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     const SizedBox(width: 8),
                     ElevatedButton.icon(
-                      onPressed: !isConnected
-                          ? _openDeviceScanner
-                          : () {
-                              if (isRecording) {
-                                widget.bleService.sendCommand(BleCommand.stopRecording);
-                              } else {
-                                widget.bleService.sendCommand(BleCommand.startRecording);
-                              }
-                            },
-                      icon: Icon(!isConnected
-                          ? Icons.bluetooth
-                          : (isRecording ? Icons.stop : Icons.mic), size: 18),
-                      label: Text(!isConnected ? 'Connect' : (isRecording ? 'Stop' : 'Record')),
+                      onPressed: (widget.bleService.isConnecting || widget.bleService.isAutoConnecting)
+                          ? null
+                          : (!isConnected
+                              ? _handleConnect
+                              : () {
+                                  if (isRecording) {
+                                    widget.bleService.sendCommand(BleCommand.stopRecording);
+                                  } else {
+                                    widget.bleService.sendCommand(BleCommand.startRecording);
+                                  }
+                                }),
+                      icon: (widget.bleService.isConnecting || widget.bleService.isAutoConnecting)
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                            )
+                          : Icon(!isConnected
+                              ? Icons.bluetooth
+                              : (isRecording ? Icons.stop : Icons.mic), size: 18),
+                      label: Text(!isConnected
+                          ? ((widget.bleService.isConnecting || widget.bleService.isAutoConnecting)
+                              ? 'Connecting...'
+                              : 'Connect')
+                          : (isRecording ? 'Stop' : 'Record')),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: isRecording ? AppTheme.accentRed : AppTheme.primaryCyan,
                         foregroundColor: Colors.black,
