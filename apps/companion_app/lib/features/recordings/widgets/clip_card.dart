@@ -10,6 +10,7 @@ class ClipCard extends StatelessWidget {
   final RecordingItem clip;
   final VoidCallback onPlayToggle;
   final VoidCallback onDownload;
+  final VoidCallback? onShare;
   final VoidCallback? onDeleteLocal;
   final VoidCallback? onDeleteRemote;
   final VoidCallback? onDeleteEverywhere;
@@ -21,6 +22,7 @@ class ClipCard extends StatelessWidget {
     required this.clip,
     required this.onPlayToggle,
     required this.onDownload,
+    this.onShare,
     this.onDeleteLocal,
     this.onDeleteRemote,
     this.onDeleteEverywhere,
@@ -179,6 +181,13 @@ class ClipCard extends StatelessWidget {
                             ),
                           ),
                           _buildStatusBadge(isSynced, isDownloading),
+                          if (isSynced && onShare != null)
+                            IconButton(
+                              icon: const Icon(Icons.share, color: AppTheme.primaryCyan, size: 18),
+                              visualDensity: VisualDensity.compact,
+                              tooltip: 'Audiodatei teilen (WhatsApp, etc.)',
+                              onPressed: onShare,
+                            ),
                           IconButton(
                             icon: const Icon(Icons.delete_outline, color: AppTheme.textMuted, size: 18),
                             visualDensity: VisualDensity.compact,
@@ -295,34 +304,52 @@ class ClipCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  TextButton.icon(
-                    onPressed: () async {
-                      await LocalStorageManager.openInFileManager();
-                      final dirPath = await LocalStorageManager.getRecordingsDirectoryPath();
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          duration: const Duration(seconds: 4),
-                          content: Text(
-                            'Speicherort: $dirPath',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          action: SnackBarAction(
-                            label: 'Kopieren',
-                            textColor: AppTheme.primaryCyan,
-                            onPressed: () {
-                              Clipboard.setData(ClipboardData(text: dirPath));
-                            },
+                  Wrap(
+                    spacing: 4,
+                    children: [
+                      if (onShare != null)
+                        TextButton.icon(
+                          onPressed: onShare,
+                          icon: const Icon(Icons.share, size: 15, color: AppTheme.accentGreen),
+                          label: const Text(
+                            'Share',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.accentGreen,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      );
-                    },
-                    icon: const Icon(Icons.folder_open, size: 16, color: AppTheme.primaryCyan),
-                    label: const Text(
-                      'Open Folder',
-                      style: TextStyle(fontSize: 12, color: AppTheme.primaryCyan),
-                    ),
+                      TextButton.icon(
+                        onPressed: () async {
+                          await LocalStorageManager.openInFileManager();
+                          final dirPath = await LocalStorageManager.getRecordingsDirectoryPath();
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              duration: const Duration(seconds: 4),
+                              content: Text(
+                                'Speicherort: $dirPath',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              action: SnackBarAction(
+                                label: 'Kopieren',
+                                textColor: AppTheme.primaryCyan,
+                                onPressed: () {
+                                  Clipboard.setData(ClipboardData(text: dirPath));
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.folder_open, size: 15, color: AppTheme.primaryCyan),
+                        label: const Text(
+                          'Folder',
+                          style: TextStyle(fontSize: 12, color: AppTheme.primaryCyan),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

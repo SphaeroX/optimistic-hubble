@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../audio/adpcm_decoder.dart';
 
 class LocalStorageManager {
@@ -184,6 +186,38 @@ class LocalStorageManager {
   /// Opens a specific file with system default application.
   static Future<void> openFile(String filePath) async {
     await OpenFile.open(filePath);
+  }
+
+  /// Shares a local audio WAV file with external applications (e.g. WhatsApp, Gmail, Telegram).
+  static Future<ShareResult> shareFile({
+    required String filePath,
+    String? text,
+    String? subject,
+    Rect? sharePositionOrigin,
+  }) async {
+    final file = File(filePath);
+    if (!file.existsSync()) {
+      throw Exception('Audio file not found at: $filePath');
+    }
+
+    // Guarantee that audio file is valid Linear 16-bit PCM WAV before sharing
+    final validFile = await AdpcmDecoder.ensureFileIsLinearPcmWav(file);
+    final filename = p.basename(validFile.path);
+
+    final xfile = XFile(
+      validFile.path,
+      mimeType: 'audio/wav',
+      name: filename,
+    );
+
+    return await SharePlus.instance.share(
+      ShareParams(
+        files: [xfile],
+        text: text,
+        subject: subject ?? filename,
+        sharePositionOrigin: sharePositionOrigin,
+      ),
+    );
   }
 }
 

@@ -3,11 +3,13 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import '../../../core/audio/adpcm_decoder.dart';
 import '../../../core/audio/native_audio_player.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/services/embedded_http_server.dart';
 import '../../../core/services/native_audio_sync_bridge.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/utils/storage_manager.dart';
 import '../../connection/services/ble_service.dart';
 import '../models/recording_item.dart';
@@ -660,6 +662,29 @@ class RecordingSyncManager extends ChangeNotifier {
     if (updated?.localWavPath != null) {
       await audioPlayer.playFile(updated!.localWavPath!, duration: updated.duration);
     }
+  }
+
+  /// Shares a recording clip with external apps (e.g. WhatsApp, Mail, Telegram).
+  Future<bool> shareClip(RecordingItem clip, {Rect? sharePositionOrigin}) async {
+    try {
+      if (clip.syncState != SyncState.synced || clip.localWavPath == null) {
+        final ok = await downloadClip(clip.id);
+        if (!ok) return false;
+      }
+
+      final updated = _clipsMap[clip.id];
+      if (updated?.localWavPath != null) {
+        await LocalStorageManager.shareFile(
+          filePath: updated!.localWavPath!,
+          text: 'Xiao Audio Recording #${clip.id} (${Formatters.formatDuration(clip.duration)})',
+          sharePositionOrigin: sharePositionOrigin,
+        );
+        return true;
+      }
+    } catch (e) {
+      debugPrint('[RecordingSyncManager] Error sharing clip #${clip.id}: $e');
+    }
+    return false;
   }
 
   /// Deletes the local downloaded WAV file for a clip.

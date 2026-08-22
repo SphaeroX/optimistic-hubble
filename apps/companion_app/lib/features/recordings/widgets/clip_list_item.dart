@@ -6,11 +6,13 @@ import '../models/audio_clip.dart';
 class ClipListItem extends StatelessWidget {
   final AudioClip clip;
   final VoidCallback onPlayToggle;
+  final VoidCallback? onShare;
 
   const ClipListItem({
     super.key,
     required this.clip,
     required this.onPlayToggle,
+    this.onShare,
   });
 
   @override
@@ -87,6 +89,14 @@ class ClipListItem extends StatelessWidget {
                 ],
               ),
             ),
+
+            if (isSynced && onShare != null)
+              IconButton(
+                icon: const Icon(Icons.share, color: AppTheme.primaryCyan, size: 18),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Audiodatei teilen (WhatsApp, etc.)',
+                onPressed: onShare,
+              ),
 
             // Sync Status Indicator
             Container(

@@ -690,6 +690,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     widget.syncManager.downloadClip(clip.id);
                   }
                 },
+                onShare: () => widget.syncManager.shareClip(clip),
                 onDeleteLocal: () => widget.syncManager.deleteClipLocally(clip.id),
                 onDeleteRemote: () => widget.syncManager.deleteClipOnDevice(clip.id),
                 onDeleteEverywhere: () => widget.syncManager.deleteClipEverywhere(clip.id),
