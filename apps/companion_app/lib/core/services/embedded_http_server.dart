@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import '../audio/adpcm_decoder.dart';
 import '../utils/storage_manager.dart';
 import 'native_audio_sync_bridge.dart';
 
@@ -169,13 +170,19 @@ class EmbeddedAudioUploadServer {
       await sink.close();
       sink = null;
 
-      // Rename temp file to final destination
+      // Decode uploaded audio bytes to standard Linear 16-bit PCM WAV
+      final Uint8List rawBytes = await tempFile.readAsBytes();
+      final Uint8List pcmBytes = AdpcmDecoder.ensureLinearPcmWav(rawBytes);
+
       if (targetFile.existsSync()) {
         targetFile.deleteSync();
       }
-      await tempFile.rename(targetFile.path);
+      await targetFile.writeAsBytes(pcmBytes, flush: true);
+      if (tempFile.existsSync()) {
+        tempFile.deleteSync();
+      }
 
-      debugPrint('[EmbeddedAudioServer] Clip #$clipId uploaded successfully (${targetFile.lengthSync()} bytes)');
+      debugPrint('[EmbeddedAudioServer] Clip #$clipId uploaded and decoded to Linear PCM (${targetFile.lengthSync()} bytes)');
 
       final calculatedDuration = durationSec > 0
           ? durationSec

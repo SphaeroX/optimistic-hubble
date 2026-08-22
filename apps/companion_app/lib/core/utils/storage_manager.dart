@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import '../audio/adpcm_decoder.dart';
 
 class LocalStorageManager {
   LocalStorageManager._();
@@ -10,6 +11,8 @@ class LocalStorageManager {
   static Directory? _cachedDirectory;
 
   /// Returns the persistent directory where downloaded recordings and WAV files are stored.
+  /// On Android: /storage/emulated/0/Android/data/com.sphaerox.companion_app/files/Recordings
+  /// On Windows: %USERPROFILE%\Documents\XiaoAudioCompanion\Recordings
   static Future<Directory> getRecordingsDirectory() async {
     if (_cachedDirectory != null && _cachedDirectory!.existsSync()) {
       return _cachedDirectory!;
@@ -20,8 +23,17 @@ class LocalStorageManager {
       if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
         final docsDir = await getApplicationDocumentsDirectory();
         baseDir = Directory(p.join(docsDir.path, 'XiaoAudioCompanion', 'Recordings'));
+      } else if (Platform.isAndroid) {
+        final extDir = await getExternalStorageDirectory();
+        if (extDir != null) {
+          baseDir = Directory(p.join(extDir.path, 'Recordings'));
+        } else {
+          final docsDir = await getApplicationDocumentsDirectory();
+          baseDir = Directory(p.join(docsDir.path, 'Recordings'));
+        }
       } else {
-        baseDir = await getApplicationDocumentsDirectory();
+        final docsDir = await getApplicationDocumentsDirectory();
+        baseDir = Directory(p.join(docsDir.path, 'Recordings'));
       }
     } catch (_) {
       baseDir = Directory(p.join(Directory.current.path, 'recordings'));
@@ -31,11 +43,33 @@ class LocalStorageManager {
       baseDir.createSync(recursive: true);
     }
 
+    // Migrate any legacy WAV files from old app root documents directory
+    try {
+      final oldDocsDir = await getApplicationDocumentsDirectory();
+      if (oldDocsDir.existsSync() && oldDocsDir.path != baseDir.path) {
+        for (final entity in oldDocsDir.listSync()) {
+          if (entity is File && entity.path.endsWith('.wav')) {
+            final destPath = p.join(baseDir.path, p.basename(entity.path));
+            if (!File(destPath).existsSync()) {
+              entity.copySync(destPath);
+              entity.deleteSync();
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
     _cachedDirectory = baseDir;
     return baseDir;
   }
 
-  /// Saves a WAV file to local disk and returns the absolute file path.
+  /// Returns the human-readable absolute path where recordings are stored on this device.
+  static Future<String> getRecordingsDirectoryPath() async {
+    final dir = await getRecordingsDirectory();
+    return dir.path;
+  }
+
+  /// Saves a WAV file to local disk, ensuring it is in standard 16-bit Linear PCM format.
   static Future<File> saveWavFile({
     required String filename,
     required Uint8List wavBytes,
@@ -43,8 +77,12 @@ class LocalStorageManager {
     final dir = await getRecordingsDirectory();
     final String cleanName = filename.endsWith('.wav') ? filename : '$filename.wav';
     final filePath = p.join(dir.path, cleanName);
+    
+    // Automatically decode any IMA-ADPCM data into standard Linear 16-bit PCM WAV
+    final Uint8List pcmBytes = AdpcmDecoder.ensureLinearPcmWav(wavBytes);
+    
     final file = File(filePath);
-    await file.writeAsBytes(wavBytes, flush: true);
+    await file.writeAsBytes(pcmBytes, flush: true);
     return file;
   }
 

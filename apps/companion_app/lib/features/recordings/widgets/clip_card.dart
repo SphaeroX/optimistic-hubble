@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
@@ -295,7 +296,29 @@ class ClipCard extends StatelessWidget {
                     ],
                   ),
                   TextButton.icon(
-                    onPressed: () => LocalStorageManager.openInFileManager(),
+                    onPressed: () async {
+                      await LocalStorageManager.openInFileManager();
+                      if (context.mounted) {
+                        final dirPath = await LocalStorageManager.getRecordingsDirectoryPath();
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            duration: const Duration(seconds: 4),
+                            content: Text(
+                              'Speicherort: $dirPath',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            action: SnackBarAction(
+                              label: 'Kopieren',
+                              textColor: AppTheme.primaryCyan,
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: dirPath));
+                              },
+                            ),
+                          ),
+                        );
+                      }
+                    },
                     icon: const Icon(Icons.folder_open, size: 16, color: AppTheme.primaryCyan),
                     label: const Text(
                       'Open Folder',

@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 /// High-Performance IMA-ADPCM 4-bit to 16-bit Linear PCM Audio Decoder & WAV Generator.
 /// Matches the Xiao ESP32-C3 firmware implementation in firmware/src/adpcm.cpp.
@@ -158,5 +160,130 @@ class AdpcmDecoder {
   static Uint8List decodeAdpcmToWav(Uint8List adpcmData, {int sampleRate = 16000}) {
     final Int16List pcm = decodeAdpcmToPcm(adpcmData);
     return createWavFile(pcmSamples: pcm, sampleRate: sampleRate);
+  }
+
+  /// Checks if a byte buffer contains a standard Linear PCM WAV file.
+  static bool isLinearPcmWav(Uint8List bytes) {
+    if (bytes.length < 44) return false;
+    final bool isRiff = bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46;
+    final bool isWave = bytes[8] == 0x57 && bytes[9] == 0x41 && bytes[10] == 0x56 && bytes[11] == 0x45;
+    if (!isRiff || !isWave) return false;
+
+    final bd = ByteData.sublistView(bytes);
+    int offset = 12;
+    while (offset + 8 <= bytes.length) {
+      final chunkId = String.fromCharCodes(bytes.sublist(offset, offset + 4));
+      final chunkSize = bd.getUint32(offset + 4, Endian.little);
+      final chunkDataOffset = offset + 8;
+      if (chunkId == 'fmt ') {
+        if (chunkDataOffset + 16 <= bytes.length) {
+          final formatTag = bd.getUint16(chunkDataOffset, Endian.little);
+          final bitsPerSample = bd.getUint16(chunkDataOffset + 14, Endian.little);
+          return formatTag == 1 && bitsPerSample == 16;
+        }
+      }
+      offset = chunkDataOffset + chunkSize + (chunkSize % 2);
+    }
+    return false;
+  }
+
+  /// Ensures that the provided audio data is converted to a standard 16-bit Linear PCM WAV.
+  /// If [bytes] is already a valid Linear PCM WAV file, it is returned unchanged.
+  /// If [bytes] contains a RIFF container with IMA-ADPCM (format 0x0011) or raw ADPCM data,
+  /// it is decoded and wrapped in a standard 44-byte Linear PCM WAV header.
+  static Uint8List ensureLinearPcmWav(Uint8List bytes, {int defaultSampleRate = 16000}) {
+    if (bytes.length < 12) {
+      return bytes;
+    }
+
+    final bool isRiff = bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46; // "RIFF"
+    final bool isWave = bytes.length >= 12 && bytes[8] == 0x57 && bytes[9] == 0x41 && bytes[10] == 0x56 && bytes[11] == 0x45; // "WAVE"
+
+    if (isRiff && isWave) {
+      final ByteData bd = ByteData.sublistView(bytes);
+      int offset = 12;
+      int formatTag = 0;
+      int numChannels = 1;
+      int sampleRate = defaultSampleRate;
+      int bitsPerSample = 16;
+      int dataOffset = -1;
+      int dataSize = 0;
+
+      while (offset + 8 <= bytes.length) {
+        final chunkId = String.fromCharCodes(bytes.sublist(offset, offset + 4));
+        final chunkSize = bd.getUint32(offset + 4, Endian.little);
+        final chunkDataOffset = offset + 8;
+
+        if (chunkId == 'fmt ') {
+          if (chunkDataOffset + 16 <= bytes.length) {
+            formatTag = bd.getUint16(chunkDataOffset, Endian.little);
+            numChannels = bd.getUint16(chunkDataOffset + 2, Endian.little);
+            sampleRate = bd.getUint32(chunkDataOffset + 4, Endian.little);
+            bitsPerSample = bd.getUint16(chunkDataOffset + 14, Endian.little);
+          }
+        } else if (chunkId == 'data') {
+          dataOffset = chunkDataOffset;
+          dataSize = chunkSize;
+          if (dataOffset + dataSize > bytes.length) {
+            dataSize = bytes.length - dataOffset;
+          }
+          break;
+        }
+
+        offset = chunkDataOffset + chunkSize + (chunkSize % 2);
+      }
+
+      // If already standard Linear PCM (16-bit), return immediately
+      if (formatTag == 1 && bitsPerSample == 16) {
+        return bytes;
+      }
+
+      // Extract ADPCM data subchunk
+      Uint8List adpcmPayload;
+      if (dataOffset >= 0 && dataOffset < bytes.length) {
+        adpcmPayload = bytes.sublist(dataOffset, dataOffset + dataSize);
+      } else if (bytes.length > 60) {
+        adpcmPayload = bytes.sublist(60);
+      } else if (bytes.length > 44) {
+        adpcmPayload = bytes.sublist(44);
+      } else {
+        adpcmPayload = Uint8List(0);
+      }
+
+      final Int16List pcmSamples = decodeAdpcmToPcm(adpcmPayload);
+      return createWavFile(
+        pcmSamples: pcmSamples,
+        sampleRate: sampleRate > 0 ? sampleRate : defaultSampleRate,
+        numChannels: numChannels > 0 ? numChannels : 1,
+      );
+    } else {
+      // Raw ADPCM stream without RIFF container
+      final Int16List pcmSamples = decodeAdpcmToPcm(bytes);
+      return createWavFile(
+        pcmSamples: pcmSamples,
+        sampleRate: defaultSampleRate,
+        numChannels: 1,
+      );
+    }
+  }
+
+  /// Verifies a file on disk and converts it in-place to 16-bit Linear PCM WAV if needed.
+  static Future<File> ensureFileIsLinearPcmWav(File file, {int defaultSampleRate = 16000}) async {
+    if (!file.existsSync()) return file;
+    try {
+      final bytes = await file.readAsBytes();
+      if (bytes.length < 12) return file;
+
+      if (isLinearPcmWav(bytes)) {
+        return file;
+      }
+
+      final convertedBytes = ensureLinearPcmWav(bytes, defaultSampleRate: defaultSampleRate);
+      await file.writeAsBytes(convertedBytes, flush: true);
+      debugPrint('[AdpcmDecoder] Converted ${file.path} to standard 16-bit Linear PCM WAV (${convertedBytes.length} bytes)');
+    } catch (e) {
+      debugPrint('[AdpcmDecoder] Error checking/converting file ${file.path}: $e');
+    }
+    return file;
   }
 }

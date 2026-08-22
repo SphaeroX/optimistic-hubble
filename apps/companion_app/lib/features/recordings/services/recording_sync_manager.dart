@@ -299,7 +299,10 @@ class RecordingSyncManager extends ChangeNotifier {
       final List<File> savedFiles = await LocalStorageManager.listSavedWavFiles();
 
       for (int i = 0; i < savedFiles.length; i++) {
-        final file = savedFiles[i];
+        var file = savedFiles[i];
+        // Ensure any legacy or newly downloaded file is standard 16-bit Linear PCM
+        file = await AdpcmDecoder.ensureFileIsLinearPcmWav(file);
+
         final size = file.lengthSync();
         final durSec = size > 44 ? ((size - 44) / 32000.0) : 0.0;
         final name = file.uri.pathSegments.last;
@@ -543,16 +546,10 @@ class RecordingSyncManager extends ChangeNotifier {
         throw Exception('BLE audio stream timed out or returned no data');
       }
 
-      Uint8List finalWavBytes;
-      if (rawBytes.length > 4 &&
-          rawBytes[0] == 0x52 &&
-          rawBytes[1] == 0x49 &&
-          rawBytes[2] == 0x46 &&
-          rawBytes[3] == 0x46) {
-        finalWavBytes = rawBytes;
-      } else {
-        finalWavBytes = AdpcmDecoder.decodeAdpcmToWav(rawBytes, sampleRate: clip.sampleRate);
-      }
+      final Uint8List finalWavBytes = AdpcmDecoder.ensureLinearPcmWav(
+        rawBytes,
+        defaultSampleRate: clip.sampleRate,
+      );
 
       final savedFile = await LocalStorageManager.saveWavFile(
         filename: 'clip_${clip.id}.wav',

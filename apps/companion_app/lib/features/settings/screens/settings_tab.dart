@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/storage_manager.dart';
@@ -250,15 +251,61 @@ class _SettingsTabState extends State<SettingsTab> {
                     Icon(Icons.folder, color: AppTheme.primaryCyan, size: 22),
                     SizedBox(width: 8),
                     Text(
-                      'Local Storage & Recordings',
+                      'Local Storage & Audio Recordings',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Downloaded recordings are automatically validated (CRC32) and stored as standard Linear 16-bit PCM WAV files in your local documents directory.',
+                  'Downloaded recordings are automatically converted to standard Linear 16-bit PCM WAV files (16 kHz Mono) and stored in your device storage:',
                   style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                FutureBuilder<String>(
+                  future: LocalStorageManager.getRecordingsDirectoryPath(),
+                  builder: (context, snapshot) {
+                    final path = snapshot.data ?? 'Loading path...';
+                    return Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F1522),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF243248)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.folder_open, size: 18, color: AppTheme.primaryCyan),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: SelectableText(
+                              path,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 11,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.copy, size: 16, color: AppTheme.primaryCyan),
+                            tooltip: 'Pfad kopieren',
+                            onPressed: snapshot.hasData
+                                ? () {
+                                    Clipboard.setData(ClipboardData(text: path));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        duration: Duration(seconds: 2),
+                                        content: Text('Speicherpfad in Zwischenablage kopiert!'),
+                                      ),
+                                    );
+                                  }
+                                : null,
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 12),
                 ElevatedButton.icon(
