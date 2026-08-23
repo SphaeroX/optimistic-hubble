@@ -9,24 +9,23 @@ An embedded voice recording, signal processing, and companion application monore
 ```
 optimistic-hubble/
 ├── apps/
-│   ├── companion_app/           # Flutter Multiplatform App (Android, iOS, Windows, macOS, Web)
-│   │   ├── lib/                 # Clean, modular Dart architecture (Theme, BLE, Wi-Fi sync, Telemetry)
-│   │   ├── android/             # Android project & permissions
-│   │   ├── ios/                 # iOS project & Info.plist permissions
-│   │   └── windows/             # Windows desktop runner & Win32 window config
-│   └── web_prototype/           # Legacy Web Bluetooth prototype
+│   └── companion_app/           # Flutter Multiplatform App (Android, iOS, Windows, macOS, Web)
+│       ├── lib/                 # Clean, modular Dart architecture (Theme, BLE, Wi-Fi sync, Telemetry)
+│       ├── android/             # Android project & permissions
+│       ├── ios/                 # iOS project & Info.plist permissions
+│       └── windows/             # Windows desktop runner & Win32 window config
 ├── firmware/                    # PlatformIO ESP32-C3 Firmware
 │   ├── src/                     # Audio recorder, BLE service, Wi-Fi SoftAP server, IMU drivers
 │   ├── platformio.ini           # Board definitions, partition tables & compiler flags
 │   └── xiao_esp32c3_hw_test.ino # Hardware test & validation sketch
 ├── research/                    # IoT transfer studies, BLE/Wi-Fi benchmarks & protocol docs
-├── flash_mcu.bat               # Builds, flashes and monitors XIAO ESP32-C3
-├── build_apk.bat               # Builds Flutter Android Release APK
-├── flash_and_build_apk.bat     # Flashes ESP32-C3 firmware and builds Android APK
-├── erase_flash.bat             # Completely wipes ESP32 Flash memory and resets LittleFS
-├── monitor.bat                 # Starts serial monitor (115200 baud)
-├── run_flutter_windows.bat     # Launches Flutter companion app on Windows desktop
-└── start_app.bat               # Starts legacy web prototype
+├── 01_flash_mcu.bat             # Builds, flashes and monitors XIAO ESP32-C3
+├── 02_run_flutter_device.bat    # Launches Flutter companion app on connected device
+├── 03_build_apk.bat             # Builds Flutter Android Release APK
+├── 03_flash_and_build_apk.bat   # Flashes ESP32-C3 firmware and builds Android APK
+├── 04_monitor.bat               # Starts serial monitor (115200 baud)
+├── 05_run_flutter_windows.bat   # Launches Flutter companion app on Windows desktop
+└── 06_erase_flash.bat           # Completely wipes ESP32 Flash memory and resets LittleFS
 ```
 
 ---
@@ -158,21 +157,10 @@ To extend the continuous recording time from ~4 minutes up to **~35 minutes**, a
 
 ---
 
-## Quick Start Guide
+## Workflow: Recording & Syncing Voice Notes
 
-### 1. Flashing Firmware
-```powershell
-.\flash_and_monitor.bat
-```
-
-### 2. Launching the Web Companion App
-```powershell
-.\start_app.bat
-```
-Navigate to `http://localhost:8000`.
-
-### 3. Recording Voice Notes
 1. **Tap the breadboard** $\rightarrow$ Status LED turns ON.
 2. **Speak** into the MEMS microphones (real-time noise filtering active).
-3. **Tap again** $\rightarrow$ Status LED turns OFF, audio is saved to 4MB Flash in 8 KB/s ADPCM format.
-4. **Download & Play:** Connect to `XIAO-Audio-Hotspot` and click **"WLAN Synchronisieren"** in the Companion App!
+3. **Tap again** $\rightarrow$ Status LED turns OFF, audio is saved to Flash in 8 KB/s ADPCM format.
+4. **Download & Play:** Launch the Flutter Companion App (via `02_run_flutter_device.bat` or `05_run_flutter_windows.bat`) and click **"WLAN Synchronisieren"** or BLE sync!
+
