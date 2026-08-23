@@ -335,119 +335,96 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Real-Time Hardware Status Banner
-        Card(
-          color: isRecording ? AppTheme.accentRed.withAlpha(30) : AppTheme.cardDark,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(
-              color: isRecording ? AppTheme.accentRed : const Color(0xFF243248),
-              width: 1.5,
+        // Real-Time Hardware Status Banner (Only visible when connected)
+        if (isConnected) ...[
+          Card(
+            color: isRecording ? AppTheme.accentRed.withAlpha(30) : AppTheme.cardDark,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: isRecording ? AppTheme.accentRed : const Color(0xFF243248),
+                width: 1.5,
+              ),
             ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: (isRecording
-                                ? AppTheme.accentRed
-                                : (isConnected ? AppTheme.primaryCyan : AppTheme.textMuted))
-                            .withAlpha(40),
-                        shape: BoxShape.circle,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: (isRecording ? AppTheme.accentRed : AppTheme.primaryCyan)
+                              .withAlpha(40),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          isRecording ? Icons.fiber_manual_record : Icons.sensors,
+                          color: isRecording ? AppTheme.accentRed : AppTheme.primaryCyan,
+                          size: 22,
+                        ),
                       ),
-                      child: Icon(
-                        isRecording
-                            ? Icons.fiber_manual_record
-                            : (isConnected ? Icons.sensors : Icons.sensors_off),
-                        color: isRecording
-                            ? AppTheme.accentRed
-                            : (isConnected ? AppTheme.primaryCyan : AppTheme.textMuted),
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            isConnected ? devState.label : 'Device Offline',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: isRecording ? AppTheme.accentRed : Colors.white,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              devState.label,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: isRecording ? AppTheme.accentRed : Colors.white,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            !isConnected
-                                ? (widget.bleService.isAutoConnecting
-                                    ? 'Scanning for nearest Xiao device (RSSI proximity)...'
-                                    : (widget.bleService.isConnecting
-                                        ? 'Establishing connection to Xiao peripheral...'
-                                        : 'Click "Connect" to automatically pair with nearest Xiao'))
-                                : (isRecording
-                                    ? '${Formatters.formatBytes(telem.totalAudioBytes)} captured @ 16kHz'
-                                    : devState.description),
-                            style: const TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
+                            const SizedBox(height: 2),
+                            Text(
+                              isRecording
+                                  ? '${Formatters.formatBytes(telem.totalAudioBytes)} captured @ 16kHz'
+                                  : devState.description,
+                              style: const TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
-                      onPressed: (widget.bleService.isConnecting || widget.bleService.isAutoConnecting)
-                          ? null
-                          : (!isConnected
-                              ? _handleConnect
-                              : () {
-                                  if (isRecording) {
-                                    widget.bleService.sendCommand(BleCommand.stopRecording);
-                                  } else {
-                                    widget.bleService.sendCommand(BleCommand.startRecording);
-                                  }
-                                }),
-                      icon: (widget.bleService.isConnecting || widget.bleService.isAutoConnecting)
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                            )
-                          : Icon(!isConnected
-                              ? Icons.bluetooth
-                              : (isRecording ? Icons.stop : Icons.mic), size: 18),
-                      label: Text(!isConnected
-                          ? ((widget.bleService.isConnecting || widget.bleService.isAutoConnecting)
-                              ? 'Connecting...'
-                              : 'Connect')
-                          : (isRecording ? 'Stop' : 'Record')),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isRecording ? AppTheme.accentRed : AppTheme.primaryCyan,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          if (isRecording) {
+                            widget.bleService.sendCommand(BleCommand.stopRecording);
+                          } else {
+                            widget.bleService.sendCommand(BleCommand.startRecording);
+                          }
+                        },
+                        icon: Icon(
+                          isRecording ? Icons.stop : Icons.mic,
+                          size: 18,
+                        ),
+                        label: Text(isRecording ? 'Stop' : 'Record'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isRecording ? AppTheme.accentRed : AppTheme.primaryCyan,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
 
-                // Live Waveform Visualizer
-                WaveformVisualizer(
-                  isActive: isRecording || isPlayingAudio,
-                  isRecording: isRecording,
-                ),
-              ],
+                  // Live Waveform Visualizer
+                  WaveformVisualizer(
+                    isActive: isRecording || isPlayingAudio,
+                    isRecording: isRecording,
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 14),
+          const SizedBox(height: 14),
+        ],
 
         // Telemetry Grid / Cards
         BatteryGaugeCard(telemetry: uiTelemetry),
