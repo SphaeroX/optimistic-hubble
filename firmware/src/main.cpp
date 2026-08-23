@@ -24,7 +24,7 @@ static PowerManager power;
 static uint16_t totalTapEvents = 0;
 
 static unsigned long lastTelemetryTime = 0;
-static const unsigned long TELEMETRY_INTERVAL_MS = 100; // 10 Hz real-time telemetry stream
+static const unsigned long TELEMETRY_INTERVAL_MS = 20; // 50 Hz real-time telemetry stream
 
 static unsigned long lastImuPollTime = 0;
 static const unsigned long IMU_POLL_INTERVAL_MS = 20; // 50 Hz tap polling

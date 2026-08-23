@@ -60,7 +60,7 @@ class ImuMotionCard extends StatelessWidget {
                               ),
                               const SizedBox(width: 4),
                               const Text(
-                                'Live Stream (10 Hz)',
+                                'Live Stream (50 Hz)',
                                 style: TextStyle(fontSize: 10, color: AppTheme.accentGreen, fontWeight: FontWeight.w600),
                               ),
                             ],
@@ -68,13 +68,6 @@ class ImuMotionCard extends StatelessWidget {
                       ],
                     ),
                   ],
-                ),
-                Chip(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                  label: Text('${telemetry.tapCount} Taps', style: const TextStyle(fontSize: 12)),
-                  backgroundColor: AppTheme.primaryCyan.withAlpha(30),
-                  side: const BorderSide(color: AppTheme.primaryCyan),
                 ),
               ],
             ),
