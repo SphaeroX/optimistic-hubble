@@ -36,7 +36,7 @@ class TapHistoryList extends StatelessWidget {
                 OutlinedButton.icon(
                   onPressed: onSimulateTap,
                   icon: const Icon(Icons.touch_app, size: 14),
-                  label: const Text('Test Tap (Start/Stop)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  label: const Text('Test Tap', style: TextStyle(fontSize: 12)),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     minimumSize: Size.zero,
@@ -51,7 +51,7 @@ class TapHistoryList extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 20),
                 child: const Center(
                   child: Text(
-                    'No tap triggers recorded yet.\nDouble-tap the XIAO board or click "Test Tap (Start/Stop)" to toggle recording.',
+                    'No tap triggers recorded yet.\nDouble-tap the XIAO breadboard or click "Test Tap".',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
                   ),
