@@ -111,16 +111,38 @@ class ClipCard extends StatelessWidget {
     );
   }
 
+  Future<void> _handleOpenFolder(BuildContext context) async {
+    await LocalStorageManager.openInFileManager();
+    final dirPath = await LocalStorageManager.getRecordingsDirectoryPath();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 4),
+        content: Text(
+          'Speicherort: $dirPath',
+          style: const TextStyle(fontSize: 12),
+        ),
+        action: SnackBarAction(
+          label: 'Kopieren',
+          textColor: AppTheme.primaryCyan,
+          onPressed: () {
+            Clipboard.setData(ClipboardData(text: dirPath));
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isSynced = clip.syncState == SyncState.synced;
     final isDownloading = clip.syncState == SyncState.downloading;
-    final isFastTransfer = clip.isFastTransferRecommended;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         side: BorderSide(
           color: clip.isPlaying
               ? AppTheme.primaryCyan
@@ -131,134 +153,163 @@ class ClipCard extends StatelessWidget {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Column(
           children: [
             Row(
               children: [
-                // Play / Pause Circle
+                // Play / Download Circle Action
                 CircleAvatar(
-                  radius: 24,
+                  radius: 21,
                   backgroundColor: clip.isPlaying
                       ? AppTheme.accentGreen
                       : isSynced
                           ? AppTheme.primaryCyan.withAlpha(40)
-                          : (isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan).withAlpha(40),
+                          : AppTheme.accentOrange.withAlpha(30),
                   child: IconButton(
+                    iconSize: 22,
+                    padding: EdgeInsets.zero,
                     icon: Icon(
                       clip.isPlaying
                           ? Icons.pause
-                          : (isSynced ? Icons.play_arrow : (isFastTransfer ? Icons.bolt : Icons.bluetooth_audio)),
+                          : (isSynced ? Icons.play_arrow : Icons.bolt),
                       color: clip.isPlaying
                           ? Colors.black
-                          : (isSynced
-                              ? AppTheme.primaryCyan
-                              : (isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan)),
-                      size: 24,
+                          : (isSynced ? AppTheme.primaryCyan : AppTheme.accentOrange),
                     ),
+                    tooltip: clip.isPlaying
+                        ? 'Pause'
+                        : (isSynced ? 'Abspielen' : 'WiFi Fast Transfer'),
                     onPressed: isSynced ? onPlayToggle : onDownload,
                   ),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 12),
 
-                // Info
+                // Name & Duration/Size Info
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Clip #${clip.id} (${clip.remoteFilename})',
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          _buildStatusBadge(isSynced, isDownloading),
-                          if (isSynced && onShare != null)
-                            IconButton(
-                              icon: const Icon(Icons.share, color: AppTheme.primaryCyan, size: 18),
-                              visualDensity: VisualDensity.compact,
-                              tooltip: 'Audiodatei teilen (WhatsApp, etc.)',
-                              onPressed: onShare,
-                            ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: AppTheme.textMuted, size: 18),
-                            visualDensity: VisualDensity.compact,
-                            tooltip: 'Clip löschen',
-                            onPressed: () => _showDeleteDialog(context),
-                          ),
-                        ],
+                      Text(
+                        clip.remoteFilename,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.white,
+                        ),
                       ),
-                      const SizedBox(height: 4),
-                      Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 8,
-                        runSpacing: 4,
+                      const SizedBox(height: 3),
+                      Row(
                         children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.timer_outlined, size: 14, color: AppTheme.textMuted),
-                              const SizedBox(width: 4),
-                              Text(
-                                Formatters.formatDuration(clip.duration),
-                                style: const TextStyle(
-                                  color: AppTheme.primaryCyan,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.data_usage, size: 14, color: AppTheme.textMuted),
-                              const SizedBox(width: 4),
-                              Text(
-                                Formatters.formatBytes(clip.sizeBytes),
-                                style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                          // Tier Recommendation Badge
-                          if (!isSynced)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: (isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan).withAlpha(30),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: (isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan).withAlpha(80),
-                                ),
-                              ),
-                              child: Text(
-                                isFastTransfer ? 'Fast Transfer (Wi-Fi)' : 'BLE Auto-Sync',
-                                style: TextStyle(
-                                  color: isFastTransfer ? AppTheme.accentOrange : AppTheme.primaryCyan,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
+                          const Icon(Icons.timer_outlined, size: 13, color: AppTheme.textMuted),
+                          const SizedBox(width: 4),
+                          Text(
+                            Formatters.formatDuration(clip.duration),
+                            style: const TextStyle(
+                              color: AppTheme.primaryCyan,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
                             ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text('•', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                          const SizedBox(width: 6),
+                          Text(
+                            Formatters.formatBytes(clip.sizeBytes),
+                            style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                          ),
                         ],
                       ),
                     ],
                   ),
+                ),
+
+                const SizedBox(width: 8),
+
+                // Status Badge
+                _buildStatusBadge(isSynced, isDownloading),
+
+                const SizedBox(width: 4),
+
+                // 3-Dots Action Menu
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: AppTheme.textMuted, size: 20),
+                  tooltip: 'Optionen',
+                  color: const Color(0xFF131B2A),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: Color(0xFF243248)),
+                  ),
+                  onSelected: (action) {
+                    switch (action) {
+                      case 'share':
+                        onShare?.call();
+                        break;
+                      case 'folder':
+                        _handleOpenFolder(context);
+                        break;
+                      case 'download':
+                        onDownload();
+                        break;
+                      case 'delete':
+                        _showDeleteDialog(context);
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    if (isSynced && onShare != null)
+                      const PopupMenuItem<String>(
+                        value: 'share',
+                        child: Row(
+                          children: [
+                            Icon(Icons.share, color: AppTheme.accentGreen, size: 18),
+                            SizedBox(width: 10),
+                            Text('Teilen', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    if (isSynced)
+                      const PopupMenuItem<String>(
+                        value: 'folder',
+                        child: Row(
+                          children: [
+                            Icon(Icons.folder_open, color: AppTheme.primaryCyan, size: 18),
+                            SizedBox(width: 10),
+                            Text('Speicherort öffnen', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    if (!isSynced)
+                      const PopupMenuItem<String>(
+                        value: 'download',
+                        child: Row(
+                          children: [
+                            Icon(Icons.bolt, color: AppTheme.accentOrange, size: 18),
+                            SizedBox(width: 10),
+                            Text('WiFi Fast Transfer', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    const PopupMenuDivider(height: 8),
+                    const PopupMenuItem<String>(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_outline, color: AppTheme.accentRed, size: 18),
+                          SizedBox(width: 10),
+                          Text('Löschen...', style: TextStyle(color: AppTheme.accentRed, fontSize: 13, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
 
             // Progress bar if downloading
             if (isDownloading) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -266,91 +317,21 @@ class ClipCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
                       value: clip.downloadProgress,
-                      minHeight: 6,
+                      minHeight: 5,
                       backgroundColor: const Color(0xFF243248),
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        !isFastTransfer ? AppTheme.primaryCyan : AppTheme.accentOrange,
-                      ),
+                      valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryCyan),
                     ),
                   ),
                   if (clip.transferSpeed != null) ...[
                     const SizedBox(height: 4),
                     Text(
                       clip.transferSpeed!,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 11,
-                        color: !isFastTransfer ? AppTheme.primaryCyan : AppTheme.accentOrange,
+                        color: AppTheme.primaryCyan,
                       ),
                     ),
                   ],
-                ],
-              ),
-            ],
-
-            // Action row if synced
-            if (isSynced && clip.localWavPath != null) ...[
-              const SizedBox(height: 10),
-              const Divider(color: Color(0xFF243248), height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.verified, size: 14, color: AppTheme.accentGreen),
-                      const SizedBox(width: 4),
-                      Text(
-                        'PCM WAV (16 kHz)',
-                        style: TextStyle(color: AppTheme.textMuted.withAlpha(200), fontSize: 11),
-                      ),
-                    ],
-                  ),
-                  Wrap(
-                    spacing: 4,
-                    children: [
-                      if (onShare != null)
-                        TextButton.icon(
-                          onPressed: onShare,
-                          icon: const Icon(Icons.share, size: 15, color: AppTheme.accentGreen),
-                          label: const Text(
-                            'Share',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.accentGreen,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      TextButton.icon(
-                        onPressed: () async {
-                          await LocalStorageManager.openInFileManager();
-                          final dirPath = await LocalStorageManager.getRecordingsDirectoryPath();
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              duration: const Duration(seconds: 4),
-                              content: Text(
-                                'Speicherort: $dirPath',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              action: SnackBarAction(
-                                label: 'Kopieren',
-                                textColor: AppTheme.primaryCyan,
-                                onPressed: () {
-                                  Clipboard.setData(ClipboardData(text: dirPath));
-                                },
-                              ),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.folder_open, size: 15, color: AppTheme.primaryCyan),
-                        label: const Text(
-                          'Folder',
-                          style: TextStyle(fontSize: 12, color: AppTheme.primaryCyan),
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ],
@@ -397,7 +378,7 @@ class ClipCard extends StatelessWidget {
           children: [
             Icon(Icons.check_circle, size: 12, color: AppTheme.accentGreen),
             SizedBox(width: 4),
-            Text('Lokal (WAV)', style: TextStyle(fontSize: 11, color: AppTheme.accentGreen, fontWeight: FontWeight.bold)),
+            Text('Lokal', style: TextStyle(fontSize: 11, color: AppTheme.accentGreen, fontWeight: FontWeight.bold)),
           ],
         ),
       );
@@ -415,7 +396,7 @@ class ClipCard extends StatelessWidget {
         children: [
           Icon(Icons.memory, size: 12, color: AppTheme.accentOrange),
           SizedBox(width: 4),
-          Text('Nur auf MCU', style: TextStyle(fontSize: 11, color: AppTheme.accentOrange, fontWeight: FontWeight.bold)),
+          Text('Auf Gerät', style: TextStyle(fontSize: 11, color: AppTheme.accentOrange, fontWeight: FontWeight.bold)),
         ],
       ),
     );

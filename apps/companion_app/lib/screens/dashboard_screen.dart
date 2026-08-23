@@ -517,7 +517,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Row(
           children: [
             Expanded(
-              flex: 3,
               child: ElevatedButton.icon(
                 onPressed: isSyncing ? null : () => _openFastTransferSheet(),
                 icon: const Icon(Icons.bolt, size: 18, color: Colors.black),
@@ -528,20 +527,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryCyan,
                   foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              flex: 2,
-              child: OutlinedButton.icon(
-                onPressed: isSyncing ? null : () => widget.syncManager.syncAllClips(),
-                icon: const Icon(Icons.bluetooth_audio, size: 16),
-                label: const Text('BLE Sync', style: TextStyle(fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.primaryCyan,
-                  side: const BorderSide(color: AppTheme.primaryCyan),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
@@ -562,51 +547,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               tooltip: 'Aktualisieren (Clips vom Gerät abrufen)',
             ),
           ],
-        ),
-        const SizedBox(height: 12),
-
-        // 2-Stage Plaud Note Architecture Status Card
-        Card(
-          color: isConnected ? AppTheme.cardDark : const Color(0xFF131B2A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: Color(0xFF243248)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              children: [
-                Icon(
-                  isConnected ? Icons.cloud_sync : Icons.cloud_off,
-                  color: isConnected ? AppTheme.accentGreen : AppTheme.textMuted,
-                  size: 22,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        isConnected ? '2-Stage Sync Active (Plaud Note Model)' : 'Device Offline',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: isConnected ? Colors.white : AppTheme.textMuted,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        isConnected
-                            ? 'Stage 1: BLE Auto-Sync (<5mA) • Stage 2: Wi-Fi Fast Transfer (~2.4 MB/s)'
-                            : 'Connect via BLE to enable auto-sync and high-speed Wi-Fi transfer',
-                        style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
         ),
         const SizedBox(height: 12),
 
@@ -657,7 +597,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Icon(Icons.mic_none, size: 48, color: AppTheme.textMuted),
                   SizedBox(height: 12),
                   Text(
-                    'No recordings stored yet.\n\n• Tap board or click "Record" to record audio\n• 2-Stage Sync: Silent BLE + On-Demand Wi-Fi Fast Transfer',
+                    'No recordings stored yet.\n\n• Tap board or click "Record" to record audio\n• High-speed Wi-Fi Fast Transfer',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
                   ),
@@ -670,13 +610,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 clip: clip,
                 isConnectedToMcu: isConnected,
                 onPlayToggle: () => widget.syncManager.togglePlayback(clip),
-                onDownload: () {
-                  if (clip.isFastTransferRecommended) {
-                    _openFastTransferSheet(targetClipId: clip.id);
-                  } else {
-                    widget.syncManager.downloadClip(clip.id);
-                  }
-                },
+                onDownload: () => _openFastTransferSheet(targetClipId: clip.id),
                 onShare: () => widget.syncManager.shareClip(clip),
                 onDeleteLocal: () => widget.syncManager.deleteClipLocally(clip.id),
                 onDeleteRemote: () => widget.syncManager.deleteClipOnDevice(clip.id),
