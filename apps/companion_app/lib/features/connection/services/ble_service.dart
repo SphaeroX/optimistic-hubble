@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:universal_ble/universal_ble.dart' hide BleCommand;
 import '../../../core/constants/app_constants.dart';
@@ -38,6 +39,9 @@ class BleService extends ChangeNotifier {
   String _statusMessage = 'Disconnected';
   bool _isMockMode = false;
   Timer? _mockTelemetryTimer;
+  Timer? _telemetryPollTimer;
+  Timer? _tapSettleTimer;
+  bool _isTapShockActive = false;
   bool _isAutoConnecting = false;
   bool _autoConnectEnabled = true;
 
@@ -304,9 +308,24 @@ class BleService extends ChangeNotifier {
 
       await _subscribeToCharacteristics(deviceId);
       await _readInitialState(deviceId);
+      _startTelemetryPolling();
     } catch (e) {
       _log('GATT', 'GATT setup warning: $e');
     }
+  }
+
+  void _startTelemetryPolling() {
+    _telemetryPollTimer?.cancel();
+    _telemetryPollTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
+      if (isConnected && !_isMockMode) {
+        readTelemetry();
+      }
+    });
+  }
+
+  void _stopTelemetryPolling() {
+    _telemetryPollTimer?.cancel();
+    _telemetryPollTimer = null;
   }
 
   /// Reads the current State/Telemetry characteristic directly from the connected Xiao MCU over BLE GATT.
@@ -320,7 +339,6 @@ class BleService extends ChangeNotifier {
     }
 
     try {
-      _log('GATT', 'Reading State/Telemetry Characteristic from ${_connectedDevice!.id}...');
       final val = await UniversalBle.read(
         _connectedDevice!.id,
         AppConstants.bleServiceUuid,
@@ -328,11 +346,10 @@ class BleService extends ChangeNotifier {
       );
       if (val.isNotEmpty) {
         _parseStatePayload(val);
-        _log('GATT', 'Telemetry refreshed: ${_telemetry.state.label}, ${_telemetry.totalClips} clip(s) on device');
         return true;
       }
     } catch (e) {
-      _log('GATT', 'Failed to read telemetry characteristic: $e', isError: true);
+      debugPrint('[BLE] Read telemetry error: $e');
     }
     return false;
   }
@@ -356,6 +373,10 @@ class BleService extends ChangeNotifier {
 
   Future<void> disconnect() async {
     _mockTelemetryTimer?.cancel();
+    _stopTelemetryPolling();
+    _tapSettleTimer?.cancel();
+    _isTapShockActive = false;
+
     if (_isMockMode) {
       _isMockMode = false;
       _status = ConnectionStatus.disconnected;
@@ -566,13 +587,24 @@ class BleService extends ChangeNotifier {
     }
   }
 
+  static bool _isUuidMatching(String received, String expectedPattern) {
+    final cleanRec = received.toLowerCase().replaceAll(RegExp(r'[^0-9a-f]'), '');
+    final cleanExp = expectedPattern.toLowerCase().replaceAll(RegExp(r'[^0-9a-f]'), '');
+    return cleanRec == cleanExp || cleanRec.contains(cleanExp) || cleanExp.contains(cleanRec);
+  }
+
   void _handleIncomingCharacteristic(String charUuid, Uint8List value) {
-    final cleanUuid = charUuid.toLowerCase().replaceAll('-', '');
-    if (cleanUuid.contains('ff01') || BleUuidParser.compareStrings(charUuid, AppConstants.bleCharStateUuid)) {
+    if (_isUuidMatching(charUuid, AppConstants.bleCharStateUuid) ||
+        _isUuidMatching(charUuid, '19b10001') ||
+        _isUuidMatching(charUuid, 'ff01')) {
       _parseStatePayload(value);
-    } else if (cleanUuid.contains('ff03') || BleUuidParser.compareStrings(charUuid, AppConstants.bleCharTapUuid)) {
+    } else if (_isUuidMatching(charUuid, AppConstants.bleCharTapUuid) ||
+        _isUuidMatching(charUuid, '19b10003') ||
+        _isUuidMatching(charUuid, 'ff03')) {
       _parseTapPayload(value);
-    } else if (cleanUuid.contains('ff02') || BleUuidParser.compareStrings(charUuid, AppConstants.bleCharAudioUuid)) {
+    } else if (_isUuidMatching(charUuid, AppConstants.bleCharAudioUuid) ||
+        _isUuidMatching(charUuid, '19b10002') ||
+        _isUuidMatching(charUuid, 'ff02')) {
       _parseAudioChunkPayload(value);
     }
   }
@@ -797,10 +829,10 @@ class BleService extends ChangeNotifier {
       usedStorageBytes: 420 * 1024,
       totalStorageBytes: 1966080,
       totalClips: 4,
-      motionMagnitude: 0.98,
-      accelX: 0.02,
-      accelY: 0.05,
-      accelZ: 0.98,
+      motionMagnitude: 1.00,
+      accelX: 0.01,
+      accelY: 0.02,
+      accelZ: 0.99,
       tapCount: 0,
       lastUpdated: DateTime.now(),
     );
@@ -808,14 +840,36 @@ class BleService extends ChangeNotifier {
     _log('MOCK', 'Enabled Hardware Simulation Mode for PC Testing');
 
     _mockTelemetryTimer?.cancel();
-    _mockTelemetryTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+    int tick = 0;
+    _mockTelemetryTimer = Timer.periodic(const Duration(milliseconds: 150), (timer) {
       if (!_isMockMode || !isConnected) {
         timer.cancel();
         return;
       }
+      tick++;
+
+      // When a tap shock spike is active, let the shock settle timer manage the spike
+      if (_isTapShockActive) return;
+
+      // Realistic resting IMU data with subtle physical sensor noise / gravity:
+      final double ax = (sin(tick * 0.12) * 0.02) + (Random().nextDouble() - 0.5) * 0.01;
+      final double ay = (cos(tick * 0.15) * 0.02) + (Random().nextDouble() - 0.5) * 0.01;
+      final double az = 0.98 + (sin(tick * 0.09) * 0.015) + (Random().nextDouble() - 0.5) * 0.01;
+      final double mag = sqrt(ax * ax + ay * ay + az * az);
+
+      int audioBytes = _telemetry.totalAudioBytes;
+      if (_telemetry.state == DeviceState.recording) {
+        audioBytes += 1200; // 8 KB/s @ 150ms
+      }
+
       _telemetry = _telemetry.copyWith(
-        batteryVoltage: 4.12 + (timer.tick % 5) * 0.01,
-        freeHeapBytes: 194560 - (timer.tick * 64) % 4096,
+        accelX: double.parse(ax.toStringAsFixed(3)),
+        accelY: double.parse(ay.toStringAsFixed(3)),
+        accelZ: double.parse(az.toStringAsFixed(3)),
+        motionMagnitude: double.parse(mag.toStringAsFixed(3)),
+        totalAudioBytes: audioBytes,
+        batteryVoltage: 4.15 + (sin(tick * 0.01) * 0.02),
+        freeHeapBytes: 194560 - (tick * 8) % 4096,
         lastUpdated: DateTime.now(),
       );
       notifyListeners();
@@ -826,39 +880,86 @@ class BleService extends ChangeNotifier {
 
   void triggerSimulatedTap() {
     final newCount = _telemetry.tapCount + 1;
+    final shock = 1.85 + (newCount % 4) * 0.22; // Dynamic shock magnitude between 1.85g and 2.51g
+
     final event = TapEvent(
       timestamp: DateTime.now(),
-      shockMagnitude: 1.45 + (newCount % 3) * 0.25,
+      shockMagnitude: double.parse(shock.toStringAsFixed(2)),
       tapIndex: newCount,
     );
     _tapHistory.insert(0, event);
+    if (_tapHistory.length > 50) _tapHistory.removeLast();
+
+    // 1. Simulate IMU shock spike on all axes
+    _isTapShockActive = true;
+    _tapSettleTimer?.cancel();
+
     _telemetry = _telemetry.copyWith(
       hasRealData: true,
       tapCount: newCount,
-      motionMagnitude: event.shockMagnitude,
+      accelX: 0.65 + (newCount % 3) * 0.15,
+      accelY: -0.42 - (newCount % 2) * 0.18,
+      accelZ: 2.15 + (newCount % 4) * 0.12,
+      motionMagnitude: shock,
       lastUpdated: DateTime.now(),
     );
-    _log('MOCK', 'Simulated Tap Triggered: ${event.shockMagnitude.toStringAsFixed(2)}g');
+    _log('TAP', 'Simulated Hardware Tap Triggered! Shock: ${event.shockMagnitude.toStringAsFixed(2)}g (Tap #$newCount)');
+
+    // 2. Hardware recording toggle logic (like real MCU tap trigger)
+    final bool currentlyRecording = _telemetry.state == DeviceState.recording;
+    if (!currentlyRecording) {
+      // Tap while idle -> START RECORDING
+      if (isConnected && !_isMockMode) {
+        sendCommand(BleCommand.startRecording);
+      } else {
+        _simulateCommand(BleCommand.startRecording);
+      }
+      _log('TAP', 'Tap Trigger -> START RECORDING');
+    } else {
+      // Tap while recording -> STOP & SAVE RECORDING
+      if (isConnected && !_isMockMode) {
+        sendCommand(BleCommand.stopRecording);
+      } else {
+        _simulateCommand(BleCommand.stopRecording);
+      }
+      _log('TAP', 'Tap Trigger -> STOP & SAVE RECORDING');
+    }
+
     notifyListeners();
+
+    // 3. Smoothly settle IMU back to resting gravity baseline after 350ms
+    _tapSettleTimer = Timer(const Duration(milliseconds: 350), () {
+      _isTapShockActive = false;
+      _telemetry = _telemetry.copyWith(
+        accelX: 0.01,
+        accelY: 0.02,
+        accelZ: 0.99,
+        motionMagnitude: 1.00,
+        lastUpdated: DateTime.now(),
+      );
+      notifyListeners();
+    });
   }
 
   void _simulateCommand(BleCommand cmd) {
     switch (cmd) {
       case BleCommand.startRecording:
         _telemetry = _telemetry.copyWith(state: DeviceState.recording);
-        _statusMessage = 'Recording started';
-        _log('MOCK', 'State -> RECORDING (I2S Mic active)');
+        _statusMessage = 'Recording active (Simulated)';
+        _log('MOCK', 'State -> RECORDING (I2S Mic capturing)');
         break;
       case BleCommand.stopRecording:
         _telemetry = _telemetry.copyWith(
           state: DeviceState.done,
+          totalClips: _telemetry.totalClips + 1,
           totalAudioBytes: _telemetry.totalAudioBytes + 96000,
         );
-        _statusMessage = 'Recording stopped';
-        _log('MOCK', 'State -> DONE');
-        Timer(const Duration(seconds: 1), () {
+        _statusMessage = 'Recording saved (Simulated)';
+        _log('MOCK', 'State -> DONE (Clip #${_telemetry.totalClips} saved to flash)');
+        Timer(const Duration(milliseconds: 1200), () {
           if (_isMockMode) {
             _telemetry = _telemetry.copyWith(state: DeviceState.idle);
+            _statusMessage = 'Idle (Ready)';
             notifyListeners();
           }
         });
@@ -909,6 +1010,9 @@ class BleService extends ChangeNotifier {
   void dispose() {
     _mockTelemetryTimer?.cancel();
     _mockTelemetryTimer = null;
+    _stopTelemetryPolling();
+    _tapSettleTimer?.cancel();
+    _tapSettleTimer = null;
     _audioProgressController.close();
     super.dispose();
   }

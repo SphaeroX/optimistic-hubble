@@ -295,6 +295,45 @@ void main() {
       bleService.dispose();
       audioPlayer.dispose();
     });
+
+    test('BleService triggerSimulatedTap simulates hardware tap toggling recording and spiking IMU', () {
+      final bleService = BleService();
+      bleService.enableMockMode();
+
+      expect(bleService.telemetry.state, DeviceState.idle);
+      expect(bleService.telemetry.tapCount, 0);
+
+      // Tap 1: Idle -> Starts Recording + IMU shock spike
+      bleService.triggerSimulatedTap();
+      expect(bleService.telemetry.state, DeviceState.recording);
+      expect(bleService.telemetry.tapCount, 1);
+      expect(bleService.telemetry.motionMagnitude, greaterThan(1.4));
+      expect(bleService.tapHistory.length, 1);
+      expect(bleService.tapHistory.first.tapIndex, 1);
+
+      // Tap 2: Recording -> Stops Recording
+      bleService.triggerSimulatedTap();
+      expect(bleService.telemetry.state, DeviceState.done);
+      expect(bleService.telemetry.tapCount, 2);
+      expect(bleService.tapHistory.length, 2);
+      expect(bleService.tapHistory.first.tapIndex, 2);
+
+      bleService.dispose();
+    });
+
+    test('BleService enableMockMode provides live IMU accelerometer data', () {
+      final bleService = BleService();
+      bleService.enableMockMode();
+
+      expect(bleService.isMockMode, isTrue);
+      expect(bleService.telemetry.hasRealData, isTrue);
+      expect(bleService.telemetry.accelX, isNotNull);
+      expect(bleService.telemetry.accelY, isNotNull);
+      expect(bleService.telemetry.accelZ, isNotNull);
+      expect(bleService.telemetry.motionMagnitude, isNotNull);
+
+      bleService.dispose();
+    });
   });
 }
 
@@ -322,11 +361,6 @@ class FakeNativeAudioPlayer extends ChangeNotifier implements NativeAudioPlayer 
 
   @override
   void stop() {}
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
 }
 
 
