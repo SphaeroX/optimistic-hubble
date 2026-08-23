@@ -60,7 +60,7 @@ class ImuMotionCard extends StatelessWidget {
                               ),
                               const SizedBox(width: 4),
                               const Text(
-                                'Live Stream (50 Hz)',
+                                'Live Stream',
                                 style: TextStyle(fontSize: 10, color: AppTheme.accentGreen, fontWeight: FontWeight.w600),
                               ),
                             ],

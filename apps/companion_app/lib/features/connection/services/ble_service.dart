@@ -841,7 +841,7 @@ class BleService extends ChangeNotifier {
 
     _mockTelemetryTimer?.cancel();
     int tick = 0;
-    _mockTelemetryTimer = Timer.periodic(const Duration(milliseconds: 20), (timer) {
+    _mockTelemetryTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (!_isMockMode || !isConnected) {
         timer.cancel();
         return;
@@ -852,14 +852,14 @@ class BleService extends ChangeNotifier {
       if (_isTapShockActive) return;
 
       // Realistic resting IMU data with subtle physical sensor noise / gravity:
-      final double ax = (sin(tick * 0.04) * 0.02) + (Random().nextDouble() - 0.5) * 0.01;
-      final double ay = (cos(tick * 0.05) * 0.02) + (Random().nextDouble() - 0.5) * 0.01;
-      final double az = 0.98 + (sin(tick * 0.03) * 0.015) + (Random().nextDouble() - 0.5) * 0.01;
+      final double ax = (sin(tick * 0.1) * 0.02) + (Random().nextDouble() - 0.5) * 0.01;
+      final double ay = (cos(tick * 0.12) * 0.02) + (Random().nextDouble() - 0.5) * 0.01;
+      final double az = 0.98 + (sin(tick * 0.08) * 0.015) + (Random().nextDouble() - 0.5) * 0.01;
       final double mag = sqrt(ax * ax + ay * ay + az * az);
 
       int audioBytes = _telemetry.totalAudioBytes;
       if (_telemetry.state == DeviceState.recording) {
-        audioBytes += 160; // 8 KB/s @ 20ms = 160 bytes
+        audioBytes += 800; // 8 KB/s @ 100ms = 800 bytes
       }
 
       _telemetry = _telemetry.copyWith(
@@ -868,8 +868,8 @@ class BleService extends ChangeNotifier {
         accelZ: double.parse(az.toStringAsFixed(3)),
         motionMagnitude: double.parse(mag.toStringAsFixed(3)),
         totalAudioBytes: audioBytes,
-        batteryVoltage: 4.15 + (sin(tick * 0.002) * 0.02),
-        freeHeapBytes: 194560 - (tick) % 4096,
+        batteryVoltage: 4.15 + (sin(tick * 0.01) * 0.02),
+        freeHeapBytes: 194560 - (tick * 4) % 4096,
         lastUpdated: DateTime.now(),
       );
       notifyListeners();

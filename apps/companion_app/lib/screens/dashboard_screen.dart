@@ -190,26 +190,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             ),
             actions: [
-              // Plaud Note Style WiFi Fast Transfer Prompt
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: ActionChip(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                  avatar: const Icon(Icons.bolt, size: 14, color: Colors.black),
-                  label: const Text(
-                    'WiFi Fast Transfer',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.black,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  backgroundColor: AppTheme.primaryCyan,
-                  side: BorderSide.none,
-                  onPressed: () => _openFastTransferSheet(),
-                ),
-              ),
               IconButton(
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.terminal, color: AppTheme.primaryCyan, size: 20),
