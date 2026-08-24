@@ -47,7 +47,7 @@
 | 32   | VDDA           | Analog-Versorgung                             | `3V3`                                               | Power           |
 | 33   | EPAD (Thermal) | Masse / thermisch                             | `GND` (**3×3 Via-Matrix** unter IC)                  | GND             |
 
-> **Statistik:** 17 GPIO belegt (2,3,4,5,6,7,9,10,11,12,13,14,15,16,17,18,19) · 5 GPIO frei (0,1,8,20,21) · 7 Spannungs-/Analog-Pins (2,3,11,17,18,31,32) + EPAD(33).
+> **Statistik:** 16 GPIO belegt (2,3,4,5,6,7,9,10,12,13,14,15,16,17,18,19) · 4 GPIO frei (0,1,20,21) · 7 Spannungs-/Analog-Pins (2,3,11,17,18,31,32) + EPAD(33). **GPIO11 existiert am ESP32-C3 nicht – Pin 18 ist `VDD_SPI`.**
 
 ---
 
@@ -63,7 +63,7 @@
 | GPIO7 | 13  | MTDO → I2C0 SCL       | I2C **SCL**                | U3 Pin 14 + R3      |
 | GPIO9 | 15  | —                     | Switch/Button `BTN` (GND)  | THT-Lötbohrung BTN  |
 | GPIO10| 16  | —                     | LED **D1 rot**             | D1 Kathode via R4   |
-| GPIO11| 18  | —                     | LED **D2 grün**            | D2 Kathode via R6   |
+| GPIO8 | 14  | —                     | LED **D2 grün**            | D2 Kathode via R6   |
 | GPIO12| 19  | SPIQ                  | Flash **IO3/HOLD**         | U2 Pin 7            |
 | GPIO13| 20  | SPIHD                 | Flash **IO2/WP**           | U2 Pin 3            |
 | GPIO14| 21  | SPICS0                | Flash **/CS**              | U2 Pin 1            |
@@ -92,7 +92,6 @@
 | ---: | ---: | ---------------------------------------- |
 | GPIO0 | 4   | XTAL_32K_P — frei, kein 32 kHz-Kristall  |
 | GPIO1 | 5   | XTAL_32K_N — frei, kein 32 kHz-Kristall  |
-| GPIO8 | 14  | Strapping — frei (nicht beschaltet)      |
 | GPIO20| 27  | U0RXD — frei (UART, falls Debug nötig)   |
 | GPIO21| 28  | U0TXD — frei (UART, falls Debug nötig)   |
 

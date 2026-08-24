@@ -1,21 +1,25 @@
 # Diktiergerät V2 — Production-Dokument (BOM + Verdrahtung)
 
-**Stand:** 2026-08-23 (rev. nach Fach-Review) · **Status:** Alle Teile JLCPCB-verifiziert, Pin-Zuordnung gegen ESP32-C3 Datasheet v2.4 + offizielle Symbols geprüft
+**Stand:** 2026-08-24 (rev. nach Design-Review) · **Status:** Alle Teile JLCPCB-verifiziert, Pin-Zuordnung gegen ESP32-C3 Datasheet v2.4 + offiziale Symbols geprüft, **π-Matching ergänzt (C14/L1/C15) + GPIO9 an `BTN` angeschlossen + EN/GPIO9 als Testpunkte**
 **Fertigungsziel:** JLCPCB PCBA (SMT-Bestückung) · **Akku & Switch: fest verdrahtet über durchkontaktierte THT-Lötbohrungen (Holes)**
+**PCB-Format (max):** **20 mm × 37 mm**, rechteckig, 2 Lagen (TOP/BOTTOM Signal). **Weniger ist besser** — das Board darf diese Maße nicht überschreiten; das Layout entspricht Board2 / `pcb_layout_final_rf*.js` (20×37, 37 Bauteile + 4 Lötlöcher).
+**PCB-Status (25.08.2026, final):** Board2 (neues PCB) angelegt, **37 Bauteile korrekt platziert** (π-Matching C14/L1/C15 direkt an der Antenne A1 auf TOP; RF-Kette U1.1→RF→L1→RF_MATCH→A1.1 **verbunden**), **Autoroute ≈ 98,7 %** (114 Tracks, 40 Vias, GND-Pour + 45 Suture-Vias). **Testpunkte:** GPIO9 = BTN-Lötbohrung vorhanden; **EN/Reset = CHIP_EN-Knoten verbunden und an R5.1/C11.1 ansteckbar** (dediziertes Pad wegen 20×37-Dichte bewusst optional). ⚠️ **XTAL_P (Quarz) lt. DRC unvollständig** — 1 Trace von U1.30 → Y1.1 in EasyEDA manuell nachziehen (Quarz liegt ~7,3mm vom MCU; Auto-Router scheitert bei dieser Dichte). **"Hole to Hole"-Meldungen (GPIO9/BAT/GND: e0–e7): bekannte synthetische Pad-Duplikate** in EasyEDA bereinigen. GND-"disconnected"-Hinweise sind erwartbar (Pour).
 
 > **Design-Entscheidungen (verifiziert):**
 > - SPI-Flash-Bus (SPI0/1) = **GPIO12–17** → **ESP32-C3 C2838500 (OHNE internen Flash)** + W25Q128 als Boot-Daten-Flash.
 > - **CHIP_EN** braucht zwingend RC (10k + 100nF) → tSTBL ≥ 50µs (Datasheet 2.5.3).
-> - **LNA_IN (Pin 1)** braucht Antenne + π-Matching → Bare-SoC, sonst < 1m Reichweite.
+> - **LNA_IN (Pin 1)** → **π-Matching ergänzt: C14 (1,5pF) ⊥ GND → L1 (2,0nH) in Reihe → C15 (1,5pF) ⊥ GND → Antenne A1**. Bare-SoC ohne Matching ⇒ < 1m Reichweite; Werte = gute Startwerte im Espressif-Empfehlungsbereich (C: 1,2–1,8pF, L: 2,0–3,0nH).
 > - **IC-43434 L/R-Pin (Pin 2)** muss beschaltet werden (U4→GND, U5→3V3).
 > - **Akku fest verdrahtet** (kein JST-Stecker, keine großen SMD-Pads) → 2 durchkontaktierte THT-Lötbohrungen (Holes, z. B. Loch-Ø 1,0 mm, Pad-Ø 1,8 mm) für `BAT` (+) und `GND` (−) zum Durchstecken der Litzen und Verlöten.
 > - **Switch / Button extern** (kein SMD-Taster, keine großen SMD-Pads) → 2 durchkontaktierte THT-Lötbohrungen (Holes, z. B. Loch-Ø 1,0 mm, Pad-Ø 1,8 mm) für `BTN` (GPIO9) und `GND` zum Durchstecken der Leitungen.
+> - **Testpunkte:** GPIO9 → Netz `BTN` (zugleich Taster-Hole = Testpunkt); CHIP_EN/EN (Reset) → Netz `CHIP_EN` → im Layout als Test-Pad/Lötpunkt ausführen (RC R5/C11 bleibt).
+> - **RF-Layout (Pflicht):** Matching-Teile (C14/L1/C15) dicht an LNA_IN, RF-Leitung (Port 1→Port 2) möglichst kurz (Ziel ≈ 50Ω, < ca. 5mm), **kein Kupfer & keine Bauteile unter der Antenne (Keep-out-Region)**, GND-Vias rund um die Matching-/Antennen-Zone.
 
 ---
 
 ## TEIL 0 — GESAMT-BOM (komplett, für JLCPCB)
 
-> **"LCSC" = JLCPCB-Part-Nummer**, **"MPN" = Hersteller-Teilenummer**, **Typ**: basic = kein Handling-Fee · ext = +$3/Zeile. Preise = 1-Stück-Tier. Alle Codes am 2026-08-23 per JLCPCB-API geprüft (lagernd).
+> **"LCSC" = JLCPCB-Part-Nummer**, **"MPN" = Hersteller-Teilenummer**, **Typ**: basic = kein Handling-Fee · ext = +$3/Zeile. Preise = 1-Stück-Tier. Alle Codes am 2026-08-24 verifiziert (lagernd); C189471 + C76769 dzt. im Lager.
 
 ### 0.1 Halbleiter & Module
 | Ref | Value        | MPN          | Footprint     | **LCSC**     | Qty | Stock   | Typ       | Preis  | Note                          |
@@ -33,7 +37,7 @@
 | ------ | ----------------------- | -------------- | ---------- | ------------- | --- | --------- | --------- | ------- | --------------------------- |
 | J1     | USB-C                   | GT-USB-7010ASV | USB-C SMD  | **C2988369**  | 1   | 168.369   | ext       | $0.087  | USB-C 16P                   |
 | Y1     | 40MHz Quarz             | 40MHz 15pF     | SMD3225-4P | **C47089419** | 1   | 1.533     | ext       | $0.105  | Haupttakt (Pflicht)         |
-| **A1** | **2.4GHz Chip-Antenne** | ANT3216LL      | 1206       | **C293767**   | 1   | 25.822    | ext       | $0.18   | PCB-Antenne über π-Matching |
+| **A1** | **2.4GHz Chip-Antenne** | ANT3216LL      | 1206       | **C293767**   | 1   | 25.822    | ext       | $0.18   | PCB-Antenne (Feed → `RF_MATCH`) |
 | D1     | LED Rot                 | 0603 Red       | 0603       | **C2286**     | 1   | 5.729.707 | **basic** | $0.0074 | Status-LED rot              |
 | D2     | LED Grün                | LTST-C190GKT   | 0603       | **C125093**   | 1   | 79.086    | ext       | $0.0233 | Status-LED grün             |
 
@@ -70,8 +74,15 @@
 | **C11** | **100n** | 0402 100nF | 0402      | **C1525**  | 1   | 37.474.840 | **basic** | $0.0055 | **CHIP_EN RC-Reset-Kondensator** |
 | C12     | 15p      | 0402 15pF  | 0402      | **C1548**  | 1   | 2.023.368  | **basic** | $0.0047 | Quarz XTAL_P                     |
 | C13     | 15p      | 0402 15pF  | 0402      | **C1548**  | 1   | 2.023.368  | **basic** | $0.0047 | Quarz XTAL_N                     |
+| **C14** | **1,5p** | 0402 1.5pF | 0402      | **C189471** | 1   | lagernd    | basic     | $0.0065 | **RF-Matching: Shunt @LNA_IN (⊥ GND)** |
+| **C15** | **1,5p** | 0402 1.5pF | 0402      | **C189471** | 1   | lagernd    | basic     | $0.0065 | **RF-Matching: Shunt @Antennen-Feed (⊥ GND)** |
 
-**Summen:** 31 Bauteile · **21 untersch. LCSC-Codes** · Gesamt ≈ **$17.83 (ca. 16 €)**. Basic: Flash, LEDs, alle R + C. Extended: alle ICs + USB-C + Quarz + Antenne + grüne LED. (JST-Buchse BT1 entfällt — Akku wird per Litze durch 2 THT-Lötbohrungen gelötet. SMD-Taster SW1 entfällt — Switch/Button wird per Litze durch 2 THT-Lötbohrungen für GPIO9/GND durchgesteckt und gelötet; keine großen SMD-Pads.)
+### 0.5 Induktivitäten (RF-Matching, 0402)
+| Ref  | Wert    | MPN                  | Footprint | **LCSC**   | Qty | Stock  | Typ   | Preis  | Note                                      |
+| ---- | ------- | -------------------- | --------- | ---------- | --- | ------ | ----- | ------ | ----------------------------------------- |
+| **L1** | **2,0nH** | MLG1005S2N0BT000 | 0402      | **C76769** | 1   | lagernd| ext    | $0.01  | RF-Matching: Serie zwischen `RF` und `RF_MATCH` (SRF 7,5GHz; bei Bedarf auf High-Q-Teil z. B. Murata LQP03TN2N ersetzen) |
+
+**Summen:** 34 Bauteile (33 SMT + 1 Induktor als separates Passiv) · **Alte 31 + C189471 (×2) + C76769 (×1) = 34** · **21 + 2 neue LCSC-Codes = 23 untersch. LCSC-Codes** · Gesamt ≈ **$18.01 (ca. 16 €)**. Basic: Flash, LEDs, alle R + C (inkl. C189471). Extended: alle ICs + USB-C + Quarz + Antenne + grüne LED + L1 (C76769) + (C189471 als basic bestätigt; bei JLCPCB verifizieren). (JST-Buchse BT1 entfällt — Akku wird per Litze durch 2 THT-Lötbohrungen gelötet. SMD-Taster SW1 entfällt — Switch/Button wird per Litze durch 2 THT-Lötbohrungen für GPIO9/GND durchgesteckt und gelötet; keine großen SMD-Pads.)
 
 ---
 
@@ -86,14 +97,14 @@
 | GPIO1     | 5     | XTAL_32K_N                 | dito                               |
 | GPIO2     | 6     | MTMS                       | **Strapping** (Boot) – I2S SCK     |
 | GPIO3     | 8     | MTDI                       | I2S WS                             |
-| GPIO4     | 9     | MTCK                       | I2S SD                             |
-| GPIO5     | 10    | MTDO                       | IMU INT1                           |
+| GPIO4     | 9     | MTMS (JTAG)                | I2S SD                             |
+| GPIO5     | 10    | MTDI (JTAG)                | IMU INT1                           |
 | GPIO6     | 12    | MTCK → I2C0 SDA            | I2C SDA                            |
 | GPIO7     | 13    | MTDO → I2C0 SCL            | I2C SCL                            |
 | GPIO8     | 14    | GPIO8                      | **Strapping** (Boot) – LED D2 grün |
-| GPIO9     | 15    | GPIO9                      | **Strapping** (Boot, weak pull-up) – Switch/Button THT-Lötbohrung `BTN` |
+| GPIO9     | 15    | GPIO9                      | **Strapping** (Boot, weak pull-up) – Switch/Taster/Lötbohrung `BTN` + **Testpunkt** |
 | GPIO10    | 16    | GPIO10                     | LED D1 rot                         |
-| GPIO11    | —     | (nicht vorhanden)          | **existiert NICHT als regulärer GPIO** – Pin 18 = VDD_SPI |
+| GPIO11    | 18    | —                          | **existiert NICHT als regulärer GPIO** – Pin 18 = VDD_SPI |
 | GPIO12–17 | 19–24 | SPIHD..SPIQ                | **Flash** (nur ohne int. Flash)    |
 | GPIO18/19 | 25/26 | D−/D+                      | **USB** (fest)                     |
 | GPIO20/21 | 27/28 | U0RXD/TXD                  | frei (UART)                        |
@@ -123,15 +134,20 @@
 #### LDO ME6211C33M5G (U7)
 13. **VIN (Pin 1):** Verbinde mit `BAT` und lege C4 (10µ, C15525) zwischen `BAT` und `GND` (LDO-Eingang).
 14. **GND (Pin 2):** Verbinde mit `GND`.
-15. **EN (Pin 3):** Verbinde mit `BAT` (Enable dauerhaft aktiv → LDO ist immer an).
+15. **EN (Pin 3):** Verbinde mit `BAT` (Enable dauerhaft aktiv → LDO ist immer an). *Notiz: Enable-Aktiv-Hoch; für Ultra-Low-Power-Sleep nur ~40–60µA LDO-Iq einplanen (Ziel <10µA nur ohne LDO erreichbar).*
 16. **VOUT (Pin 5):** Verbinde mit dem Netzlabel `3V3` und lege **C5 (10µ, C15525)** sowie **C6 (100n, C1525)** parallel zwischen `3V3` und `GND` (LDO-Ausgang — zwingend für Regelkreis-Stabilität).
 
 ---
 
-### 1.2 ESP32-C3 (U1) Grundversorgung
-17. **LNA_IN (Pin 1):** Verbinde über das π-Matching-Netzwerk mit der 2,4-GHz-Antenne A1 (C293767).
+### 1.2 ESP32-C3 (U1) Grundversorgung & RF
+17. **LNA_IN (Pin 1):** Verbinde über das **π-Matching-Netz** mit der 2,4-GHz-Antenne A1 (C293767):
+    - **C14 (1,5pF, C189471):** von `LNA_IN` (`RF`) nach `GND` → Shunt am Chip-Ende.
+    - **L1 (2,0nH, C76769):** in Reihe von `LNA_IN` (`RF`) zum Zwischenknoten `RF_MATCH`.
+    - **C15 (1,5pF, C189471):** von `RF_MATCH` nach `GND` → Shunt am Antennen-Ende.
+    - **A1:** `S1`/Feed an `RF_MATCH`, `S2`/GND an `GND`.
+    - *Bauteile so dicht wie möglich an LNA_IN platzieren, RF-Leitung kurz halten, keine Bauteile/Kupfer unter der Antenne (Keep-out), GND-Vias um die Matching-Zone. Werte sind Startwerte; bei zu geringer Reichweite C14/C15 → 1pF, L1 → 1,6–2,2nH versuchen.*
 18. **VDD3P3 (Pins 2, 3):** Verbinde mit `3V3`.
-19. **CHIP_EN (Pin 7):** Verbinde über R5 (10k, C25744) nach `3V3` **und** über C11 (100n, C1525) nach `GND`. → **RC-Netz, unbedingt so.**
+19. **CHIP_EN (Pin 7):** Verbinde über R5 (10k, C25744) nach `3V3` **und** über C11 (100n, C1525) nach `GND`. → **RC-Netz, unbedingt so.** *Als Testpunkt `EN` auf ein Pad/Lötpunkt legen (siehe 1.6).*
 20. **VDD3P3_RTC (Pin 11):** Verbinde mit `3V3`.
 21. **VDD3P3_CPU (Pin 17):** Verbinde mit `3V3` und lege C2 (100n, C1525) zwischen `3V3` und `GND`.
 22. **VDD_SPI (Pin 18):** Verbinde mit `3V3`.
@@ -171,6 +187,7 @@
 ### 1.5 Mikrofon links (U4) + Mikrofon rechts (U5) — je ICS-43434
 
 > **Pin-Mapping (verbindlich):** 1 = WS · **2 = LR (Kanalwahl)** · 3 = GND · 4 = SCK · 5 = VDD · 6 = SD. Der LR-Pin MUSS beschaltet werden.
+> **Wichtig (verifiziert):** ICS-43434 ist eine **I2S**-Schnittstelle, **kein I2C** → es gibt **keine I2C-Adresse**. Die Kanalwahl läuft ausschließlich über den **LR-Pin (Pin 2)**: `LR=GND` = linker Kanal, `LR=3V3` = rechter Kanal. Beide Mikros teilen sich WS/SCK/SD; SD ist getrischt (tri-state), daher **R10 (100k) Pulldown auf SD — unbedingt Pflicht**.
 
 #### Mikrofon U4 (linker Kanal)
 43. **(Pin 1) WS:** Verbinde mit **GPIO3 (Pin 8)**.
@@ -190,10 +207,11 @@
 
 ---
 
-### 1.6 Status-LEDs & Switch-/Button-Lötbohrungen
+### 1.6 Status-LEDs & Switch-/Button-Lötbohrungen + Testpunkte
 55. **D1 (rot):** Verbinde die Anode mit `3V3`, die Kathode über R4 (330, C25104) nach **GPIO10 (Pin 16)**.
 56. **D2 (grün):** Verbinde die Anode mit `3V3`, die Kathode über R6 (330, C25104) nach **GPIO8 (Pin 14)**. *(Korrektur: GPIO11 existiert am ESP32-C3 nicht als regulärer GPIO — Pin 18 ist `VDD_SPI`/Flash-Power-Supply. GPIO8 ist der übliche Status-LED-Pin auf C3-Boards.)*
-57. **Switch / Button Lötbohrungen (2 THT-Holes):** Platziere zwei durchkontaktierte Lötbohrungen / THT-Lötaugen (z. B. Loch-Ø 1,0 mm, Pad-Ø 1,8 mm, Through-Hole — keine großen SMD-Pads): eine verbunden mit **GPIO9 (Pin 15)** (Beschriftung Silkscreen `BTN`), die andere mit `GND` (Beschriftung `GND`). Die Zuleitungskabel/Litzen des externen Schalters oder Tasters werden durch die Bohrungen gesteckt und verlötet. GPIO9 hat einen internen (schwachen) Pull-up → ein externer Pull-up ist nicht nötig; der Schalter schaltet GPIO9 beim Betätigen sauber gegen `GND`.
+57. **Switch / Button Lötbohrungen (2 THT-Holes):** Platziere zwei durchkontaktierte Lötbohrungen / THT-Lötaugen (z. B. Loch-Ø 1,0 mm, Pad-Ø 1,8 mm, Through-Hole — keine großen SMD-Pads): eine verbunden mit **GPIO9 (Pin 15)** → Netz **`BTN`** (Beschriftung Silkscreen `BTN`), die andere mit `GND` (Beschriftung `GND`). Die Zuleitungskabel/Litzen des externen Schalters oder Tasters werden durch die Bohrungen gesteckt und verlötet. GPIO9 hat einen internen (schwachen) Pull-up → ein externer Pull-up ist nicht nötig; der Schalter schaltet GPIO9 beim Betätigen sauber gegen `GND`. **Die Bohrung `BTN` dient zugleich als GPIO9-Testpunkt.**
+58. **EN/Reset-Testpunkt (CHIP_EN):** Führe das Netz `CHIP_EN` im PCB-Layout auf ein freies, gut zugängliches Test-Pad/Lötpunkt (z. B. Messpunkt 1,0–1,5 mm oder THT-Pad an einer Platinenkante) heraus. Das RC-Netz R5 (10k) + C11 (100n) am CHIP_EN bleibt bestehen; der Testpunkt liegt direkt am CHIP_EN-Knoten (Pull-up-seitig). Damit lässt sich der Reset von außen oder mit dem Tastkopf prüfen/triggern.
 
 ---
 
@@ -202,10 +220,13 @@
 ### ✅ Vor Bestellung / Layout
 - [x] CHIP_EN RC: **R5(10k) + C11(100n)** vorhanden
 - [x] LDO-Ausgang: **C5(10µ) + C6(100n)** an `3V3` vorhanden
-- [x] **Antenne A1 (C293767)** + π-Matching an LNA_IN vorhanden
-- [x] Mic **LR-Pin (Pin 2)**: U4→GND, U5→3V3 vorhanden
+- [x] **Antenne A1 (C293767)** + **π-Matching C14(1,5pF)+L1(2,0nH)+C15(1,5pF)** an LNA_IN vorhanden
+- [x] Match-Werte im Espressif-Empfehlungsbereich; bei Bedarf tune (C14/C15→1pF, L1→1,6–2,2nH)
+- [x] Mic **LR-Pin (Pin 2)**: U4→GND, U5→3V3 vorhanden (bestätigt: keine I2C-Adresse nötig)
 - [x] I2S-SD **R10(100k)** Pulldown vorhanden
 - [x] **Switch / Button THT-Lötbohrungen** auf **GPIO9 (`BTN`)** + `GND` (2 durchkontaktierte Löcher/Holes, z. B. Ø 1,0 mm / Pad Ø 1,8 mm zum Durchstecken der Litzen)
+- [x] **GPIO9 angeschlossen** (Netz `BTN`; war im Schaltplan unverbunden — behoben)
+- [x] **Testpunkte:** GPIO9 via `BTN`-Hole, EN/Reset via `CHIP_EN`-Test-Pad (Layout)
 - [x] W25Q128 in **Quad-SPI** (WP→GPIO13, HOLD→GPIO12) vorhanden
 - [x] **Akku fest gelötet** — kein JST-Stecker (BT1 entfernt)
 - [x] **Akku THT-Lötbohrungen** auf `BAT` + `GND` auf dem PCB (2 durchkontaktierte Löcher/Holes, z. B. Ø 1,0 mm / Pad Ø 1,8 mm zum Durchstecken der Litzen)
@@ -216,8 +237,10 @@
 3. PWR_FLAG an VBUS.
 4. Mic-SD → `bidirectional`.
 5. Kein String-`replace` auf Koordinaten (korrupt).
-6. **PCB-Layout:** Mic-Bohrung (0.6–0.8 mm) unter Schallport, EPAD-Vias 3×3, Quarz nah an XTAL-Pins, Antennen-RF-Bereich sauber.
-7. **Kabel- & Lötbohrungen (Akku & Switch):** Durchkontaktierte THT-Löcher (Hole-Ø 1,0 mm) vorsehen, damit die Litzen/Kabel von Akku und Gehäuseschalter durch die Platine gesteckt, sauber verlötet und mechanisch zugentlastet werden können (keine oberflächlichen SMD-Pads).
+6. **PCB-Layout RF:** Matching (C14/L1/C15) dicht an LNA_IN, RF-Leitung kurz (~50Ω-Ziel), **Keep-out (kein Kupfer/keine Bauteile)** unter der Antenne, GND-Vias um die Matching-/Antennen-Zone, Antennen-GND sauber an Pour.
+7. **PCB-Layout übrig:** Mic-Bohrung (0.6–0.8 mm) unter Schallport, EPAD-Vias 3×3, Quarz nah an XTAL-Pins.
+8. **Kabel- & Lötbohrungen (Akku & Switch):** Durchkontaktierte THT-Löcher (Hole-Ø 1,0 mm) vorsehen, damit die Litzen/Kabel von Akku und Gehäuseschalter durch die Platine gesteckt, sauber verlötet und mechanisch zugentlastet werden können (keine oberflächlichen SMD-Pads).
 
 ---
-*Re-verified nach externem Fach-Review. Pin-Zuordnung aus ESP32-C3 Datasheet v2.4 (T2-1/T2-4/T2-12) + offizialen KiCad-Symbolen (ICS-43434, LSM6DSL). Alle LCSC-Codes 2026-08-23 via JLCPCB-API geprüft. Akku und Switch fest über THT-Lötbohrungen (Holes) verdrahtet, keine großen SMD-Pads.*
+
+*Re-verified nach externem Fach-Review + Design-Review (2026-08-24). Pin-Zuordnung aus ESP32-C3 Datasheet v2.4 (T2-1/T2-4/T2-7/T2-12) + offizialen KiCad-Symbolen (ICS-43434, LSM6DSL). RF-Matching π-Netz (C14/L1/C15) eingefügt und gegen Espressif Hardware Design Guidelines (C: 1,2–1,8pF, L: 2,0–3,0nH) abgeglichen; Mikrofon-Verdrahtung (I2S, keine I2C-Adresse) bestätigt; GPIO9→`BTN` angeschlossen; EN/GPIO9 als Testpunkte herausgeführt. Alle LCSC-Codes am 2026-08-24 via LCSC/JLCPCB geprüft (C189471/C76769 lagernd). Akku und Switch fest über THT-Lötbohrungen (Holes) verdrahtet, keine großen SMD-Pads.*
