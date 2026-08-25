@@ -2,7 +2,8 @@
 
 **Stand:** 2026-08-24 (rev. nach Design-Review) · **Status:** Alle Teile JLCPCB-verifiziert, Pin-Zuordnung gegen ESP32-C3 Datasheet v2.4 + offiziale Symbols geprüft, **π-Matching ergänzt (C14/L1/C15) + GPIO9 an `BTN` angeschlossen + EN/GPIO9 als Testpunkte**
 **Fertigungsziel:** JLCPCB PCBA (SMT-Bestückung) · **Akku & Switch: fest verdrahtet über durchkontaktierte THT-Lötbohrungen (Holes)**
-**PCB-Format (max):** **20 mm × 37 mm**, rechteckig, 2 Lagen (TOP/BOTTOM Signal). **Weniger ist besser** — das Board darf diese Maße nicht überschreiten; das Layout entspricht Board2 / `pcb_layout_final_rf*.js` (20×37, 37 Bauteile + 4 Lötlöcher).
+**PCB-Format (max):** **20 mm × 37 mm**, rechteckig. 
+**Weniger ist besser** — das Board darf diese Maße nicht überschreiten; das Layout entspricht Board2 / `pcb_layout_final_rf*.js` (20×37, 37 Bauteile + 4 Lötlöcher).
 **PCB-Status (25.08.2026, final):** Board2 (neues PCB) angelegt, **37 Bauteile korrekt platziert** (π-Matching C14/L1/C15 direkt an der Antenne A1 auf TOP; RF-Kette U1.1→RF→L1→RF_MATCH→A1.1 **verbunden**), **Autoroute ≈ 98,7 %** (114 Tracks, 40 Vias, GND-Pour + 45 Suture-Vias). **Testpunkte:** GPIO9 = BTN-Lötbohrung vorhanden; **EN/Reset = CHIP_EN-Knoten verbunden und an R5.1/C11.1 ansteckbar** (dediziertes Pad wegen 20×37-Dichte bewusst optional). ⚠️ **XTAL_P (Quarz) lt. DRC unvollständig** — 1 Trace von U1.30 → Y1.1 in EasyEDA manuell nachziehen (Quarz liegt ~7,3mm vom MCU; Auto-Router scheitert bei dieser Dichte). **"Hole to Hole"-Meldungen (GPIO9/BAT/GND: e0–e7): bekannte synthetische Pad-Duplikate** in EasyEDA bereinigen. GND-"disconnected"-Hinweise sind erwartbar (Pour).
 
 > **Design-Entscheidungen (verifiziert):**
@@ -33,13 +34,13 @@
 | U7  | ME6211C33M5G | ME6211C33M5G | SOT-23-5      | **C82942**   | 1   | 2.590   | ext       | $0.05  | LDO 3,3V 500mA                |
 
 ### 0.2 Anschlüsse, Antenne, Mechanik
-| Ref    | Value                   | MPN            | Footprint  | **LCSC**      | Qty | Stock     | Typ       | Preis   | Note                        |
-| ------ | ----------------------- | -------------- | ---------- | ------------- | --- | --------- | --------- | ------- | --------------------------- |
-| J1     | USB-C                   | GT-USB-7010ASV | USB-C SMD  | **C2988369**  | 1   | 168.369   | ext       | $0.087  | USB-C 16P                   |
-| Y1     | 40MHz Quarz             | 40MHz 15pF     | SMD3225-4P | **C47089419** | 1   | 1.533     | ext       | $0.105  | Haupttakt (Pflicht)         |
+| Ref    | Value                   | MPN            | Footprint  | **LCSC**      | Qty | Stock     | Typ       | Preis   | Note                            |
+| ------ | ----------------------- | -------------- | ---------- | ------------- | --- | --------- | --------- | ------- | ------------------------------- |
+| J1     | USB-C                   | GT-USB-7010ASV | USB-C SMD  | **C2988369**  | 1   | 168.369   | ext       | $0.087  | USB-C 16P                       |
+| Y1     | 40MHz Quarz             | 40MHz 15pF     | SMD3225-4P | **C47089419** | 1   | 1.533     | ext       | $0.105  | Haupttakt (Pflicht)             |
 | **A1** | **2.4GHz Chip-Antenne** | ANT3216LL      | 1206       | **C293767**   | 1   | 25.822    | ext       | $0.18   | PCB-Antenne (Feed → `RF_MATCH`) |
-| D1     | LED Rot                 | 0603 Red       | 0603       | **C2286**     | 1   | 5.729.707 | **basic** | $0.0074 | Status-LED rot              |
-| D2     | LED Grün                | LTST-C190GKT   | 0603       | **C125093**   | 1   | 79.086    | ext       | $0.0233 | Status-LED grün             |
+| D1     | LED Rot                 | 0603 Red       | 0603       | **C2286**     | 1   | 5.729.707 | **basic** | $0.0074 | Status-LED rot                  |
+| D2     | LED Grün                | LTST-C190GKT   | 0603       | **C125093**   | 1   | 79.086    | ext       | $0.0233 | Status-LED grün                 |
 
 > **Akku & Switch / Taster (nicht im SMT-BOM, per Litze durch THT-Bohrungen gelötet):**
 > - **Akku:** 1S LiPo 3,7 V mit Zuleitungskabeln — rot (+) durch THT-Lötbohrung `BAT`, schwarz (−) durch THT-Lötbohrung `GND` stecken und verlöten (kein JST-Stecker, keine großen SMD-Pads).
@@ -59,28 +60,28 @@
 | **R10** | **100k** | 0402 100k | 0402      | **C25741** | 1   | 14.734.064 | **basic** | $0.0053 | I2S-SD Pulldown nach GND |
 
 ### 0.4 Kondensatoren (alle 0402, alle basic)
-| Ref     | Wert     | MPN        | Footprint | **LCSC**   | Qty | Stock      | Typ       | Preis   | Funktion                         |
-| ------- | -------- | ---------- | --------- | ---------- | --- | ---------- | --------- | ------- | -------------------------------- |
-| C1      | 100n     | 0402 100nF | 0402      | **C1525**  | 1   | 37.474.840 | **basic** | $0.0055 | Entkopplung ESP32                |
-| C2      | 100n     | 0402 100nF | 0402      | **C1525**  | 1   | 37.474.840 | **basic** | $0.0055 | Entkopplung VDD_CPU              |
-| C3      | 10µ      | 0402 10µF  | 0402      | **C15525** | 1   | 10.292.216 | **basic** | $0.0255 | USB-VBUS Bulk                    |
-| C4      | 10µ      | 0402 10µF  | 0402      | **C15525** | 1   | 10.292.216 | **basic** | $0.0255 | LDO-Eingang (BAT)                |
-| **C5**  | **10µ**  | 0402 10µF  | 0402      | **C15525** | 1   | 10.292.216 | **basic** | $0.0255 | **LDO-Ausgang (3V3)**            |
-| **C6**  | **100n** | 0402 100nF | 0402      | **C1525**  | 1   | 37.474.840 | **basic** | $0.0055 | **LDO-Ausgang HF-Filter**        |
-| C7      | 100n     | 0402 100nF | 0402      | **C1525**  | 1   | 37.474.840 | **basic** | $0.0055 | Entkopplung Flash                |
-| C8      | 100n     | 0402 100nF | 0402      | **C1525**  | 1   | 37.474.840 | **basic** | $0.0055 | Entkopplung IMU                  |
-| C9      | 100n     | 0402 100nF | 0402      | **C1525**  | 1   | 37.474.840 | **basic** | $0.0055 | Entkopplung Mic U4               |
-| C10     | 100n     | 0402 100nF | 0402      | **C1525**  | 1   | 37.474.840 | **basic** | $0.0055 | Entkopplung Mic U5               |
-| **C11** | **100n** | 0402 100nF | 0402      | **C1525**  | 1   | 37.474.840 | **basic** | $0.0055 | **CHIP_EN RC-Reset-Kondensator** |
-| C12     | 15p      | 0402 15pF  | 0402      | **C1548**  | 1   | 2.023.368  | **basic** | $0.0047 | Quarz XTAL_P                     |
-| C13     | 15p      | 0402 15pF  | 0402      | **C1548**  | 1   | 2.023.368  | **basic** | $0.0047 | Quarz XTAL_N                     |
-| **C14** | **1,5p** | 0402 1.5pF | 0402      | **C189471** | 1   | lagernd    | basic     | $0.0065 | **RF-Matching: Shunt @LNA_IN (⊥ GND)** |
+| Ref     | Wert     | MPN        | Footprint | **LCSC**    | Qty | Stock      | Typ       | Preis   | Funktion                                      |
+| ------- | -------- | ---------- | --------- | ----------- | --- | ---------- | --------- | ------- | --------------------------------------------- |
+| C1      | 100n     | 0402 100nF | 0402      | **C1525**   | 1   | 37.474.840 | **basic** | $0.0055 | Entkopplung ESP32                             |
+| C2      | 100n     | 0402 100nF | 0402      | **C1525**   | 1   | 37.474.840 | **basic** | $0.0055 | Entkopplung VDD_CPU                           |
+| C3      | 10µ      | 0402 10µF  | 0402      | **C15525**  | 1   | 10.292.216 | **basic** | $0.0255 | USB-VBUS Bulk                                 |
+| C4      | 10µ      | 0402 10µF  | 0402      | **C15525**  | 1   | 10.292.216 | **basic** | $0.0255 | LDO-Eingang (BAT)                             |
+| **C5**  | **10µ**  | 0402 10µF  | 0402      | **C15525**  | 1   | 10.292.216 | **basic** | $0.0255 | **LDO-Ausgang (3V3)**                         |
+| **C6**  | **100n** | 0402 100nF | 0402      | **C1525**   | 1   | 37.474.840 | **basic** | $0.0055 | **LDO-Ausgang HF-Filter**                     |
+| C7      | 100n     | 0402 100nF | 0402      | **C1525**   | 1   | 37.474.840 | **basic** | $0.0055 | Entkopplung Flash                             |
+| C8      | 100n     | 0402 100nF | 0402      | **C1525**   | 1   | 37.474.840 | **basic** | $0.0055 | Entkopplung IMU                               |
+| C9      | 100n     | 0402 100nF | 0402      | **C1525**   | 1   | 37.474.840 | **basic** | $0.0055 | Entkopplung Mic U4                            |
+| C10     | 100n     | 0402 100nF | 0402      | **C1525**   | 1   | 37.474.840 | **basic** | $0.0055 | Entkopplung Mic U5                            |
+| **C11** | **100n** | 0402 100nF | 0402      | **C1525**   | 1   | 37.474.840 | **basic** | $0.0055 | **CHIP_EN RC-Reset-Kondensator**              |
+| C12     | 15p      | 0402 15pF  | 0402      | **C1548**   | 1   | 2.023.368  | **basic** | $0.0047 | Quarz XTAL_P                                  |
+| C13     | 15p      | 0402 15pF  | 0402      | **C1548**   | 1   | 2.023.368  | **basic** | $0.0047 | Quarz XTAL_N                                  |
+| **C14** | **1,5p** | 0402 1.5pF | 0402      | **C189471** | 1   | lagernd    | basic     | $0.0065 | **RF-Matching: Shunt @LNA_IN (⊥ GND)**        |
 | **C15** | **1,5p** | 0402 1.5pF | 0402      | **C189471** | 1   | lagernd    | basic     | $0.0065 | **RF-Matching: Shunt @Antennen-Feed (⊥ GND)** |
 
 ### 0.5 Induktivitäten (RF-Matching, 0402)
-| Ref  | Wert    | MPN                  | Footprint | **LCSC**   | Qty | Stock  | Typ   | Preis  | Note                                      |
-| ---- | ------- | -------------------- | --------- | ---------- | --- | ------ | ----- | ------ | ----------------------------------------- |
-| **L1** | **2,0nH** | MLG1005S2N0BT000 | 0402      | **C76769** | 1   | lagernd| ext    | $0.01  | RF-Matching: Serie zwischen `RF` und `RF_MATCH` (SRF 7,5GHz; bei Bedarf auf High-Q-Teil z. B. Murata LQP03TN2N ersetzen) |
+| Ref    | Wert      | MPN              | Footprint | **LCSC**   | Qty | Stock   | Typ | Preis | Note                                                                                                                     |
+| ------ | --------- | ---------------- | --------- | ---------- | --- | ------- | --- | ----- | ------------------------------------------------------------------------------------------------------------------------ |
+| **L1** | **2,0nH** | MLG1005S2N0BT000 | 0402      | **C76769** | 1   | lagernd | ext | $0.01 | RF-Matching: Serie zwischen `RF` und `RF_MATCH` (SRF 7,5GHz; bei Bedarf auf High-Q-Teil z. B. Murata LQP03TN2N ersetzen) |
 
 **Summen:** 34 Bauteile (33 SMT + 1 Induktor als separates Passiv) · **Alte 31 + C189471 (×2) + C76769 (×1) = 34** · **21 + 2 neue LCSC-Codes = 23 untersch. LCSC-Codes** · Gesamt ≈ **$18.01 (ca. 16 €)**. Basic: Flash, LEDs, alle R + C (inkl. C189471). Extended: alle ICs + USB-C + Quarz + Antenne + grüne LED + L1 (C76769) + (C189471 als basic bestätigt; bei JLCPCB verifizieren). (JST-Buchse BT1 entfällt — Akku wird per Litze durch 2 THT-Lötbohrungen gelötet. SMD-Taster SW1 entfällt — Switch/Button wird per Litze durch 2 THT-Lötbohrungen für GPIO9/GND durchgesteckt und gelötet; keine großen SMD-Pads.)
 
@@ -91,23 +92,23 @@
 > Alle Netznamen (VBUS, BAT, 3V3, GND) sind als Netzlabels in KiCad angelegt. Verdeutlichender Hinweis: **3V3** = geregelte 3,3 V vom LDO · **BAT** = Akku-Spannung (3,0–4,2 V) · **VBUS** = 5 V vom USB-C. Diese Anleitung geht der Reihe nach, bis alles verbunden und fertig ist.
 
 ### 📌 ESP32-C3 Pin-Nachschlagewerk (Table 2-1 / 2-4) — nur zur Kontrolle
-| GPIO      | Pin#  | Name                       | Bemerkung                          |
-| --------- | ----- | -------------------------- | ---------------------------------- |
-| GPIO0     | 4     | XTAL_32K_P                 | nur als GPIO wenn kein 32kHz-Quarz |
-| GPIO1     | 5     | XTAL_32K_N                 | dito                               |
-| GPIO2     | 6     | MTMS                       | **Strapping** (Boot) – I2S SCK     |
-| GPIO3     | 8     | MTDI                       | I2S WS                             |
-| GPIO4     | 9     | MTMS (JTAG)                | I2S SD                             |
-| GPIO5     | 10    | MTDI (JTAG)                | IMU INT1                           |
-| GPIO6     | 12    | MTCK → I2C0 SDA            | I2C SDA                            |
-| GPIO7     | 13    | MTDO → I2C0 SCL            | I2C SCL                            |
-| GPIO8     | 14    | GPIO8                      | **Strapping** (Boot) – LED D2 grün |
-| GPIO9     | 15    | GPIO9                      | **Strapping** (Boot, weak pull-up) – Switch/Taster/Lötbohrung `BTN` + **Testpunkt** |
-| GPIO10    | 16    | GPIO10                     | LED D1 rot                         |
-| GPIO11    | 18    | —                          | **existiert NICHT als regulärer GPIO** – Pin 18 = VDD_SPI |
-| GPIO12–17 | 19–24 | SPIHD..SPIQ                | **Flash** (nur ohne int. Flash)    |
-| GPIO18/19 | 25/26 | D−/D+                      | **USB** (fest)                     |
-| GPIO20/21 | 27/28 | U0RXD/TXD                  | frei (UART)                        |
+| GPIO      | Pin#  | Name            | Bemerkung                                                                           |
+| --------- | ----- | --------------- | ----------------------------------------------------------------------------------- |
+| GPIO0     | 4     | XTAL_32K_P      | nur als GPIO wenn kein 32kHz-Quarz                                                  |
+| GPIO1     | 5     | XTAL_32K_N      | dito                                                                                |
+| GPIO2     | 6     | MTMS            | **Strapping** (Boot) – I2S SCK                                                      |
+| GPIO3     | 8     | MTDI            | I2S WS                                                                              |
+| GPIO4     | 9     | MTMS (JTAG)     | I2S SD                                                                              |
+| GPIO5     | 10    | MTDI (JTAG)     | IMU INT1                                                                            |
+| GPIO6     | 12    | MTCK → I2C0 SDA | I2C SDA                                                                             |
+| GPIO7     | 13    | MTDO → I2C0 SCL | I2C SCL                                                                             |
+| GPIO8     | 14    | GPIO8           | **Strapping** (Boot) – LED D2 grün                                                  |
+| GPIO9     | 15    | GPIO9           | **Strapping** (Boot, weak pull-up) – Switch/Taster/Lötbohrung `BTN` + **Testpunkt** |
+| GPIO10    | 16    | GPIO10          | LED D1 rot                                                                          |
+| GPIO11    | 18    | —               | **existiert NICHT als regulärer GPIO** – Pin 18 = VDD_SPI                           |
+| GPIO12–17 | 19–24 | SPIHD..SPIQ     | **Flash** (nur ohne int. Flash)                                                     |
+| GPIO18/19 | 25/26 | D−/D+           | **USB** (fest)                                                                      |
+| GPIO20/21 | 27/28 | U0RXD/TXD       | frei (UART)                                                                         |
 
 ---
 
