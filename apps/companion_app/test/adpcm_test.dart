@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:companion_app/core/audio/adpcm_decoder.dart';
+import 'package:dictula/core/audio/adpcm_decoder.dart';
 
 Uint8List _createSampleImaAdpcmWav(int sampleCount, int sampleRate) {
   final adpcmBytes = sampleCount ~/ 2;

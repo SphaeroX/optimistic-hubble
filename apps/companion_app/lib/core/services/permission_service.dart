@@ -14,11 +14,15 @@ class PermissionService {
 
     try {
       final List<Permission> permissionsToRequest = [
+        Permission.microphone,
         Permission.bluetoothScan,
         Permission.bluetoothConnect,
         Permission.location,
         Permission.nearbyWifiDevices,
         Permission.notification,
+        Permission.camera,
+        Permission.photos,
+        Permission.storage,
       ];
 
       final Map<Permission, PermissionStatus> statuses = await permissionsToRequest.request();

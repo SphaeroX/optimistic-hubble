@@ -3,7 +3,7 @@ class AppConstants {
   AppConstants._();
 
   // App Metadata
-  static const String appName = 'Xiao Audio Companion';
+  static const String appName = 'Dictula';
   static const String appVersion = '1.0.0';
 
   // BLE Service & Characteristics UUIDs (128-bit Custom Service)

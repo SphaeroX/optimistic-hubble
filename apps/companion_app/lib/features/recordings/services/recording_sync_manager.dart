@@ -14,9 +14,12 @@ import '../../../core/utils/storage_manager.dart';
 import '../../connection/services/ble_service.dart';
 import '../models/recording_item.dart';
 
+import 'recordings_repository.dart';
+
 class RecordingSyncManager extends ChangeNotifier {
   final NativeAudioPlayer audioPlayer;
   final BleService? bleService;
+  final RecordingsRepository? recordingsRepository;
   final NativeAudioSyncBridge _nativeBridge = NativeAudioSyncBridge();
   final EmbeddedAudioUploadServer _uploadServer = EmbeddedAudioUploadServer();
 
@@ -27,7 +30,8 @@ class RecordingSyncManager extends ChangeNotifier {
   String? _currentSpeed;
   String? _errorMessage;
   FastTransferPhase _fastTransferPhase = FastTransferPhase.none;
-  bool _autoDeleteAfterSync = false;
+  bool _autoDeleteAfterSync = true;
+  bool _autoSyncOnConnect = true;
   int _autoFastTransferThresholdBytes = AppConstants.autoFastTransferThresholdBytes;
   Completer<bool>? _uploadBatchCompleter;
 
@@ -54,12 +58,18 @@ class RecordingSyncManager extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   FastTransferPhase get fastTransferPhase => _fastTransferPhase;
   bool get autoDeleteAfterSync => _autoDeleteAfterSync;
+  bool get autoSyncOnConnect => _autoSyncOnConnect;
   int get autoFastTransferThresholdBytes => _autoFastTransferThresholdBytes;
   String get deviceIp => _deviceIp;
   int get devicePort => _devicePort;
 
   set autoDeleteAfterSync(bool val) {
     _autoDeleteAfterSync = val;
+    notifyListeners();
+  }
+
+  set autoSyncOnConnect(bool val) {
+    _autoSyncOnConnect = val;
     notifyListeners();
   }
 
@@ -71,6 +81,7 @@ class RecordingSyncManager extends ChangeNotifier {
   RecordingSyncManager({
     required this.audioPlayer,
     this.bleService,
+    this.recordingsRepository,
   }) {
     audioPlayer.addListener(_onAudioPlayerUpdate);
     bleService?.addListener(_onBleUpdate);
@@ -122,6 +133,15 @@ class RecordingSyncManager extends ChangeNotifier {
         transferSpeed: 'Verified (Wi-Fi Turbo Upload)',
         isPlaying: existing?.isPlaying ?? false,
       );
+
+      recordingsRepository?.importHardwareClip(
+        clipId: clipId,
+        localWavPath: filePath,
+        duration: Duration(milliseconds: (durationSeconds * 1000).round()),
+        sizeBytes: sizeBytes,
+        recordedAt: DateTime.now(),
+      );
+
       notifyListeners();
     };
 

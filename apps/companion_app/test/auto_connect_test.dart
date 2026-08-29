@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:companion_app/core/constants/app_constants.dart';
-import 'package:companion_app/features/connection/models/ble_device_item.dart';
-import 'package:companion_app/features/connection/services/ble_service.dart';
+import 'package:dictula/core/constants/app_constants.dart';
+import 'package:dictula/features/connection/models/ble_device_item.dart';
+import 'package:dictula/features/connection/services/ble_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

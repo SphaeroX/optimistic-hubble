@@ -1,11 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:companion_app/core/audio/native_audio_player.dart';
-import 'package:companion_app/core/constants/app_constants.dart';
-import 'package:companion_app/core/services/native_audio_sync_bridge.dart';
-import 'package:companion_app/features/connection/services/ble_service.dart';
-import 'package:companion_app/features/recordings/models/recording_item.dart';
-import 'package:companion_app/features/recordings/services/recording_sync_manager.dart';
+import 'package:dictula/core/audio/native_audio_player.dart';
+import 'package:dictula/core/constants/app_constants.dart';
+import 'package:dictula/core/services/native_audio_sync_bridge.dart';
+import 'package:dictula/features/connection/services/ble_service.dart';
+import 'package:dictula/features/recordings/models/recording_item.dart';
+import 'package:dictula/features/recordings/services/recording_sync_manager.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -352,6 +352,9 @@ class FakeNativeAudioPlayer extends ChangeNotifier implements NativeAudioPlayer 
 
   @override
   double get progressFraction => 0.0;
+
+  @override
+  Future<bool> play(String filePath, {Duration? duration}) async => true;
 
   @override
   Future<bool> playFile(String filePath, {Duration? duration}) async => true;

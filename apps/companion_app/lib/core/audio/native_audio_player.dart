@@ -79,6 +79,9 @@ class NativeAudioPlayer extends ChangeNotifier {
   }
 
   /// Plays a WAV audio file asynchronously.
+  Future<bool> play(String filePath, {Duration? duration}) => playFile(filePath, duration: duration);
+
+  /// Plays a WAV audio file asynchronously.
   Future<bool> playFile(String filePath, {Duration? duration}) async {
     final file = File(filePath);
     if (!file.existsSync()) {
