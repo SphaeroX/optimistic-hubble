@@ -2,7 +2,7 @@
 
 ## Architecture
 - Dual-Mode Hybrid Architecture: BLE 5.0 Low-Energy Signaling/Short-Sync + Programmatic Wi-Fi SoftAP / Station High-Speed Sync.
-- Target Hardware: Seeed Studio XIAO ESP32-C3 (ESP32-C3 RISC-V SoC, 4MB internal Flash / optional 16MB W25Q128 SPI-Flash).
+- Target Hardware: Custom Production Board V2 (ESP32-C3-MINI-1-N4 with 4MB internal Flash, Winbond W25Q128 16MB SPI2 Flash, AP2112K-3.3 LDO) & Seeed Studio XIAO ESP32-C3 Dev Board.
 - Target Mobile Platform: Android 10 to Android 15 (API levels 29 to 35+).
 - Target Audio Stream: 16 kHz Mono IMA-ADPCM (4 bits/sample = 8 KB/s).
 

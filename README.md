@@ -82,7 +82,37 @@ optimistic-hubble/
 
 ---
 
-## Hardware Pinout & Wiring
+## Hardware Architectures & Pinout
+
+The project supports two target hardware setups:
+1. **Custom Production Board V2:** Built around the **ESP32-C3-MINI-1-N4** module (integrated 4MB Flash, 40MHz crystal & PCB antenna), an **AP2112K-3.3TRG1 LDO (600mA)**, an external **Winbond W25Q128JVSIQ (16MB)** SPI Flash on **SPI2**, dual status LEDs, and direct THT through-hole soldering for LiPo battery and tactile switch.
+2. **Breadboard Prototype:** Built using the **Seeed Studio XIAO ESP32C3** breakout board.
+
+### Production Board V2 (ESP32-C3-MINI-1-N4) Pin Assignment
+
+| Component | Part / IC | Module Pin | ESP32-C3 GPIO | Function / Net |
+| :--- | :--- | :---: | :--- | :--- |
+| **Power (3.3V)** | AP2112K-3.3 (U7) | Pin 3 | `3V3` | Regulated 3.3V power rail (600mA peak) |
+| **Ground** | System GND Plane | Pins 1, 2, 11, 14, 33–53 | `GND` | Common ground rail & thermal ground |
+| **I2S Stereo Mic (L)** | ICS-43434 (U4) | Pin 5, 6, 17 | GPIO 2 (SCK), 3 (WS), 4 (SD) | Left Channel (L/R $\rightarrow$ GND) |
+| **I2S Stereo Mic (R)** | ICS-43434 (U5) | Pin 5, 6, 17 | GPIO 2 (SCK), 3 (WS), 4 (SD) | Right Channel (L/R $\rightarrow$ 3V3) + R10 (100k pulldown) |
+| **6-Axis IMU** | LSM6DSLTR (U3) | Pin 19, 20 | GPIO 6 (SDA), GPIO 7 (SCL) | I2C Bus (`0x6A`) + R2/R3 ($4.7\text{k}\Omega$ pullups) |
+| **IMU Wakeup** | LSM6DSLTR (U3) | Pin 18 | GPIO 5 (INT1) | Hardware shock/tap wakeup interrupt |
+| **Status LED (Red)**| KT-0603R (D1) | Pin 16 | GPIO 10 | Recording indicator via R4 ($330\Omega$) |
+| **Status LED (Grn)**| LTST-C190GKT (D2) | Pin 21 | GPIO 8 | System/Wi-Fi status via R6 ($330\Omega$) |
+| **User Button** | External Switch | Pin 22 | GPIO 9 (`BTN`) | THT hole to GND (weak pull-up, boot strap) |
+| **USB-C Data** | GT-USB-7010ASV (J1)| Pin 25, 26 | GPIO 18 (D-), GPIO 19 (D+) | USB CDC / JTAG serial interface |
+| **Audio Flash (16MB)**| W25Q128 (U2) | Pin 28 | GPIO 21 | `FLASH_CS` (/CS on SPI2) |
+| | W25Q128 (U2) | Pin 27 | GPIO 20 | `FLASH_SCK` (CLK on SPI2) |
+| | W25Q128 (U2) | Pin 13 | GPIO 1 | `FLASH_MOSI` (DI on SPI2) |
+| | W25Q128 (U2) | Pin 12 | GPIO 0 | `FLASH_MISO` (DO on SPI2) |
+| **Battery Charger** | TP4054 (U6) | - | - | 1S Li-Ion charger via USB-C (500mA, R9 = $2\text{k}\Omega$) |
+
+> Complete hardware design, schematics, and JLCPCB manufacturing BOM are available in [HARDWARE_DESIGN.md](file:///c:/Users/MGasc/Documents/antigravity/optimistic-hubble/HARDWARE_DESIGN.md) and [ESP32C3_PINOUT.md](file:///c:/Users/MGasc/Documents/antigravity/optimistic-hubble/ESP32C3_PINOUT.md).
+
+---
+
+### Breadboard Prototype Wiring (Seeed Studio XIAO ESP32C3)
 
 | Component | Component Pin | XIAO ESP32C3 Pin | ESP32-C3 GPIO | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -104,20 +134,6 @@ optimistic-hubble/
 | | Kathode (-) | **GND** (via Resistor) | - | Short leg via 220Ω–330Ω resistor to GND |
 | **Manual Wi-Fi Toggle** | Boot Button / Switch | **D7** | GPIO 9 | Press to toggle Wi-Fi ON/OFF manually |
 
-### Optional Storage Expansion: W25Q128 SPI-Flash (16 MB)
-
-To extend the continuous recording time from ~4 minutes up to **~35 minutes**, an external 16 MB SPI-Flash chip (**Winbond W25Q128JV / W25Q128FV**) can be connected to the remaining free hardware pins:
-
-| W25Q128 Pin | Function | XIAO ESP32C3 Pin | ESP32-C3 GPIO | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| **VCC** | 3.3V Power | **3V3** | - | 3.3V Power Rail |
-| **GND** | Ground | **GND** | - | Common Ground Rail |
-| **CS / /CS** | Chip Select | **D3** | GPIO 5 | SPI Slave Select |
-| **CLK / SCK** | SPI Clock | **D6** | GPIO 8 | Hardware SPI Clock |
-| **DO / MISO** | Data Out (MISO) | **D8** | GPIO 20 | Hardware SPI MISO |
-| **DI / MOSI** | Data In (MOSI) | **D9** | GPIO 21 | Hardware SPI MOSI |
-| **/HOLD & /WP** | Hold & Write Protect | **3V3** | - | Tied to 3.3V (or via 10k pull-up) |
-
 #### Storage Capacity & Recording Time Comparison
 
 | Storage Medium | Usable Capacity | Audio Format & Bitrate | Max. Recording Time | Capacity Gain |
@@ -128,7 +144,7 @@ To extend the continuous recording time from ~4 minutes up to **~35 minutes**, a
 | *W25Q128 (Telephony)* | 16 MB | 8 kHz Mono ADPCM (4 KB/s) | **~70.0 minutes** (~4,194 s) | 17× (> 1 hour) |
 | *W25Q256 (32 MB Optional)* | 32 MB | 16 kHz Mono ADPCM (8 KB/s) | **~70.0 minutes** (~4,194 s) | 17× |
 
-> Detailed diagrams and notes are available in [PINOUT.md](file:///c:/Users/MGasc/Documents/antigravity/optimistic-hubble/PINOUT.md).
+> Detailed diagrams and breadboard guides are available in [PINOUT.md](file:///c:/Users/MGasc/Documents/antigravity/optimistic-hubble/PINOUT.md).
 
 ---
 

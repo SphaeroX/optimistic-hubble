@@ -20,8 +20,15 @@
 #define PIN_I2S_SD 4           // XIAO D2 = GPIO 4 (Serial Data In)
 #define I2S_BUFFER_SAMPLES 256 // Number of stereo sample frames per read
 
-// External Status LED (Recording Indicator)
-#define PIN_STATUS_LED 10 // XIAO D10 = GPIO 10
+// External Status LEDs (D1 Red, D2 Green)
+#define PIN_STATUS_LED 10 // GPIO 10 = Red Status LED (D1)
+#define PIN_LED_GREEN 8   // GPIO 8 = Green Status LED (D2)
+
+// External SPI Flash Pins (Winbond W25Q128 16MB Audio Storage on SPI2)
+#define PIN_FLASH_CS 21   // GPIO 21 = /CS (Chip Select)
+#define PIN_FLASH_SCK 20  // GPIO 20 = CLK (Clock)
+#define PIN_FLASH_MOSI 1  // GPIO 1 = DI (Serial Data In)
+#define PIN_FLASH_MISO 0  // GPIO 0 = DO (Serial Data Out)
 
 // Serial Baud Rate
 #define SERIAL_BAUD_RATE 115200
