@@ -10,13 +10,17 @@
 #include "wifi_server.h"
 #include "wifi_uploader.h"
 #include "power_manager.h"
+#include "led_indicator.h"
+#include "spi_flash_driver.h"
 
 // Global Hardware Modules
 static ImuDriver imu;
 static I2sMicDriver stereoMic;
 static TapDetector tapDetector(TAP_JERK_THRESHOLD_G, TAP_DEBOUNCE_MS);
+static LedIndicator leds(PIN_STATUS_LED, PIN_LED_GREEN);
 static AudioRecorder recorder(PIN_STATUS_LED);
 static StorageManager storage;
+static SpiFlashDriver extFlash(PIN_FLASH_SCK, PIN_FLASH_MISO, PIN_FLASH_MOSI, PIN_FLASH_CS);
 static BleManager ble;
 static WifiServerManager wifiServer(storage);
 static WifiUploader wifiUploader(storage);
@@ -34,8 +38,9 @@ static bool lastButtonState = HIGH;
 
 void printBanner() {
     Serial.println(F("\n========================================================"));
-    Serial.println(F("  XIAO ESP32C3 - Audio Vault (Active Debugging Mode)"));
-    Serial.println(F("  IMA-ADPCM 4:1 (8 KB/s) • Continuous Standby & IMU Tap"));
+    Serial.println(F("  ESP32-C3-MINI-1 - Audio Vault (V2 Production Design)"));
+    Serial.println(F("  Dual ICS-43434 • LSM6DSL IMU • W25Q128 16MB SPI Flash"));
+    Serial.println(F("  IMA-ADPCM 4:1 (8 KB/s) • Dual Active-LOW LEDs"));
     Serial.println(F("========================================================"));
 }
 
@@ -80,9 +85,10 @@ void startActiveRecording() {
     // 2. Ensure IMU is in normal high-performance mode
     imu.setPowerMode(true);
 
-    // 3. Start Recording Clip
+    // 3. Start Recording Clip and set LED indicator to RECORDING (D1 Solid Red)
     uint16_t nextId = storage.getNextClipId();
     recorder.startRecording(nextId);
+    leds.setMode(LedMode::RECORDING);
     pushTelemetryUpdate(STATE_RECORDING, 0);
 
     Serial.printf("\n[RECORD START] Clip #%u recording started!\n", nextId);
@@ -93,6 +99,9 @@ void handleStopAndSave() {
     
     // Stop I2S to save microphone power
     stereoMic.stop();
+
+    // Update LED mode according to current connectivity
+    leds.setMode(wifiServer.isActive() ? LedMode::WIFI_AP : (ble.isConnected() ? LedMode::BLE_CONNECTED : LedMode::IDLE));
 
     storage.refresh();
     size_t totalClips = storage.getClipCount();
@@ -116,11 +125,12 @@ void setup() {
     printBanner();
     Serial.printf("[SYSTEM] Wake-up Cause: %s\n", power.getWakeupReasonString());
 
-    // Configure Hardware Pins
+    // 2. Configure Hardware Pins & Dual Status LEDs
     pinMode(PIN_BOOT_BTN, INPUT_PULLUP);
     pinMode(PIN_IMU_INT, INPUT_PULLDOWN);
+    leds.begin();
 
-    // 2. Initialize I2C & IMU
+    // 3. Initialize I2C & IMU (ST LSM6DSL)
     I2cScanner::begin(PIN_I2C_SDA, PIN_I2C_SCL, I2C_FREQUENCY);
     delay(20);
     bool imuOk = imu.begin();
@@ -130,44 +140,57 @@ void setup() {
         Serial.println(F("  [WARN] IMU not found! Tap detection may be inactive."));
     }
 
-    // 3. Initialize Persistent Flash Storage (LittleFS)
+    // 4. Initialize Persistent Internal Flash Storage (LittleFS)
     bool fsOk = storage.begin(true);
     if (fsOk) {
-        Serial.printf("  [PASS] Flash Storage ready. Existing clips: %u | Free: %u KB\n",
+        Serial.printf("  [PASS] Internal Flash Storage ready. Existing clips: %u | Free: %u KB\n",
                       storage.getClipCount(), (storage.getTotalBytes() - storage.getUsedBytes()) / 1024);
     } else {
         Serial.println(F("  [FAIL] Could not mount LittleFS Flash Storage!"));
     }
 
-    // 4. Initialize Audio Recorder & Status LED
+    // 5. Initialize External SPI2 Flash Storage (Winbond W25Q128 16MB)
+    bool extFlashOk = extFlash.begin();
+    if (extFlashOk) {
+        Serial.printf("  [PASS] External SPI2 Flash ready: %s (%u MB)\n", 
+                      extFlash.getChipName(), (unsigned int)(extFlash.getCapacityBytes() / (1024 * 1024)));
+    } else {
+        Serial.println(F("  [INFO] External SPI2 Flash not detected or optional."));
+    }
+
+    // 6. Initialize Audio Recorder
     bool recOk = recorder.begin();
     if (recOk) {
         Serial.println(F("  [PASS] Stream Recorder ready."));
     }
 
-    // 5. Initialize BLE GATT Server
+    // 7. Initialize BLE GATT Server
     bool bleOk = ble.begin(BLE_DEVICE_NAME);
     if (bleOk) {
         Serial.println(F("  [PASS] BLE advertising active as \"XIAO-Audio-Recorder\"."));
     }
 
-    // 6. Handle Wake-up Routing
+    // 8. Handle Wake-up Routing & LED Sequence
     if (power.wasWokenByMotion()) {
         Serial.println(F("  >>> Woken by SHOCK! Starting audio recording instantly..."));
         startActiveRecording();
     } else {
-        recorder.blinkLed(3, 80);
+        leds.bootSequence();
+        leds.setMode(LedMode::IDLE);
         Serial.println(F("\n========================================================"));
         Serial.println(F("  READY:"));
-        Serial.println(F("  1. Tap breadboard to RECORD (or wake from Deep Sleep)."));
+        Serial.println(F("  1. Tap device to RECORD (or wake from Deep Sleep)."));
         Serial.println(F("  2. Tap again to STOP & SAVE (ADPCM 8 KB/s)."));
-        Serial.println(F("  3. Press Boot button (D7) or send BLE command to start Wi-Fi."));
+        Serial.println(F("  3. Press BTN button or send BLE command to start Wi-Fi."));
         Serial.println(F("========================================================\n"));
     }
 }
 
 void loop() {
     unsigned long now = millis();
+
+    // 0. Tick LED Indicator Animation/Blinking
+    leds.update();
 
     // 1. Process Active Real-Time Recording Stream
     if (recorder.isRecording()) {
@@ -206,6 +229,7 @@ void loop() {
                 if (!wifiServer.isActive()) {
                     wifiServer.begin(WIFI_AP_SSID, WIFI_AP_PASS, HTTP_SERVER_PORT);
                 }
+                leds.setMode(LedMode::WIFI_AP);
                 ble.updateState(STATE_WIFI_ACTIVE);
                 break;
 
@@ -215,12 +239,14 @@ void loop() {
                 if (wifiServer.isActive()) {
                     wifiServer.stop();
                 }
+                leds.setMode(ble.isConnected() ? LedMode::BLE_CONNECTED : LedMode::IDLE);
                 ble.updateState(STATE_IDLE);
                 break;
 
             case CMD_ENTER_SLEEP:
                 Serial.println(F("\n[BLE CMD] Entering Deep Sleep upon user request..."));
                 ble.updateState(STATE_SLEEPING);
+                leds.turnOffAll();
                 delay(100);
                 power.enterDeepSleep(imu, IMU_WAKEUP_THRESHOLD_G);
                 return;
@@ -284,7 +310,7 @@ void loop() {
         }
     }
 
-    // 3. Check Boot Button (D7 / GPIO 9) for Manual Wi-Fi Toggle
+    // 3. Check Boot Button (GPIO 9 / BTN) for Manual Wi-Fi Toggle
     if (now - lastButtonCheckTime >= 50) {
         lastButtonCheckTime = now;
         bool btnState = digitalRead(PIN_BOOT_BTN);
@@ -293,10 +319,12 @@ void loop() {
             if (wifiServer.isActive()) {
                 Serial.println(F("[BUTTON] Toggling Wi-Fi OFF..."));
                 wifiServer.stop();
+                leds.setMode(ble.isConnected() ? LedMode::BLE_CONNECTED : LedMode::IDLE);
                 ble.updateState(STATE_IDLE);
             } else {
                 Serial.println(F("[BUTTON] Toggling Wi-Fi ON..."));
                 wifiServer.begin(WIFI_AP_SSID, WIFI_AP_PASS, HTTP_SERVER_PORT);
+                leds.setMode(LedMode::WIFI_AP);
                 ble.updateState(STATE_WIFI_ACTIVE);
             }
         }
@@ -332,6 +360,7 @@ void loop() {
             Serial.printf("[POWER] Inactivity timeout (%u s) expired with no clients. Entering Deep Sleep...\n",
                           (unsigned int)(INACTIVITY_SLEEP_TIMEOUT_MS / 1000));
             ble.stop();
+            leds.turnOffAll();
             power.enterDeepSleep(imu, IMU_WAKEUP_THRESHOLD_G);
             return;
         }
@@ -359,7 +388,16 @@ void loop() {
                           storage.getClipCount(), totalTapEvents);
         }
 
-        if (ble.isConnected()) {
+        static bool lastBleConnected = false;
+        bool isBle = ble.isConnected();
+        if (isBle != lastBleConnected) {
+            lastBleConnected = isBle;
+            if (!recorder.isRecording() && !wifiServer.isActive()) {
+                leds.setMode(isBle ? LedMode::BLE_CONNECTED : LedMode::IDLE);
+            }
+        }
+
+        if (isBle) {
             DeviceState curState = recorder.isRecording() ? STATE_RECORDING : 
                                    (wifiServer.isActive() ? STATE_WIFI_ACTIVE : STATE_IDLE);
             pushTelemetryUpdate(curState, recorder.isRecording() ? recorder.getRecordedBytes() : 0);

@@ -28,7 +28,8 @@ bool AudioRecorder::begin() {
 }
 
 void AudioRecorder::setLed(bool state) {
-    digitalWrite(_ledPin, state ? HIGH : LOW);
+    // Active-LOW logic: LOW = ON, HIGH = OFF
+    digitalWrite(_ledPin, state ? LED_LEVEL_ON : LED_LEVEL_OFF);
 }
 
 void AudioRecorder::blinkLed(uint8_t times, uint16_t delayMs) {

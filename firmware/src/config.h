@@ -2,33 +2,35 @@
 #include <Arduino.h>
 
 // ============================================================================
-// Hardware Pinout for Seeed Studio XIAO ESP32C3
+// Hardware Pinout for ESP32-C3-MINI-1-N4 (V2 Production Design)
 // ============================================================================
 
-// I2C Pins for 6-Axis IMU (LSM6DS3 / BMI160)
-#define PIN_I2C_SDA 6 // XIAO D4 = GPIO 6
-#define PIN_I2C_SCL 7 // XIAO D5 = GPIO 7
+// I2C Pins for 6-Axis IMU (ST LSM6DSLTR, U3)
+#define PIN_I2C_SDA 6 // GPIO 6 (Module Pin 19) + 4.7k Pull-up to 3V3
+#define PIN_I2C_SCL 7 // GPIO 7 (Module Pin 20) + 4.7k Pull-up to 3V3
 #define I2C_FREQUENCY 400000UL
 
-// IMU Hardware Interrupt Wakeup Pin (RTC GPIO 5) & Boot Button (GPIO 9)
-#define PIN_IMU_INT 5  // XIAO D3 = GPIO 5 (RTC IO, wakes ESP32-C3 from Deep Sleep)
-#define PIN_BOOT_BTN 9 // XIAO D7 = GPIO 9 (Boot Button)
+// IMU Hardware Interrupt Wakeup Pin (RTC GPIO 5) & Push Button (GPIO 9)
+#define PIN_IMU_INT 5  // GPIO 5 (Module Pin 18, RTC IO5, Deep Sleep Wakeup from INT1)
+#define PIN_BOOT_BTN 9 // GPIO 9 (Module Pin 22, THT BTN Switch against GND)
 
-// I2S Stereo Microphone Pins
-#define PIN_I2S_SCK 2          // XIAO D0 = GPIO 2 (Bit Clock)
-#define PIN_I2S_WS 3           // XIAO D1 = GPIO 3 (Word Select / LRCLK)
-#define PIN_I2S_SD 4           // XIAO D2 = GPIO 4 (Serial Data In)
+// I2S Stereo Microphone Pins (TDK InvenSense ICS-43434, U4 & U5)
+#define PIN_I2S_SCK 2          // GPIO 2 (Module Pin 5, Bit Clock)
+#define PIN_I2S_WS 3           // GPIO 3 (Module Pin 6, Word Select / LRCLK)
+#define PIN_I2S_SD 4           // GPIO 4 (Module Pin 17, Serial Data In + 100k Pulldown)
 #define I2S_BUFFER_SAMPLES 256 // Number of stereo sample frames per read
 
-// External Status LEDs (D1 Red, D2 Green)
-#define PIN_STATUS_LED 10 // GPIO 10 = Red Status LED (D1)
-#define PIN_LED_GREEN 8   // GPIO 8 = Green Status LED (D2)
+// External Status LEDs (D1 Red, D2 Green - Active LOW: Anode to 3V3, Cathode to GPIO via 330R)
+#define PIN_STATUS_LED 10 // GPIO 10 (Module Pin 16) = Red Status LED (D1, Recording)
+#define PIN_LED_GREEN 8   // GPIO 8  (Module Pin 21) = Green Status LED (D2, System/Wi-Fi)
+#define LED_LEVEL_ON  LOW
+#define LED_LEVEL_OFF HIGH
 
-// External SPI Flash Pins (Winbond W25Q128 16MB Audio Storage on SPI2)
-#define PIN_FLASH_CS 21   // GPIO 21 = /CS (Chip Select)
-#define PIN_FLASH_SCK 20  // GPIO 20 = CLK (Clock)
-#define PIN_FLASH_MOSI 1  // GPIO 1 = DI (Serial Data In)
-#define PIN_FLASH_MISO 0  // GPIO 0 = DO (Serial Data Out)
+// External SPI Flash Pins (Winbond W25Q128JVSIQ 16MB Audio Storage on SPI2 / FSPI)
+#define PIN_FLASH_CS 21   // GPIO 21 (Module Pin 28) = /CS (Chip Select)
+#define PIN_FLASH_SCK 20  // GPIO 20 (Module Pin 27) = CLK (Clock)
+#define PIN_FLASH_MOSI 1  // GPIO 1  (Module Pin 13) = DI (Serial Data In)
+#define PIN_FLASH_MISO 0  // GPIO 0  (Module Pin 12) = DO (Serial Data Out)
 
 // Serial Baud Rate
 #define SERIAL_BAUD_RATE 115200

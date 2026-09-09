@@ -1,52 +1,65 @@
 /*
- * Seeed Studio XIAO ESP32C3 - Hardware Test Sketch
+ * ESP32-C3-MINI-1-N4 - V2 Production Hardware Diagnostic & Test Suite
  * 
  * Tests:
- * 1. Two I2S MEMS Microphones in Stereo Configuration (Left & Right)
- * 2. Bosch BMI160 6-Axis IMU Sensor over I2C
- * 
- * Pinout:
- * - XIAO D0 (GPIO 2) -> SCK (Shared to Mic 1 & Mic 2)
- * - XIAO D1 (GPIO 3) -> WS  (Shared to Mic 1 & Mic 2)
- * - XIAO D2 (GPIO 4) -> SD  (Shared to Mic 1 & Mic 2)
- * - XIAO D4 (GPIO 6) -> SDA (BMI160 SDA)
- * - XIAO D5 (GPIO 7) -> SCL (BMI160 SCL)
- * - 3.3V             -> VCC / VDD (BMI160, Mic 1, Mic 2) + Mic 2 L/R pin (Right Channel)
- * - GND              -> GND (BMI160, Mic 1, Mic 2, BMI160 SDO) + Mic 1 L/R pin (Left Channel)
+ * 1. Dual Status LEDs: D1 (Red, GPIO 10) and D2 (Green, GPIO 8) in Active-LOW logic
+ * 2. 6-Axis IMU: ST LSM6DSLTR (I2C @ 0x6A, SDA=6, SCL=7) and INT1 Wakeup on GPIO 5
+ * 3. External Audio Flash: Winbond W25Q128JVSIQ (16MB) on SPI2 (CS=21, SCK=20, MOSI=1, MISO=0)
+ * 4. Stereo I2S MEMS Microphones: 2x ICS-43434 (SCK=2, WS=3, SD=4 with 100k pulldown)
+ * 5. Push Button: THT BTN Switch on GPIO 9 against GND
  */
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <SPI.h>
 #include <driver/i2s.h>
 #include <math.h>
 
 // ============================================================================
-// Pin Definitions
+// V2 Production Pinout Definitions
 // ============================================================================
-#define PIN_I2C_SDA         6   // XIAO D4
-#define PIN_I2C_SCL         7   // XIAO D5
-#define PIN_I2S_SCK         2   // XIAO D0
-#define PIN_I2S_WS          3   // XIAO D1
-#define PIN_I2S_SD          4   // XIAO D2
+#define PIN_I2C_SDA         6   // GPIO 6 (I2C Data)
+#define PIN_I2C_SCL         7   // GPIO 7 (I2C Clock)
+#define PIN_IMU_INT         5   // GPIO 5 (IMU INT1 / RTC IO5)
+#define PIN_BOOT_BTN        9   // GPIO 9 (THT BTN Switch)
 
-#define BMI160_ADDR_PRIMARY 0x68
-#define BMI160_ADDR_ALT     0x69
-#define BMI160_CHIP_ID      0xD8
+#define PIN_I2S_SCK         2   // GPIO 2 (I2S Bit Clock)
+#define PIN_I2S_WS          3   // GPIO 3 (I2S Word Select / LRCLK)
+#define PIN_I2S_SD          4   // GPIO 4 (I2S Serial Data In)
+
+#define PIN_STATUS_LED      10  // GPIO 10 (D1 Red LED - Active LOW)
+#define PIN_LED_GREEN       8   // GPIO 8  (D2 Green LED - Active LOW)
+
+#define PIN_FLASH_CS        21  // GPIO 21 (SPI2 /CS)
+#define PIN_FLASH_SCK       20  // GPIO 20 (SPI2 CLK)
+#define PIN_FLASH_MOSI      1   // GPIO 1  (SPI2 DI)
+#define PIN_FLASH_MISO      0   // GPIO 0  (SPI2 DO)
+
+#define LED_ON              LOW
+#define LED_OFF             HIGH
+
 #define I2S_SAMPLE_RATE     16000
 #define BUFFER_SAMPLES      256
 
 // ============================================================================
-// BMI160 Registers & Variables
+// Sensor Registers
 // ============================================================================
+#define LSM6DS_REG_WHO_AM_I     0x0F
+#define LSM6DS_REG_CTRL1_XL     0x10
+#define LSM6DS_REG_CTRL2_G      0x11
+#define LSM6DS_REG_DATA_START   0x22
+
 #define BMI160_REG_CHIP_ID      0x00
 #define BMI160_REG_DATA_START   0x0C
-#define BMI160_REG_ACCEL_RANGE  0x41
-#define BMI160_REG_GYRO_RANGE   0x43
 #define BMI160_REG_CMD          0x7E
 
-static uint8_t bmi160Address = BMI160_ADDR_PRIMARY;
-static bool bmi160Found = false;
+enum DetectedImu { IMU_NONE = 0, IMU_LSM6DSL, IMU_BMI160 };
+
+static DetectedImu detectedImu = IMU_NONE;
+static uint8_t imuAddress = 0x6A;
 static bool i2sReady = false;
+static bool flashReady = false;
+static uint32_t flashJedecId = 0;
 static int32_t i2sRawBuffer[BUFFER_SAMPLES * 2]; // Interleaved Stereo buffer
 
 // ============================================================================
@@ -70,31 +83,38 @@ bool readRegisters(uint8_t addr, uint8_t reg, uint8_t* buf, size_t len) {
     return true;
 }
 
-uint8_t readChipId(uint8_t addr) {
-    uint8_t id = 0x00;
-    readRegisters(addr, BMI160_REG_CHIP_ID, &id, 1);
-    return id;
-}
+// ============================================================================
+// SPI2 Flash Test (W25Q128)
+// ============================================================================
+uint32_t testSpiFlash() {
+    pinMode(PIN_FLASH_CS, OUTPUT);
+    digitalWrite(PIN_FLASH_CS, HIGH);
 
-bool initBMI160(uint8_t addr) {
-    uint8_t id = readChipId(addr);
-    if (id != BMI160_CHIP_ID) return false;
+    SPIClass* spi = new SPIClass(FSPI);
+    spi->begin(PIN_FLASH_SCK, PIN_FLASH_MISO, PIN_FLASH_MOSI, PIN_FLASH_CS);
 
-    // Soft reset
-    writeRegister(addr, BMI160_REG_CMD, 0xB6);
-    delay(20);
+    SPISettings settings(10000000, MSBFIRST, SPI_MODE0);
+    spi->beginTransaction(settings);
 
-    // Accel normal mode (0x11) & Gyro normal mode (0x15)
-    writeRegister(addr, BMI160_REG_CMD, 0x11);
-    delay(10);
-    writeRegister(addr, BMI160_REG_CMD, 0x15);
-    delay(80);
+    // Release power-down
+    digitalWrite(PIN_FLASH_CS, LOW);
+    spi->transfer(0xAB);
+    digitalWrite(PIN_FLASH_CS, HIGH);
+    delayMicroseconds(50);
 
-    // Accel range +/- 2g (0x03), Gyro range +/- 2000 dps (0x00)
-    writeRegister(addr, BMI160_REG_ACCEL_RANGE, 0x03);
-    writeRegister(addr, BMI160_REG_GYRO_RANGE, 0x00);
+    // Read JEDEC ID (0x9F)
+    digitalWrite(PIN_FLASH_CS, LOW);
+    spi->transfer(0x9F);
+    uint8_t b1 = spi->transfer(0x00);
+    uint8_t b2 = spi->transfer(0x00);
+    uint8_t b3 = spi->transfer(0x00);
+    digitalWrite(PIN_FLASH_CS, HIGH);
 
-    return true;
+    spi->endTransaction();
+    spi->end();
+    delete spi;
+
+    return ((uint32_t)b1 << 16) | ((uint32_t)b2 << 8) | (uint32_t)b3;
 }
 
 // ============================================================================
@@ -131,57 +151,95 @@ bool initStereoI2S() {
 // Setup & Main Loop
 // ============================================================================
 void setup() {
+    // 1. Initialize Active-LOW LEDs
+    pinMode(PIN_STATUS_LED, OUTPUT);
+    pinMode(PIN_LED_GREEN, OUTPUT);
+    digitalWrite(PIN_STATUS_LED, LED_OFF);
+    digitalWrite(PIN_LED_GREEN, LED_OFF);
+
+    // 2. Buttons & Inputs
+    pinMode(PIN_BOOT_BTN, INPUT_PULLUP);
+    pinMode(PIN_IMU_INT, INPUT_PULLDOWN);
+
     Serial.begin(115200);
     unsigned long start = millis();
-    while (!Serial && (millis() - start < 2500)) delay(10);
+    while (!Serial && (millis() - start < 1500)) delay(10);
 
     Serial.println(F("\n========================================================"));
-    Serial.println(F("  XIAO ESP32C3 - MEMS Microphones & BMI160 IMU Check"));
+    Serial.println(F("  ESP32-C3-MINI-1-N4 V2 Hardware Diagnostic Test"));
     Serial.println(F("========================================================"));
 
-    // 1. Scan I2C
+    // LED Test Pattern
+    Serial.println(F("[1] Testing Dual Status LEDs (Active-LOW)..."));
+    digitalWrite(PIN_STATUS_LED, LED_ON);
+    delay(150);
+    digitalWrite(PIN_STATUS_LED, LED_OFF);
+    digitalWrite(PIN_LED_GREEN, LED_ON);
+    delay(150);
+    digitalWrite(PIN_LED_GREEN, LED_OFF);
+    Serial.println(F("    [PASS] D1 Red & D2 Green toggled."));
+
+    // 2. Test SPI2 Audio Flash (W25Q128)
+    Serial.println(F("[2] Probing External SPI2 Audio Flash (W25Q128)..."));
+    flashJedecId = testSpiFlash();
+    uint8_t mfg = (flashJedecId >> 16) & 0xFF;
+    if (mfg == 0xEF || mfg == 0xC8 || mfg == 0x20) {
+        flashReady = true;
+        Serial.printf("    [PASS] SPI2 Flash verified! JEDEC: 0x%06X (Mfg: 0x%02X, Cap: 16 MB)\n",
+                      flashJedecId, mfg);
+    } else {
+        Serial.printf("    [WARN] Flash returned ID: 0x%06X (Check CS=21, SCK=20, MOSI=1, MISO=0)\n",
+                      flashJedecId);
+    }
+
+    // 3. Scan I2C & Test IMU
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, 400000UL);
-    Serial.println(F("[1] Scanning I2C Bus..."));
-    uint8_t foundCount = 0;
+    Serial.println(F("[3] Scanning I2C Bus (SDA=6, SCL=7)..."));
     for (uint8_t a = 1; a < 127; ++a) {
         Wire.beginTransmission(a);
         if (Wire.endTransmission() == 0) {
             Serial.printf("    - Found device at 0x%02X\n", a);
-            if (a == BMI160_ADDR_PRIMARY || a == BMI160_ADDR_ALT) {
-                bmi160Address = a;
-            }
-            foundCount++;
         }
     }
 
-    // 2. Init BMI160
-    Serial.println(F("[2] Testing BMI160 IMU..."));
-    bmi160Found = initBMI160(bmi160Address);
-    if (bmi160Found) {
-        Serial.printf("    [PASS] BMI160 ready at 0x%02X (Chip ID: 0x%02X)\n", bmi160Address, readChipId(bmi160Address));
+    // Try LSM6DSL (Default V2: 0x6A)
+    uint8_t who = 0;
+    if (readRegisters(0x6A, LSM6DS_REG_WHO_AM_I, &who, 1) && (who == 0x6A || who == 0x69 || who == 0x6C)) {
+        detectedImu = IMU_LSM6DSL;
+        imuAddress = 0x6A;
+        // Configure Accel & Gyro 104 Hz
+        writeRegister(0x6A, LSM6DS_REG_CTRL1_XL, 0x40);
+        writeRegister(0x6A, LSM6DS_REG_CTRL2_G, 0x4C);
+        Serial.printf("    [PASS] ST LSM6DSL identified @ 0x%02X (WHO_AM_I: 0x%02X)\n", imuAddress, who);
+    } else if (readRegisters(0x68, BMI160_REG_CHIP_ID, &who, 1) && who == 0xD8) {
+        detectedImu = IMU_BMI160;
+        imuAddress = 0x68;
+        writeRegister(0x68, BMI160_REG_CMD, 0x11);
+        delay(10);
+        writeRegister(0x68, BMI160_REG_CMD, 0x15);
+        Serial.printf("    [PASS] Bosch BMI160 identified @ 0x%02X (Chip ID: 0x%02X)\n", imuAddress, who);
     } else {
-        Serial.printf("    [FAIL] BMI160 not found at 0x%02X! Check SDA/SCL/GND/3.3V.\n", bmi160Address);
+        Serial.println(F("    [FAIL] No supported IMU detected at 0x6A or 0x68!"));
     }
 
-    // 3. Init Stereo I2S
-    Serial.println(F("[3] Initializing Stereo I2S Microphones..."));
+    // 4. Init Stereo I2S Microphones
+    Serial.println(F("[4] Initializing Stereo I2S Microphones (ICS-43434)..."));
     i2sReady = initStereoI2S();
     if (i2sReady) {
-        Serial.println(F("    [PASS] Stereo I2S started (SCK=D0, WS=D1, SD=D2)"));
+        Serial.println(F("    [PASS] Stereo I2S started (SCK=2, WS=3, SD=4 with 100k Pulldown)"));
     } else {
         Serial.println(F("    [FAIL] Could not start I2S driver!"));
     }
 
     Serial.println(F("========================================================"));
     Serial.println(F("Live Diagnostic Stream Starting..."));
-    Serial.println(F("Speak / Tap near Mic 1 (Left) or Mic 2 (Right) or move board:"));
+    Serial.println(F("Speak / Tap near Mic 1 (Left) or Mic 2 (Right) or press BTN:"));
     Serial.println(F("========================================================\n"));
 }
 
 void loop() {
     // Read Audio
     float leftRms = 0, rightRms = 0;
-    int32_t leftPk = 0, rightPk = 0;
 
     if (i2sReady) {
         size_t bytesRead = 0;
@@ -190,48 +248,41 @@ void loop() {
 
         if (samples > 0) {
             double sumL = 0, sumR = 0;
-            int32_t minL = INT32_MAX, maxL = INT32_MIN;
-            int32_t minR = INT32_MAX, maxR = INT32_MIN;
-
             for (size_t i = 0; i < samples; ++i) {
                 int32_t l = i2sRawBuffer[2 * i] >> 8;
                 int32_t r = i2sRawBuffer[2 * i + 1] >> 8;
-
-                if (l < minL) minL = l;
-                if (l > maxL) maxL = l;
-                if (r < minR) minR = r;
-                if (r > maxR) maxR = r;
-
                 sumL += ((double)l * (double)l);
                 sumR += ((double)r * (double)r);
             }
             leftRms = sqrt(sumL / samples);
             rightRms = sqrt(sumR / samples);
-            leftPk = (maxL > minL) ? (maxL - minL) : 0;
-            rightPk = (maxR > minR) ? (maxR - minR) : 0;
         }
     }
 
     // Read IMU
-    float ax = 0, ay = 0, az = 0, gx = 0, gy = 0, gz = 0;
-    if (bmi160Found) {
+    float ax = 0, ay = 0, az = 0, gz = 0;
+    if (detectedImu == IMU_LSM6DSL) {
         uint8_t raw[12];
-        if (readRegisters(bmi160Address, BMI160_REG_DATA_START, raw, 12)) {
-            int16_t rawGx = (int16_t)(((uint16_t)raw[1] << 8) | raw[0]);
-            int16_t rawGy = (int16_t)(((uint16_t)raw[3] << 8) | raw[2]);
+        if (readRegisters(imuAddress, LSM6DS_REG_DATA_START, raw, 12)) {
             int16_t rawGz = (int16_t)(((uint16_t)raw[5] << 8) | raw[4]);
             int16_t rawAx = (int16_t)(((uint16_t)raw[7] << 8) | raw[6]);
             int16_t rawAy = (int16_t)(((uint16_t)raw[9] << 8) | raw[8]);
             int16_t rawAz = (int16_t)(((uint16_t)raw[11] << 8) | raw[10]);
 
-            ax = (float)rawAx / 16384.0f;
-            ay = (float)rawAy / 16384.0f;
-            az = (float)rawAz / 16384.0f;
-            gx = (float)rawGx / 16.4f;
-            gy = (float)rawGy / 16.4f;
-            gz = (float)rawGz / 16.4f;
+            ax = (float)rawAx * 0.000061f;
+            ay = (float)rawAy * 0.000061f;
+            az = (float)rawAz * 0.000061f;
+            gz = (float)rawGz * 0.070f;
         }
     }
+
+    bool btnPressed = (digitalRead(PIN_BOOT_BTN) == LOW);
+    bool int1Active = (digitalRead(PIN_IMU_INT) == HIGH);
+
+    // Reflect button on Green LED
+    digitalWrite(PIN_LED_GREEN, btnPressed ? LED_ON : LED_OFF);
+    // Reflect INT1 or audio peak on Red LED
+    digitalWrite(PIN_STATUS_LED, (int1Active || leftRms > 5000 || rightRms > 5000) ? LED_ON : LED_OFF);
 
     // Visual Meter formatting
     char barL[16], barR[16];
@@ -246,8 +297,10 @@ void loop() {
     makeBar(barL, leftRms);
     makeBar(barR, rightRms);
 
-    Serial.printf("[MIC-L (GND)] %s RMS:%5.0f | [MIC-R (3V3)] %s RMS:%5.0f || [ACC] X:%+4.2f Y:%+4.2f Z:%+4.2f | [GYR] Z:%+5.1f\n",
-                  barL, leftRms, barR, rightRms, ax, ay, az, gz);
+    Serial.printf("[MIC-L (GND)] %s RMS:%5.0f | [MIC-R (3V3)] %s RMS:%5.0f || [ACC] X:%+4.2f Y:%+4.2f Z:%+4.2f | [BTN] %s | [INT1] %s\n",
+                  barL, leftRms, barR, rightRms, ax, ay, az, 
+                  btnPressed ? "PRESSED" : "RELEASED",
+                  int1Active ? "ACTIVE" : "IDLE");
 
     delay(100);
 }

@@ -16,10 +16,8 @@ void PowerManager::begin() {
         _gpioWakeupMask = esp_sleep_get_gpio_wakeup_status();
         if (_gpioWakeupMask & (1ULL << PIN_IMU_INT)) {
             _wakeupSource = WAKEUP_IMU_SHOCK;
-        } else if (_gpioWakeupMask & (1ULL << PIN_BOOT_BTN)) {
-            _wakeupSource = WAKEUP_BOOT_BUTTON;
         } else {
-            _wakeupSource = WAKEUP_IMU_SHOCK; // Default GPIO trigger
+            _wakeupSource = WAKEUP_IMU_SHOCK; // Default RTC GPIO trigger (GPIO 0-5)
         }
     } else if (_rawCause == ESP_SLEEP_WAKEUP_TIMER) {
         _wakeupSource = WAKEUP_TIMER;
@@ -56,14 +54,16 @@ bool PowerManager::isIdleTimeoutExpired(unsigned long timeoutMs) const {
 void PowerManager::enterDeepSleep(ImuDriver& imu, float shockThresholdG) {
     Serial.println(F("\n========================================================"));
     Serial.println(F("  ENTERING ULTRA-LOW-POWER DEEP SLEEP (< 10 uA)..."));
-    Serial.printf("  Arming IMU for shock detection (> %.2f g on Pin D3/GPIO 5)\n", shockThresholdG);
+    Serial.printf("  Arming IMU for shock detection (> %.2f g on GPIO 5 / INT1)\n", shockThresholdG);
     Serial.println(F("  ESP32-C3 CPU and Radios shutting down."));
     Serial.println(F("========================================================\n"));
     Serial.flush();
 
-    // 1. Turn off Status LED
-    digitalWrite(PIN_STATUS_LED, LOW);
+    // 1. Turn off Status LEDs (Active-LOW: Write HIGH before setting to INPUT to prevent flash)
+    digitalWrite(PIN_STATUS_LED, LED_LEVEL_OFF);
+    digitalWrite(PIN_LED_GREEN, LED_LEVEL_OFF);
     pinMode(PIN_STATUS_LED, INPUT);
+    pinMode(PIN_LED_GREEN, INPUT);
 
     // 2. Configure IMU for ultra-low-power motion detection on INT1
     if (imu.isConnected()) {
@@ -75,7 +75,7 @@ void PowerManager::enterDeepSleep(ImuDriver& imu, float shockThresholdG) {
     WiFi.mode(WIFI_OFF);
     delay(20);
 
-    // 4. Configure ESP32-C3 RTC GPIO wakeup on IMU INT pin (XIAO D3 = GPIO 5, Active High)
+    // 4. Configure ESP32-C3 RTC GPIO wakeup on IMU INT pin (GPIO 5, Active High)
     pinMode(PIN_IMU_INT, INPUT_PULLDOWN);
     esp_deep_sleep_enable_gpio_wakeup(1ULL << PIN_IMU_INT, ESP_GPIO_WAKEUP_GPIO_HIGH);
 
