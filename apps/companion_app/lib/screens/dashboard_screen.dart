@@ -51,7 +51,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!success && mounted && !widget.bleService.isConnected) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('No Xiao ESP32 found in range.'),
+            content: const Text('No Dictula device found in range.'),
             action: SnackBarAction(
               label: 'Manual Scan',
               onPressed: _openDeviceScanner,

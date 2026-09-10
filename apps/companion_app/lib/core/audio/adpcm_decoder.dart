@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 /// High-Performance IMA-ADPCM 4-bit to 16-bit Linear PCM Audio Decoder & WAV Generator.
-/// Matches the Xiao ESP32-C3 firmware implementation in firmware/src/adpcm.cpp.
+/// Matches the ESP32-C3 firmware implementation in firmware/src/adpcm.cpp.
 class AdpcmDecoder {
   AdpcmDecoder._();
 

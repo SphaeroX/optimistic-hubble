@@ -57,7 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!success && mounted && !widget.bleService.isConnected) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Kein Xiao ESP32 in Reichweite gefunden.'),
+            content: const Text('Kein Gerät in Reichweite gefunden.'),
             action: SnackBarAction(label: 'Manueller Scan', onPressed: _openDeviceScanner),
           ),
         );
@@ -149,10 +149,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                 label: Text(
                   isConnected
-                      ? 'XIAO'
+                      ? 'ESP32'
                       : (widget.bleService.isAutoConnecting
                           ? 'Suche...'
-                          : (widget.bleService.isConnecting ? '...' : 'XIAO')),
+                          : (widget.bleService.isConnecting ? '...' : 'ESP32')),
                   style: TextStyle(
                     fontSize: 11,
                     color: isConnected

@@ -84,7 +84,7 @@ class BatteryGaugeCard extends StatelessWidget {
             Text(
               hasData
                   ? (telemetry.isCharging ? 'Status: Charging via USB-C' : 'Status: Operating on LiPo Battery')
-                  : 'Status: Offline (Connect XIAO ESP32-C3 via BLE to read power telemetry)',
+                  : 'Status: Offline (Connect ESP32-C3 via BLE to read power telemetry)',
               style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
             ),
           ],

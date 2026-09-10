@@ -11,6 +11,7 @@
 #include "wifi_server.h"
 #include "wifi_uploader.h"
 #include "power_manager.h"
+#include "battery_manager.h"
 #include "led_indicator.h"
 #include "spi_flash_driver.h"
 
@@ -27,6 +28,7 @@ static BleManager ble(&leds);
 static WifiServerManager wifiServer(storage, &leds);
 static WifiUploader wifiUploader(storage, &leds);
 static PowerManager power;
+static BatteryManager battery;
 static uint16_t totalTapEvents = 0;
 
 static unsigned long lastTelemetryTime = 0;
@@ -57,13 +59,15 @@ void pushTelemetryUpdate(DeviceState state, uint32_t audioBytes = 0) {
                 imuMetrics.accelZ_g * imuMetrics.accelZ_g)
         : 1.0f;
 
+    battery.update(state, power.isUsbConnected());
+
     ble.sendTelemetry(
         state,
         audioBytes,
         recorder.getSampleRate(),
-        4180, // 4.18V nominal
-        98,   // 98%
-        true, // USB Powered
+        battery.getVoltageMilliVolts(),
+        battery.getPercent(),
+        battery.isCharging(),
         ESP.getFreeHeap(),
         storage.getUsedBytes(),
         storage.getTotalBytes(),
@@ -129,6 +133,7 @@ void handleStopAndSave() {
 void setup() {
     // 1. Boot Power Manager & Inspect Wake-up Reason
     power.begin();
+    battery.begin();
 
     Serial.begin(SERIAL_BAUD_RATE);
     unsigned long start = millis();
@@ -467,6 +472,7 @@ void loop() {
             } else if (power.isIdleTimeoutExpired(INACTIVITY_SLEEP_TIMEOUT_MS)) {
                 Serial.printf("[POWER] Inactivity timeout (%u s) expired on battery. Entering Deep Sleep...\n",
                               (unsigned int)(INACTIVITY_SLEEP_TIMEOUT_MS / 1000));
+                battery.persistState();
                 ble.stop();
                 leds.turnOffAll();
                 power.enterDeepSleep(imu, &extFlash, IMU_WAKEUP_THRESHOLD_G);

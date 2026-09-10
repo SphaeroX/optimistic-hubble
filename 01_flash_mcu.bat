@@ -1,12 +1,12 @@
 @echo off
 setlocal
-title Xiao ESP32-C3 - Flash and Monitor
+title Dictula ESP32-C3 - Flash and Monitor
 
 echo ========================================================
-echo   Seeed Studio XIAO ESP32C3 - Flash and Monitor Tool
+echo   Dictula ESP32-C3 V2 - Flash and Monitor Tool
 echo ========================================================
 echo.
-echo [1/2] Building and flashing firmware to XIAO ESP32C3...
+echo [1/2] Building and flashing firmware to ESP32-C3...
 echo.
 
 pushd "%~dp0firmware"
@@ -20,7 +20,7 @@ if %FLASH_ERR% NEQ 0 (
     echo   [ERROR] Flashing failed!
     echo ========================================================
     echo   Tips:
-    echo   1. Check if the XIAO ESP32C3 is firmly plugged into USB.
+    echo   1. Check if the ESP32-C3 is firmly plugged into USB.
     echo   2. Make sure no other Serial Monitor / COM tool is open.
     echo   3. If needed, enter Bootloader Mode:
     echo      Hold the B [Boot] button, press and release R [Reset],

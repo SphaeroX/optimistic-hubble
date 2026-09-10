@@ -51,7 +51,7 @@ class TapHistoryList extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 20),
                 child: const Center(
                   child: Text(
-                    'No tap triggers recorded yet.\nDouble-tap the XIAO breadboard or click "Test Tap".',
+                    'No tap triggers recorded yet.\nDouble-tap the device or click "Test Tap".',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
                   ),

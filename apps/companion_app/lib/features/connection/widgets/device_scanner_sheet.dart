@@ -90,10 +90,10 @@ class DeviceScannerSheet extends StatelessWidget {
                 icon: const Icon(Icons.flash_on, size: 18, color: Colors.black),
                 label: Text(
                   bleService.isAutoConnecting
-                      ? 'Selecting nearest Xiao...'
+                      ? 'Selecting nearest device...'
                       : (hasXiaoDevice
                           ? 'Auto-Connect Strongest Signal'
-                          : 'Smart Auto-Connect (Nearest Xiao)'),
+                          : 'Smart Auto-Connect (Nearest Device)'),
                   style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
                 ),
                 style: ElevatedButton.styleFrom(
@@ -111,7 +111,7 @@ class DeviceScannerSheet extends StatelessWidget {
                   Navigator.of(context).pop();
                 },
                 icon: const Icon(Icons.developer_mode, size: 18),
-                label: const Text('Simulate Xiao Device (PC Test)'),
+                label: const Text('Simulate Device (PC Test)'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppTheme.accentGreen,
                   side: const BorderSide(color: AppTheme.accentGreen),
@@ -126,7 +126,7 @@ class DeviceScannerSheet extends StatelessWidget {
                   child: Center(
                     child: Text(
                       isScanning
-                          ? 'Searching for nearby Xiao ESP32-C3...\n(Service UUID: 19b10000-e8f2-537e-4f6c-d104768a1214)'
+                          ? 'Searching for nearby Dictula ESP32-C3...\n(Service UUID: 19b10000-e8f2-537e-4f6c-d104768a1214)'
                           : 'No devices found. Tap refresh or use simulation.',
                       style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
                       textAlign: TextAlign.center,

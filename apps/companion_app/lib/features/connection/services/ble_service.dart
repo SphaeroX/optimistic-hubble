@@ -90,7 +90,11 @@ class BleService extends ChangeNotifier {
   void _initBleCallbacks() {
     UniversalBle.onScanResult = (BleDevice scanResult) {
       final name = scanResult.name?.trim() ?? 'Unknown Device';
-      final isXiao = name.contains('XIAO') || name.contains('Xiao') || name == AppConstants.bleDeviceName;
+      final isXiao = name.contains('XIAO') ||
+          name.contains('Xiao') ||
+          name.contains('Dictula') ||
+          name.contains('ESP32') ||
+          name == AppConstants.bleDeviceName;
       final item = BleDeviceItem(
         id: scanResult.deviceId,
         name: name,
@@ -643,8 +647,9 @@ class BleService extends ChangeNotifier {
 
     if (value.length >= 10) {
       final mv = bd.getUint16(7, Endian.little);
-      batteryVoltage = mv > 0 ? (mv / 1000.0) : 4.18;
-      batteryPercent = bd.getUint8(9);
+      batteryVoltage = mv > 0 ? (mv / 1000.0) : null;
+      final pct = bd.getUint8(9);
+      batteryPercent = pct <= 100 ? pct : null;
     }
     if (value.length >= 11) {
       isCharging = bd.getUint8(10) == 1;
@@ -678,8 +683,8 @@ class BleService extends ChangeNotifier {
       state: state,
       totalAudioBytes: totalBytes,
       sampleRate: sampleRate > 0 ? sampleRate : AppConstants.audioSampleRate,
-      batteryVoltage: batteryVoltage ?? _telemetry.batteryVoltage ?? 4.18,
-      batteryPercent: batteryPercent ?? _telemetry.batteryPercent ?? 98,
+      batteryVoltage: batteryVoltage ?? _telemetry.batteryVoltage,
+      batteryPercent: batteryPercent ?? _telemetry.batteryPercent,
       isCharging: isCharging,
       freeHeapBytes: freeHeap ?? _telemetry.freeHeapBytes,
       usedStorageBytes: usedStorage ?? _telemetry.usedStorageBytes,
