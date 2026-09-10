@@ -42,10 +42,22 @@ void LedIndicator::setMode(LedMode mode) {
             writePin(_redPin, true);
             writePin(_greenPin, false);
             break;
+        case LedMode::RECORDING_CONNECTED:
+            // Blinking Red (starts ON), Solid Green
+            _blinkPhase = true;
+            writePin(_greenPin, true);
+            writePin(_redPin, true);
+            break;
         case LedMode::BLE_CONNECTED:
             // Red OFF, Solid Green
             writePin(_redPin, false);
             writePin(_greenPin, true);
+            break;
+        case LedMode::SYNCING:
+            // Alternating blink starting with Green ON, Red OFF
+            _blinkPhase = true;
+            writePin(_greenPin, true);
+            writePin(_redPin, false);
             break;
         case LedMode::IDLE:
             // Both OFF
@@ -100,7 +112,23 @@ void LedIndicator::turnOffAll() {
 void LedIndicator::update() {
     unsigned long now = millis();
 
-    if (_currentMode == LedMode::WIFI_AP) {
+    if (_currentMode == LedMode::RECORDING_CONNECTED) {
+        // Red blinks at ~1.7 Hz (300ms ON / 300ms OFF), Green stays solid ON
+        writePin(_greenPin, true);
+        if (now - _lastBlinkTime >= 300) {
+            _lastBlinkTime = now;
+            _blinkPhase = !_blinkPhase;
+            writePin(_redPin, _blinkPhase);
+        }
+    } else if (_currentMode == LedMode::SYNCING) {
+        // Alternating blink: Green ON / Red OFF <-> Green OFF / Red ON (150ms phase)
+        if (now - _lastBlinkTime >= 150) {
+            _lastBlinkTime = now;
+            _blinkPhase = !_blinkPhase;
+            writePin(_greenPin, _blinkPhase);
+            writePin(_redPin, !_blinkPhase);
+        }
+    } else if (_currentMode == LedMode::WIFI_AP) {
         // Blink Green at 2 Hz (250ms ON / 250ms OFF) to indicate SoftAP active
         if (now - _lastBlinkTime >= 250) {
             _lastBlinkTime = now;

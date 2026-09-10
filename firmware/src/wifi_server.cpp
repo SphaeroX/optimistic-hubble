@@ -1,4 +1,5 @@
 #include "wifi_server.h"
+#include "led_indicator.h"
 #include "config.h"
 
 // Mandatory HTTP Header registration for RFC 7233 Range Support
@@ -28,8 +29,8 @@ private:
     WifiServerManager& _manager;
 };
 
-WifiServerManager::WifiServerManager(StorageManager& storageRef)
-    : _storage(storageRef), _server(HTTP_SERVER_PORT), _ssid(WIFI_AP_SSID), _pass(WIFI_AP_PASS),
+WifiServerManager::WifiServerManager(StorageManager& storageRef, LedIndicator* leds)
+    : _storage(storageRef), _leds(leds), _server(HTTP_SERVER_PORT), _ssid(WIFI_AP_SSID), _pass(WIFI_AP_PASS),
       _active(false), _routesConfigured(false), _lastRequestTime(0), _softApStartTime(0) {}
 
 void WifiServerManager::setupRoutes() {
@@ -360,7 +361,10 @@ void WifiServerManager::handleApiDownload() {
     WiFiClient client = _server.client();
     size_t bytesRemaining = contentLength;
 
+    if (_leds) _leds->setMode(LedMode::SYNCING);
+
     while (client.connected() && bytesRemaining > 0) {
+        if (_leds) _leds->update();
         size_t bytesToRead = (bytesRemaining > sizeof(streamBuffer)) ? sizeof(streamBuffer) : bytesRemaining;
         size_t bytesRead = file.read(streamBuffer, bytesToRead);
         if (bytesRead > 0) {
@@ -373,6 +377,7 @@ void WifiServerManager::handleApiDownload() {
 
     file.close();
     notifyActivity();
+    if (_leds) _leds->setMode(_active ? LedMode::WIFI_AP : LedMode::IDLE);
 }
 
 void WifiServerManager::handleApiDelete() {

@@ -7,7 +7,7 @@
 
 class AudioRecorder {
 public:
-    AudioRecorder(uint8_t ledPin = PIN_STATUS_LED);
+    AudioRecorder(uint8_t ledPin = 0xFF);
     ~AudioRecorder();
 
     bool begin();

@@ -6,10 +6,13 @@
 #include "config.h"
 #include "storage_manager.h"
 
+class LedIndicator;
+
 class WifiServerManager {
 public:
-    WifiServerManager(StorageManager& storageRef);
+    WifiServerManager(StorageManager& storageRef, LedIndicator* leds = nullptr);
 
+    void setLedIndicator(LedIndicator* leds) { _leds = leds; }
     bool begin(const char* ssid = WIFI_AP_SSID, const char* pass = WIFI_AP_PASS, uint16_t port = HTTP_SERVER_PORT);
     bool stop();
     void handleClient();
@@ -27,6 +30,7 @@ public:
 
 private:
     StorageManager& _storage;
+    LedIndicator* _leds;
     WebServer _server;
     DNSServer _dnsServer;
     const char* _ssid;

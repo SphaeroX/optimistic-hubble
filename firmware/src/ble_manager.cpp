@@ -1,4 +1,5 @@
 #include "ble_manager.h"
+#include "led_indicator.h"
 #include <LittleFS.h>
 
 static bool extractJsonString(const char* json, const char* key, char* out, size_t maxLen) {
@@ -38,10 +39,10 @@ static bool extractJsonBool(const char* json, const char* key, bool defaultVal =
     return defaultVal;
 }
 
-BleManager::BleManager()
+BleManager::BleManager(LedIndicator* leds)
     : _pServer(nullptr), _pService(nullptr), _pCharState(nullptr),
       _pCharAudio(nullptr), _pCharTap(nullptr), _pCharCmd(nullptr),
-      _connected(false), _currentState(STATE_IDLE), _pendingCmd(CMD_NONE),
+      _leds(leds), _connected(false), _currentState(STATE_IDLE), _pendingCmd(CMD_NONE),
       _cmdClipId(0), _cmdOffset(0) {
     memset(&_hotspotConfig, 0, sizeof(_hotspotConfig));
 }
@@ -303,6 +304,7 @@ bool BleManager::transmitAudio(const uint8_t* audioData, size_t totalBytes, uint
     }
 
     updateState(STATE_TRANSFERRING, totalBytes, sampleRate);
+    if (_leds) _leds->setMode(LedMode::SYNCING);
     delay(50);
 
     const size_t CHUNK_PAYLOAD_SIZE = 240;
@@ -313,8 +315,10 @@ bool BleManager::transmitAudio(const uint8_t* audioData, size_t totalBytes, uint
     uint8_t packet[6 + CHUNK_PAYLOAD_SIZE];
 
     for (size_t chunkIdx = 0; chunkIdx < totalChunks; ++chunkIdx) {
+        if (_leds) _leds->update();
         if (!_connected) {
             Serial.println(F("[BLE] Disconnected during audio transfer!"));
+            if (_leds) _leds->setMode(LedMode::IDLE);
             return false;
         }
 
@@ -341,6 +345,7 @@ bool BleManager::transmitAudio(const uint8_t* audioData, size_t totalBytes, uint
     updateState(STATE_DONE, totalBytes, sampleRate);
     delay(100);
     updateState(STATE_IDLE);
+    if (_leds) _leds->setMode(_connected ? LedMode::BLE_CONNECTED : LedMode::IDLE);
 
     return true;
 }
@@ -378,12 +383,14 @@ bool BleManager::streamAudioFileFromStorage(uint16_t clipId, uint32_t startOffse
     size_t startChunk = startOffset / CHUNK_PAYLOAD_SIZE;
 
     updateState(STATE_TRANSFERRING, totalBytes, AUDIO_SAMPLE_RATE);
+    if (_leds) _leds->setMode(LedMode::SYNCING);
     Serial.printf("[BLE] Streaming %s (%u bytes, %u chunks) via BLE GATT...\n",
                   filename, (unsigned int)totalBytes, (unsigned int)totalChunks);
 
     uint8_t packet[8 + CHUNK_PAYLOAD_SIZE];
 
     for (size_t chunkIdx = startChunk; chunkIdx < totalChunks && _connected; ++chunkIdx) {
+        if (_leds) _leds->update();
         size_t bytesRead = file.read(&packet[8], CHUNK_PAYLOAD_SIZE);
         if (bytesRead == 0) break;
 
@@ -408,6 +415,7 @@ bool BleManager::streamAudioFileFromStorage(uint16_t clipId, uint32_t startOffse
     updateState(STATE_DONE, totalBytes, AUDIO_SAMPLE_RATE);
     delay(50);
     updateState(STATE_IDLE);
+    if (_leds) _leds->setMode(_connected ? LedMode::BLE_CONNECTED : LedMode::IDLE);
     return true;
 }
 
@@ -416,7 +424,9 @@ bool BleManager::streamL2capClip(uint16_t clipId, uint32_t startOffset) {
     snprintf(filename, sizeof(filename), "/clip_%03u.wav", clipId);
 
     updateState(STATE_TRANSFERRING, 0, AUDIO_SAMPLE_RATE);
+    if (_leds) _leds->setMode(LedMode::SYNCING);
     bool ok = NimBleL2CapServer::getInstance().streamAudioFile(filename, clipId, startOffset);
     updateState(ok ? STATE_DONE : STATE_IDLE);
+    if (_leds) _leds->setMode(_connected ? LedMode::BLE_CONNECTED : LedMode::IDLE);
     return ok;
 }

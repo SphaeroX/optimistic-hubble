@@ -18,12 +18,12 @@ static ImuDriver imu;
 static I2sMicDriver stereoMic;
 static TapDetector tapDetector(TAP_JERK_THRESHOLD_G, TAP_DEBOUNCE_MS);
 static LedIndicator leds(PIN_STATUS_LED, PIN_LED_GREEN);
-static AudioRecorder recorder(PIN_STATUS_LED);
+static AudioRecorder recorder(0xFF); // LED indicator managed exclusively by LedIndicator
 static StorageManager storage;
 static SpiFlashDriver extFlash(PIN_FLASH_SCK, PIN_FLASH_MISO, PIN_FLASH_MOSI, PIN_FLASH_CS);
-static BleManager ble;
-static WifiServerManager wifiServer(storage);
-static WifiUploader wifiUploader(storage);
+static BleManager ble(&leds);
+static WifiServerManager wifiServer(storage, &leds);
+static WifiUploader wifiUploader(storage, &leds);
 static PowerManager power;
 static uint16_t totalTapEvents = 0;
 
@@ -85,10 +85,10 @@ void startActiveRecording() {
     // 2. Ensure IMU is in normal high-performance mode
     imu.setPowerMode(true);
 
-    // 3. Start Recording Clip and set LED indicator to RECORDING (D1 Solid Red)
+    // 3. Start Recording Clip and set LED indicator
     uint16_t nextId = storage.getNextClipId();
     recorder.startRecording(nextId);
-    leds.setMode(LedMode::RECORDING);
+    leds.setMode(ble.isConnected() ? LedMode::RECORDING_CONNECTED : LedMode::RECORDING);
     pushTelemetryUpdate(STATE_RECORDING, 0);
 
     Serial.printf("\n[RECORD START] Clip #%u recording started!\n", nextId);
@@ -283,11 +283,13 @@ void loop() {
                 HotspotUploadConfig cfg = ble.getHotspotUploadConfig();
                 Serial.printf("\n[BLE CMD] Connecting to Phone Hotspot \"%s\" for High-Speed Audio Upload...\n", cfg.ssid);
                 ble.updateState(STATE_TRANSFERRING);
+                leds.setMode(LedMode::SYNCING);
                 bool uploadOk = wifiUploader.uploadClips(cfg);
                 storage.refresh();
                 ble.updateState(uploadOk ? STATE_DONE : STATE_IDLE, 0, AUDIO_SAMPLE_RATE);
                 delay(100);
                 ble.updateState(STATE_IDLE);
+                leds.setMode(ble.isConnected() ? LedMode::BLE_CONNECTED : LedMode::IDLE);
                 break;
             }
 
@@ -392,7 +394,9 @@ void loop() {
         bool isBle = ble.isConnected();
         if (isBle != lastBleConnected) {
             lastBleConnected = isBle;
-            if (!recorder.isRecording() && !wifiServer.isActive()) {
+            if (recorder.isRecording()) {
+                leds.setMode(isBle ? LedMode::RECORDING_CONNECTED : LedMode::RECORDING);
+            } else if (!wifiServer.isActive() && leds.getMode() != LedMode::SYNCING) {
                 leds.setMode(isBle ? LedMode::BLE_CONNECTED : LedMode::IDLE);
             }
         }

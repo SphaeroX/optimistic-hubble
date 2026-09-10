@@ -5,16 +5,20 @@
 #include "storage_manager.h"
 #include "ble_manager.h"
 
+class LedIndicator;
+
 class WifiUploader {
 public:
-    WifiUploader(StorageManager& storageRef);
+    WifiUploader(StorageManager& storageRef, LedIndicator* leds = nullptr);
 
+    void setLedIndicator(LedIndicator* leds) { _leds = leds; }
     bool uploadClips(const HotspotUploadConfig& config);
     bool isConnected() const { return WiFi.status() == WL_CONNECTED; }
     void abortUpload() { _aborted = true; }
 
 private:
     StorageManager& _storage;
+    LedIndicator* _leds;
     bool _aborted;
 
     bool connectToHotspot(const char* ssid, const char* pass, uint32_t timeoutMs = 15000);

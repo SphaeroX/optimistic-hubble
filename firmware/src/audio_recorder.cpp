@@ -15,8 +15,10 @@ AudioRecorder::~AudioRecorder() {
 }
 
 bool AudioRecorder::begin() {
-    pinMode(_ledPin, OUTPUT);
-    setLed(false);
+    if (_ledPin != 0xFF) {
+        pinMode(_ledPin, OUTPUT);
+        setLed(false);
+    }
     _recording = false;
     _totalCompressedBytesWritten = 0;
     _totalSamplesRecorded = 0;
@@ -28,6 +30,7 @@ bool AudioRecorder::begin() {
 }
 
 void AudioRecorder::setLed(bool state) {
+    if (_ledPin == 0xFF) return;
     // Active-LOW logic: LOW = ON, HIGH = OFF
     digitalWrite(_ledPin, state ? LED_LEVEL_ON : LED_LEVEL_OFF);
 }

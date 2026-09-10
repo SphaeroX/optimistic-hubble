@@ -13,10 +13,13 @@ struct HotspotUploadConfig {
     bool autoDelete;
 };
 
+class LedIndicator;
+
 class BleManager : public NimBLEServerCallbacks, public NimBLECharacteristicCallbacks {
 public:
-    BleManager();
+    BleManager(LedIndicator* leds = nullptr);
 
+    void setLedIndicator(LedIndicator* leds) { _leds = leds; }
     bool begin(const char* deviceName = BLE_DEVICE_NAME);
     bool stop();
     bool isConnected() const { return _connected; }
@@ -69,6 +72,7 @@ private:
     NimBLECharacteristic* _pCharTap;
     NimBLECharacteristic* _pCharCmd;
     
+    LedIndicator* _leds;
     bool _connected;
     DeviceState _currentState;
     volatile BleCommand _pendingCmd;

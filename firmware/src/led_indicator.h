@@ -5,8 +5,10 @@
 enum class LedMode : uint8_t {
     IDLE = 0,
     RECORDING,
+    RECORDING_CONNECTED,
     WIFI_AP,
     BLE_CONNECTED,
+    SYNCING,
     ERROR
 };
 

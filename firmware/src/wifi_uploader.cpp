@@ -1,8 +1,9 @@
 #include "wifi_uploader.h"
+#include "led_indicator.h"
 #include <WiFiClient.h>
 
-WifiUploader::WifiUploader(StorageManager& storageRef)
-    : _storage(storageRef), _aborted(false) {}
+WifiUploader::WifiUploader(StorageManager& storageRef, LedIndicator* leds)
+    : _storage(storageRef), _leds(leds), _aborted(false) {}
 
 bool WifiUploader::connectToHotspot(const char* ssid, const char* pass, uint32_t timeoutMs) {
     if (ssid == nullptr || strlen(ssid) == 0) {
@@ -26,6 +27,7 @@ bool WifiUploader::connectToHotspot(const char* ssid, const char* pass, uint32_t
 
     unsigned long start = millis();
     while (WiFi.status() != WL_CONNECTED && (millis() - start < timeoutMs)) {
+        if (_leds) _leds->update();
         delay(150);
         Serial.print('.');
     }
@@ -86,6 +88,7 @@ bool WifiUploader::uploadSingleClip(const char* host, uint16_t port, const ClipI
     unsigned long uploadStart = millis();
 
     while (client.connected() && bytesRemaining > 0 && !_aborted) {
+        if (_leds) _leds->update();
         size_t bytesToRead = (bytesRemaining > sizeof(streamBuffer)) ? sizeof(streamBuffer) : bytesRemaining;
         size_t bytesRead = file.read(streamBuffer, bytesToRead);
         if (bytesRead > 0) {
@@ -147,6 +150,7 @@ void WifiUploader::sendCompleteSignal(const char* host, uint16_t port) {
 
 bool WifiUploader::uploadClips(const HotspotUploadConfig& config) {
     _aborted = false;
+    if (_leds) _leds->setMode(LedMode::SYNCING);
 
     bool connected = connectToHotspot(config.ssid, config.pass, 15000);
     if (!connected) {
