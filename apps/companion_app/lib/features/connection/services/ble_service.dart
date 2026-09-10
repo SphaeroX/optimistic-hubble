@@ -470,8 +470,17 @@ class BleService extends ChangeNotifier {
     }
   }
 
-  Future<void> sendCommand(BleCommand cmd, {int clipId = 0, int offset = 0}) async {
-    _log('CMD', 'Sending BLE Command: ${cmd.name} (Code: ${cmd.rawValue}) [Clip: $clipId, Offset: $offset]');
+  AudioQuality _selectedAudioQuality = AudioQuality.medium;
+  AudioQuality get selectedAudioQuality => _selectedAudioQuality;
+
+  Future<void> setHardwareAudioQuality(AudioQuality quality) async {
+    _selectedAudioQuality = quality;
+    await sendCommand(BleCommand.setQuality, param: quality.code);
+    notifyListeners();
+  }
+
+  Future<void> sendCommand(BleCommand cmd, {int clipId = 0, int offset = 0, int param = 0}) async {
+    _log('CMD', 'Sending BLE Command: ${cmd.name} (Code: ${cmd.rawValue}) [Param: $param, Clip: $clipId, Offset: $offset]');
 
     if (_isMockMode) {
       _simulateCommand(cmd);
@@ -484,7 +493,9 @@ class BleService extends ChangeNotifier {
     }
 
     final List<int> cmdPayload = [cmd.rawValue];
-    if (clipId > 0 || offset > 0) {
+    if (cmd == BleCommand.setQuality) {
+      cmdPayload.add(param & 0xFF);
+    } else if (clipId > 0 || offset > 0) {
       cmdPayload.add(clipId & 0xFF);
       cmdPayload.add((clipId >> 8) & 0xFF);
       cmdPayload.add(offset & 0xFF);
@@ -999,6 +1010,10 @@ class BleService extends ChangeNotifier {
         _telemetry = _telemetry.copyWith(totalClips: newCount);
         _statusMessage = 'Clip deleted from storage';
         _log('MOCK', 'Clip deleted from storage (Remaining: $newCount)');
+        break;
+      case BleCommand.setQuality:
+        _statusMessage = 'Quality set to ${_selectedAudioQuality.label}';
+        _log('MOCK', 'Recording quality set to ${_selectedAudioQuality.label}');
         break;
       case BleCommand.none:
         break;

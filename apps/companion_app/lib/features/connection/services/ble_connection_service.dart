@@ -287,6 +287,9 @@ class BleConnectionService extends ChangeNotifier {
       case BleCommand.deleteClip:
         _statusMessage = 'Clip deleted';
         break;
+      case BleCommand.setQuality:
+        _statusMessage = 'Recording quality updated';
+        break;
       case BleCommand.none:
         break;
     }

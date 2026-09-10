@@ -19,6 +19,8 @@ class AudioClip {
     this.isPlaying = false,
   });
 
+  bool get isSynced => syncStatus == SyncStatus.synced || syncStatus == SyncStatus.local;
+
   factory AudioClip.fromJson(Map<String, dynamic> json) {
     final name = json['name'] as String? ?? 'clip.adpcm';
     final size = json['size'] as int? ?? 0;

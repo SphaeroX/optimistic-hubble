@@ -216,7 +216,9 @@ class ClipCard extends StatelessWidget {
                           const Text('•', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                           const SizedBox(width: 6),
                           Text(
-                            Formatters.formatBytes(clip.sizeBytes),
+                            isSynced
+                                ? '${Formatters.formatBytes(clip.sizeBytes)} (PCM)'
+                                : '${Formatters.formatBytes(clip.sizeBytes)} (Gerät)',
                             style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
                           ),
                         ],

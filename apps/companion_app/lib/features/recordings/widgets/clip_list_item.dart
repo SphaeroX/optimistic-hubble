@@ -70,7 +70,9 @@ class ClipListItem extends StatelessWidget {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        Formatters.formatBytes(clip.sizeBytes),
+                        clip.isSynced
+                            ? '${Formatters.formatBytes(clip.sizeBytes)} (PCM)'
+                            : '${Formatters.formatBytes(clip.sizeBytes)} (Gerät)',
                         style: const TextStyle(
                           color: AppTheme.textMuted,
                           fontSize: 12,

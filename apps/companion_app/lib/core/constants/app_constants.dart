@@ -70,10 +70,55 @@ enum BleCommand {
   clearStorage(6),
   startL2capStream(7),
   connectHotspot(8),
-  deleteClip(9);
+  deleteClip(9),
+  setQuality(10);
 
   final int rawValue;
   const BleCommand(this.rawValue);
+}
+
+/// Hardware Recording Quality Modes (matching firmware enum AudioQuality)
+enum AudioQuality {
+  high(0, 'Hoch', '16 kHz Linear PCM (32 KB/s)', 32000, 'Unkomprimierte Studioqualität'),
+  medium(1, 'Mittel (Empfohlen)', '16 kHz IMA-ADPCM (8 KB/s)', 8000, 'Kristallklare Sprache & optimale Balance'),
+  low(2, 'Niedrig', '8 kHz IMA-ADPCM (4 KB/s)', 4000, 'Maximale Aufnahmezeit (Long-Play)');
+
+  final int code;
+  final String label;
+  final String formatInfo;
+  final int byteRate;
+  final String description;
+
+  const AudioQuality(this.code, this.label, this.formatInfo, this.byteRate, this.description);
+
+  static AudioQuality fromCode(int code) {
+    return AudioQuality.values.firstWhere(
+      (q) => q.code == code,
+      orElse: () => AudioQuality.medium,
+    );
+  }
+
+  /// Calculates available recording duration in seconds based on available free bytes
+  int calculateRemainingSeconds(int freeBytes) {
+    if (freeBytes <= 0 || byteRate <= 0) return 0;
+    return freeBytes ~/ byteRate;
+  }
+
+  /// Formats remaining duration into human-readable German string
+  String formatRemainingTime(int freeBytes) {
+    final totalSec = calculateRemainingSeconds(freeBytes);
+    final hours = totalSec ~/ 3600;
+    final minutes = (totalSec % 3600) ~/ 60;
+    final seconds = totalSec % 60;
+
+    if (hours > 0) {
+      return '$hours Std. $minutes Min.';
+    } else if (minutes > 0) {
+      return '$minutes Min. $seconds Sek.';
+    } else {
+      return '$seconds Sek.';
+    }
+  }
 }
 
 /// 2-Stage Sync Architecture Tiers (Plaud Note Model)

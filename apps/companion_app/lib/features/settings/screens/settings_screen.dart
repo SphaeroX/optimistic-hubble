@@ -38,6 +38,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _apiKeyController = TextEditingController(text: widget.geminiService.apiKey);
     _modelController = TextEditingController(text: widget.geminiService.selectedModel);
     widget.geminiService.addListener(_onGeminiServiceChanged);
+    widget.bleService.addListener(_onBleChanged);
+  }
+
+  void _onBleChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onGeminiServiceChanged() {
@@ -54,6 +59,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     widget.geminiService.removeListener(_onGeminiServiceChanged);
+    widget.bleService.removeListener(_onBleChanged);
     _apiKeyController.dispose();
     _modelController.dispose();
     super.dispose();
@@ -272,6 +278,141 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onChanged: (val) => setState(() => widget.recorderController!.recorderService.skipSilenceEnabled = val),
                     ),
                   ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Hardware Recording Quality (ESP32)
+          Card(
+            color: AppTheme.cardDark,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: const BorderSide(color: Color(0xFF22324A)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.graphic_eq, color: AppTheme.primaryCyan, size: 22),
+                      const SizedBox(width: 8),
+                      const Text('Hardware-Aufnahmequalität (ESP32)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      const Spacer(),
+                      if (widget.bleService.isConnected)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppTheme.accentGreen.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('Verbunden', style: TextStyle(color: AppTheme.accentGreen, fontSize: 11, fontWeight: FontWeight.w600)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Wähle die Qualität für das Diktiergerät. Die beiden Mikrofone werden am ESP32 per Rauschfilter auf Mono gemischt.',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted.withValues(alpha: 0.9)),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Storage & Free Space Banner
+                  Builder(builder: (context) {
+                    final telem = widget.bleService.telemetry;
+                    final totalBytes = telem.totalStorageBytes ?? (16 * 1024 * 1024);
+                    final usedBytes = telem.usedStorageBytes ?? 0;
+                    final freeBytes = (totalBytes > usedBytes) ? (totalBytes - usedBytes) : 0;
+                    final freeMb = (freeBytes / (1024 * 1024)).toStringAsFixed(1);
+                    final totalMb = (totalBytes / (1024 * 1024)).toStringAsFixed(1);
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF101B2B),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF1F2E45)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.sd_storage_outlined, color: AppTheme.primaryCyan, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Freier Speicher: $freeMb MB / $totalMb MB',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+
+                  const SizedBox(height: 14),
+
+                  // Quality Radio Options with Dynamic Remaining Recording Time
+                  ...AudioQuality.values.map((quality) {
+                    final isSelected = widget.bleService.selectedAudioQuality == quality;
+                    final telem = widget.bleService.telemetry;
+                    final totalBytes = telem.totalStorageBytes ?? (16 * 1024 * 1024);
+                    final usedBytes = telem.usedStorageBytes ?? 0;
+                    final freeBytes = (totalBytes > usedBytes) ? (totalBytes - usedBytes) : 0;
+                    final remainingTimeStr = quality.formatRemainingTime(freeBytes);
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppTheme.primaryCyan.withValues(alpha: 0.08) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected ? AppTheme.primaryCyan : const Color(0xFF1E2A3C),
+                          width: isSelected ? 1.5 : 1.0,
+                        ),
+                      ),
+                      // ignore: deprecated_member_use
+                      child: RadioListTile<AudioQuality>(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        activeColor: AppTheme.primaryCyan,
+                        value: quality,
+                        groupValue: widget.bleService.selectedAudioQuality,
+                        onChanged: (val) {
+                          if (val != null) {
+                            widget.bleService.setHardwareAudioQuality(val);
+                            setState(() {});
+                          }
+                        },
+                        title: Row(
+                          children: [
+                            Text(quality.label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isSelected ? AppTheme.primaryCyan.withValues(alpha: 0.2) : const Color(0xFF1E2A3C),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                remainingTimeStr,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSelected ? AppTheme.primaryCyan : AppTheme.textMuted,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            '${quality.formatInfo} • ${quality.description}',
+                            style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
                 ],
               ),
             ),
