@@ -58,6 +58,14 @@
 #define DOUBLE_TAP_WINDOW_MAX_MS 650  // Maximum interval between 1st and 2nd tap for valid double tap
 
 // ============================================================================
+// Shake Gesture Parameters (for Recording Start/Stop)
+// ============================================================================
+#define SHAKE_THRESHOLD_G 1.60f        // Dynamic acceleration threshold in g
+#define SHAKE_WINDOW_MS 650            // Time window for shake reversals (ms)
+#define SHAKE_REVERSALS_REQUIRED 2     // Minimum direction reversals to qualify as shake
+#define SHAKE_COOLDOWN_MS 1200         // Cooldown after trigger before next shake (ms)
+
+// ============================================================================
 // Wi-Fi High-Speed Audio Server Parameters
 // ============================================================================
 #define WIFI_AP_SSID "XIAO-Audio-Hotspot"

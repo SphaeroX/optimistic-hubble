@@ -4,6 +4,7 @@
 #include "imu_driver.h"
 #include "i2s_mic_driver.h"
 #include "tap_detector.h"
+#include "shake_detector.h"
 #include "audio_recorder.h"
 #include "storage_manager.h"
 #include "ble_manager.h"
@@ -17,6 +18,7 @@
 static ImuDriver imu;
 static I2sMicDriver stereoMic;
 static TapDetector tapDetector(TAP_JERK_THRESHOLD_G, TAP_DEBOUNCE_MS, DOUBLE_TAP_WINDOW_MIN_MS, DOUBLE_TAP_WINDOW_MAX_MS);
+static ShakeDetector shakeDetector(SHAKE_THRESHOLD_G, SHAKE_WINDOW_MS, SHAKE_REVERSALS_REQUIRED, SHAKE_COOLDOWN_MS);
 static LedIndicator leds(PIN_STATUS_LED, PIN_LED_GREEN);
 static AudioRecorder recorder(0xFF); // LED indicator managed exclusively by LedIndicator
 static StorageManager storage;
@@ -174,8 +176,8 @@ void setup() {
 
     // 8. Handle Wake-up Routing & LED Sequence
     if (power.wasWokenByMotion()) {
-        Serial.println(F("\n  >>> Woken from Deep Sleep by Tap / Shock! <<<"));
-        Serial.println(F("  >>> MCU is now AWAKE. Double-tap to START recording."));
+        Serial.println(F("\n  >>> Woken from Deep Sleep by Double-Tap! <<<"));
+        Serial.println(F("  >>> MCU is now AWAKE (IDLE). Shake device to START recording."));
         Serial.println(F("  >>> (Device will return to Deep Sleep if idle for 15s)\n"));
         // Acknowledge wake-up with quick double-blink green
         leds.blink(PIN_LED_GREEN, 2, 70);
@@ -185,10 +187,11 @@ void setup() {
         leds.setMode(LedMode::IDLE);
         Serial.println(F("\n========================================================"));
         Serial.println(F("  READY:"));
-        Serial.println(F("  1. Tap device to WAKE from Deep Sleep."));
-        Serial.println(F("  2. Double-tap to START recording (ADPCM 8 KB/s)."));
-        Serial.println(F("  3. Double-tap again to STOP & SAVE recording."));
+        Serial.println(F("  1. Double-tap device to WAKE from Deep Sleep."));
+        Serial.println(F("  2. Shake device to START recording."));
+        Serial.println(F("  3. Shake device again to STOP & SAVE recording."));
         Serial.println(F("  4. Press BTN button to toggle Wi-Fi, hold 2s for Flash Mode."));
+        Serial.println(F("  5. Connect USB to keep permanently awake."));
         Serial.println(F("========================================================\n"));
     }
 }
@@ -203,18 +206,18 @@ void loop() {
     if (recorder.isRecording()) {
         bool stillRecording = recorder.processRecording(stereoMic);
 
-        // Check IMU for stop double-tap at a clean 50 Hz interval
+        // Check IMU for stop shake gesture at a clean 50 Hz interval
         if (now - lastImuPollTime >= IMU_POLL_INTERVAL_MS) {
             lastImuPollTime = now;
 
             ImuMetricData imuData;
             if (imu.readSensorData(imuData)) {
-                float shock = 0.0f;
-                TapEventType tapEvt = tapDetector.update(imuData, &shock);
-                if (tapEvt == TapEventType::DOUBLE_TAP) {
+                float intensity = 0.0f;
+                ShakeEventType shakeEvt = shakeDetector.update(imuData, &intensity);
+                if (shakeEvt == ShakeEventType::SHAKE_DETECTED) {
                     totalTapEvents++;
-                    Serial.printf("\n[DOUBLE TAP DETECTED] Stop trigger! Shock: %.2f g\n", shock);
-                    ble.notifyTap(shock);
+                    Serial.printf("\n[SHAKE DETECTED] Stop trigger! Intensity: %.2f g -> STOPPING RECORDING...\n", intensity);
+                    ble.notifyTap(intensity);
                     handleStopAndSave();
                 }
             }
@@ -377,23 +380,27 @@ void loop() {
         power.notifyActivity();
     }
 
-    // 5. IDLE State: Monitor IMU for Start Double-Tap (when not recording and awake)
+    // 5. IDLE State: Monitor IMU for Start Shake Gesture (when not recording and awake)
     if (!recorder.isRecording() && (now - lastImuPollTime >= IMU_POLL_INTERVAL_MS)) {
         lastImuPollTime = now;
 
         ImuMetricData imuData;
         if (imu.readSensorData(imuData)) {
-            float shock = 0.0f;
-            TapEventType tapEvt = tapDetector.update(imuData, &shock);
-            if (tapEvt == TapEventType::DOUBLE_TAP) {
+            float intensity = 0.0f;
+            ShakeEventType shakeEvt = shakeDetector.update(imuData, &intensity);
+            if (shakeEvt == ShakeEventType::SHAKE_DETECTED) {
                 totalTapEvents++;
-                Serial.printf("\n[DOUBLE TAP DETECTED] Start trigger! Shock: %.2f g -> RECORDING...\n", shock);
-                ble.notifyTap(shock);
+                Serial.printf("\n[SHAKE DETECTED] Start trigger! Intensity: %.2f g -> STARTING RECORDING...\n", intensity);
+                ble.notifyTap(intensity);
                 startActiveRecording();
-            } else if (tapEvt == TapEventType::SINGLE_TAP) {
-                // A single tap occurred while awake: reset inactivity timer to keep device awake
-                power.notifyActivity();
-                Serial.println(F("[IMU] Single tap detected while awake. Inactivity timer extended."));
+            } else {
+                // Keep device awake if any tap/motion is detected
+                float shock = 0.0f;
+                TapEventType tapEvt = tapDetector.update(imuData, &shock);
+                if (tapEvt != TapEventType::NONE) {
+                    power.notifyActivity();
+                    Serial.println(F("[IMU] Tap detected while awake. Inactivity timer extended."));
+                }
             }
         }
     }

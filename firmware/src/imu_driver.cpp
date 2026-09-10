@@ -27,7 +27,11 @@
 #define LSM6DS_REG_STATUS_REG   0x1E // Status register
 #define LSM6DS_REG_DATA_START   0x22 // Gyro X, Y, Z (0x22-0x27), Accel X, Y, Z (0x28-0x2D)
 #define LSM6DS_REG_TAP_CFG      0x58 // Interrupt enable
-#define LSM6DS_REG_WAKE_UP_THS  0x5B // Wake-up threshold
+#define LSM6DS_REG_TAP_CFG0     0x56 // Tap config 0 (LSM6DSO: TAP_X/Y/Z enable, LIR)
+#define LSM6DS_REG_TAP_CFG1     0x57 // Tap config 1 (LSM6DSO: TAP_THS_X)
+#define LSM6DS_REG_TAP_THS_6D   0x59 // Tap threshold Z / 6D
+#define LSM6DS_REG_INT_DUR2     0x5A // Tap durations (DUR, QUIET, SHOCK)
+#define LSM6DS_REG_WAKE_UP_THS  0x5B // Wake-up threshold & SINGLE_DOUBLE_TAP
 #define LSM6DS_REG_WAKE_UP_DUR  0x5C // Wake-up duration
 #define LSM6DS_REG_MD1_CFG      0x5E // Route wake-up to INT1
 
@@ -260,27 +264,31 @@ bool ImuDriver::configureLowPowerWakeup(float thresholdG) {
         writeRegister(LSM6DS_REG_CTRL2_G, 0x00);
         delay(10);
 
-        // 2. Set Accelerometer to Low Power mode @ 26 Hz, +/- 2g
-        writeRegister(LSM6DS_REG_CTRL1_XL, 0x20); // 26 Hz ODR
+        // 2. Set Accelerometer to Low Power mode @ 52 Hz, +/- 2g
+        writeRegister(LSM6DS_REG_CTRL1_XL, 0x30); // 52 Hz ODR for responsive tap detection
         writeRegister(LSM6DS_REG_CTRL6_C, 0x10);  // XL_HM_MODE = 1 (Low-Power Accel enabled)
         delay(10);
 
-        // 3. Configure Wake-up threshold (1 LSB = 2000mg / 64 = 31.25mg)
-        uint8_t ths = (uint8_t)(thresholdG * 1000.0f / 31.25f);
-        if (ths < 1) ths = 1;
-        if (ths > 63) ths = 63; // 6-bit field
-        writeRegister(LSM6DS_REG_WAKE_UP_THS, ths);
-        writeRegister(LSM6DS_REG_WAKE_UP_DUR, 0x00); // Instant pulse
+        // 3. Configure Hardware Double-Tap detection on X, Y, Z
+        // Enable X, Y, Z tap axes and latched interrupt mode (LIR = 1)
+        writeRegister(LSM6DS_REG_TAP_CFG0, 0x0F);   // TAP_X/Y/Z enable, LIR = 1
+        writeRegister(LSM6DS_REG_TAP_CFG1, 0x0C);   // TAP_THS_X = 12 (~0.75g threshold)
+        writeRegister(LSM6DS_REG_TAP_CFG, 0x8C);    // TAP_CFG2: INTERRUPTS_ENABLE = 1, TAP_THS_Y = 0.75g
+        writeRegister(LSM6DS_REG_TAP_THS_6D, 0x0C); // TAP_THS_Z = 0.75g
 
-        // 4. Enable interrupt logic (latched mode) and route to INT1
-        writeRegister(LSM6DS_REG_TAP_CFG, 0x81); // INTERRUPTS_ENABLE = 1, LIR = 1 (latched interrupt)
-        writeRegister(LSM6DS_REG_MD1_CFG, 0x20); // INT1_WU = 1 (Wake-Up routed to INT1)
+        // 4. Configure Double-Tap Timing Window (INT_DUR2: DUR=7 -> ~430ms window, QUIET=2 -> 77ms, SHOCK=3 -> 115ms)
+        writeRegister(LSM6DS_REG_INT_DUR2, 0x7B);
+
+        // 5. Enable Double-Tap mode in WAKE_UP_THS (bit 7 = SINGLE_DOUBLE_TAP = 1)
+        writeRegister(LSM6DS_REG_WAKE_UP_THS, 0x80);
+
+        // 6. Route ONLY Double-Tap to INT1 pin (MD1_CFG: bit 3 = INT1_DOUBLE_TAP = 0x08)
+        writeRegister(LSM6DS_REG_MD1_CFG, 0x08);
 
         // Clear any residual triggers so INT1 starts LOW
         clearInterrupts();
 
-        Serial.printf("[IMU] LSM6DS configured for Low-Power Wake-up (~6 uA). Threshold: %.2f g (reg=0x%02X)\n", 
-                      thresholdG, ths);
+        Serial.println(F("[IMU] LSM6DS configured for Hardware Double-Tap Wake-up on INT1 (~26 uA)."));
         return true;
     }
     else if (_type == IMU_TYPE_BMI160) {
@@ -340,6 +348,7 @@ void ImuDriver::clearInterrupts() {
         readRegisters(LSM6DS_REG_WAKE_UP_SRC, &dummy, 1);
         readRegisters(LSM6DS_REG_TAP_SRC, &dummy, 1);
         readRegisters(LSM6DS_REG_STATUS_REG, &dummy, 1);
+        readRegisters(0x1A, &dummy, 1); // ALL_INT_SRC
     } else if (_type == IMU_TYPE_BMI160) {
         readRegisters(0x1C, &dummy, 1); // INT_STATUS_0
         readRegisters(0x1D, &dummy, 1); // INT_STATUS_1
@@ -354,7 +363,11 @@ bool ImuDriver::setPowerMode(bool active) {
     if (active) {
         // Restore high-performance 104 Hz sampling mode for active operation
         if (_type == IMU_TYPE_LSM6DS) {
+            writeRegister(LSM6DS_REG_TAP_CFG0, 0x00);
+            writeRegister(LSM6DS_REG_TAP_CFG1, 0x00);
             writeRegister(LSM6DS_REG_TAP_CFG, 0x00);
+            writeRegister(LSM6DS_REG_INT_DUR2, 0x00);
+            writeRegister(LSM6DS_REG_WAKE_UP_THS, 0x00);
             writeRegister(LSM6DS_REG_MD1_CFG, 0x00);
             writeRegister(LSM6DS_REG_CTRL6_C, 0x00); // High-performance mode
             writeRegister(LSM6DS_REG_CTRL1_XL, 0x40); // 104 Hz, +/- 2g

@@ -1,0 +1,47 @@
+Der LSM6DSO von STMicroelectronics ist eine 6-Achsen-IMU (3D-Beschleunigungssensor und 3D-Gyroskop), die zahlreiche integrierte Hardware-Engines zur autarken Bewegungserkennung besitzt.
+
+**Integrierte Bewegungserkennungen und Gesten**
+
+* **Freifallerkennung (Free-fall):** Erkennt Phasen des freien Falls über programmierbare Schwellenwerte und Zeiten.
+
+
+* **Wake-up:** Registriert das Verlassen der Ruhelage bei Überschreiten einer konfigurierbaren Beschleunigungsschwelle auf beliebigen Achsen.
+
+
+* **Tipp-Erkennung (Single-Tap und Double-Tap):** Erkennt einfaches sowie doppeltes Klopfen/Tippen mit einstellbarer Stoßdauer, Pausenzeit und konfigurierbarer Achsenpriorität.
+
+
+* **6D- und 4D-Lageerkennung:** Erkennt die Ausrichtung im Raum (Portrait, Landscape, Face-up, Face-down) anhand einstellbarer Winkelschwellen (50°, 60°, 70° oder 80°).
+
+
+* **Aktivität und Inaktivität (Activity / Inactivity / Stationary):** Unterscheidet zwischen Bewegung und Stillstand, um das Gesamtsystem oder den Sensor selbst automatisch in Stromsparmodi zu versetzen.
+
+
+* **Neigungserkennung (Tilt Detection):** Reagiert auf bewusste Winkeländerungen (zum Beispiel der Wechsel vom Sitzen zum Stehen), filtert aber zyklische Bewegungen wie normales Gehen oder Treppensteigen heraus.
+
+
+* **Signifikante Bewegung (Significant Motion Detection, SMD):** Erkennt Ortsveränderungen des Nutzers nach Android-Spezifikation.
+
+
+* **Pedometer:** Bietet hardwarebasierte Schritterkennung (Step Detector) und Schrittzählung (Step Counter) inklusive Entprellung und Unterdrückung von Fehlauslösungen (False-Positive Rejection).
+
+
+* **Finite State Machine (FSM):** Bis zu 16 unabhängige, programmierbare Zustandsautomaten. Damit lassen sich eigene komplexe Bewegungsmuster und Gesten direkt auf dem Chip auswerten, wie Schütteln (Shake/Double-Shake), Handgelenkdrehungen (Wrist Tilt) oder Blickanerkennung (Glance Gestures).
+
+
+
+**Wichtige Eckdaten und Zusatzfunktionen**
+
+* **Messbereiche:** Beschleunigung von $\pm2$ g bis $\pm16$ g, Drehrate von $\pm125$ dps bis $\pm2000$ dps.
+
+
+* **FIFO-Speicher:** Bis zu 9 kByte mit Datenkompression zur Entlastung des Host-Controllers.
+
+
+* **Sensor-Hub-Modus:** Kann als I2C-Master bis zu 4 externe Sensoren (beispielsweise ein Magnetometer für eine 9-Achsen-Fusion) direkt einbinden.
+
+
+* **OIS/EIS-Unterstützung:** Separater Signalverarbeitungspfad und zusätzliches Auxiliary-SPI-Interface zur optischen und elektronischen Bildstabilisierung in Kameras.
+
+
+* **Stromverbrauch:** 0,55 mA im High-Performance-Modus mit beiden aktiven Sensoren, im Ultra-Low-Power-Modus für den Beschleunigungssensor ab 4,4 µA.
