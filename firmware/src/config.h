@@ -104,8 +104,16 @@ enum DeviceState : uint8_t
     STATE_SLEEPING = 5
 };
 
-// Minimum free LittleFS Flash storage margin to prevent overflow (e.g., 24 KB)
-#define MIN_FREE_STORAGE_BYTES 24576UL
+// Minimum free LittleFS Flash storage margin to prevent overflow (64 KB safe headroom)
+#define MIN_FREE_STORAGE_BYTES 65536UL
+
+// Audio Recording Quality Modes
+enum AudioQuality : uint8_t
+{
+    QUALITY_HIGH = 0,   // 16 kHz, 16-bit Linear PCM Mono (32 KB/s, uncompressed studio quality)
+    QUALITY_MEDIUM = 1, // 16 kHz, 4-bit IMA-ADPCM Mono (8 KB/s, balanced speech, default)
+    QUALITY_LOW = 2     // 8 kHz,  4-bit IMA-ADPCM Mono (4 KB/s, long-play mode)
+};
 
 // Remote Control Commands (via BLE)
 enum BleCommand : uint8_t
@@ -119,6 +127,7 @@ enum BleCommand : uint8_t
     CMD_CLEAR_STORAGE = 6,
     CMD_START_L2CAP_STREAM = 7,
     CMD_CONNECT_HOTSPOT = 8,
-    CMD_DELETE_CLIP = 9
+    CMD_DELETE_CLIP = 9,
+    CMD_SET_QUALITY = 10
 };
 

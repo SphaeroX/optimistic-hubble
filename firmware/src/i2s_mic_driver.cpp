@@ -3,13 +3,14 @@
 #include <math.h>
 
 I2sMicDriver::I2sMicDriver()
-    : _initialized(false), _i2sPort(I2S_NUM_0), _dmaBuffer(nullptr), _bufferSampleCount(256) {}
+    : _initialized(false), _sampleRate(16000), _i2sPort(I2S_NUM_0), _dmaBuffer(nullptr), _bufferSampleCount(256) {}
 
 bool I2sMicDriver::begin(int sckPin, int wsPin, int sdPin, uint32_t sampleRate) {
     if (_initialized) {
         stop();
     }
 
+    _sampleRate = sampleRate;
     _bufferSampleCount = 256;
     if (_dmaBuffer == nullptr) {
         _dmaBuffer = (int32_t*)malloc(_bufferSampleCount * 2 * sizeof(int32_t)); // 2 channels (Stereo)

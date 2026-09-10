@@ -43,7 +43,7 @@ BleManager::BleManager(LedIndicator* leds)
     : _pServer(nullptr), _pService(nullptr), _pCharState(nullptr),
       _pCharAudio(nullptr), _pCharTap(nullptr), _pCharCmd(nullptr),
       _leds(leds), _connected(false), _currentState(STATE_IDLE), _pendingCmd(CMD_NONE),
-      _cmdClipId(0), _cmdOffset(0) {
+      _cmdParam(0), _cmdClipId(0), _cmdOffset(0) {
     memset(&_hotspotConfig, 0, sizeof(_hotspotConfig));
 }
 
@@ -105,6 +105,12 @@ void BleManager::handleCharacteristicWrite(NimBLECharacteristic* pCharacteristic
     _pendingCmd = (BleCommand)cmdByte;
 
     // Parse optional parameters for commands
+    if (val.size() >= 2) {
+        _cmdParam = data[1];
+    } else {
+        _cmdParam = 0;
+    }
+
     if (val.size() >= 3) {
         _cmdClipId = (uint16_t)(data[1] | (data[2] << 8));
     } else {
@@ -117,8 +123,8 @@ void BleManager::handleCharacteristicWrite(NimBLECharacteristic* pCharacteristic
         _cmdOffset = 0;
     }
 
-    Serial.printf("\n[BLE] >>> Command received: %u (Clip: %u, Offset: %lu) from %s <<<\n",
-                  cmdByte, _cmdClipId, _cmdOffset, pCharacteristic->getUUID().toString().c_str());
+    Serial.printf("\n[BLE] >>> Command received: %u (Param: %u, Clip: %u, Offset: %lu) from %s <<<\n",
+                  cmdByte, _cmdParam, _cmdClipId, _cmdOffset, pCharacteristic->getUUID().toString().c_str());
 }
 
 BleCommand BleManager::getPendingCommand() {

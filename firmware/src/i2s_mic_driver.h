@@ -21,11 +21,13 @@ public:
     bool readMetrics(StereoAudioMetrics& metrics);
     void stop();
     bool isInitialized() const { return _initialized; }
+    uint32_t getSampleRate() const { return _sampleRate; }
 
     static void formatVuBar(char* buffer, size_t maxLen, float rmsValue, float maxScale = 50000.0f, size_t barWidth = 15);
 
 private:
     bool _initialized;
+    uint32_t _sampleRate;
     i2s_port_t _i2sPort;
     int32_t* _dmaBuffer;
     size_t _bufferSampleCount;

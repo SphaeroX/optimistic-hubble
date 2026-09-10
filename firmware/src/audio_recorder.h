@@ -11,15 +11,21 @@ public:
     ~AudioRecorder();
 
     bool begin();
-    bool startRecording(uint16_t clipId);
+    bool startRecording(uint16_t clipId, AudioQuality quality = QUALITY_MEDIUM);
     bool processRecording(I2sMicDriver& mic);
     void stopRecording();
 
     bool isRecording() const { return _recording; }
     size_t getRecordedBytes() const { return _totalCompressedBytesWritten; }
     size_t getRecordedSamples() const { return _totalSamplesRecorded; }
-    uint32_t getSampleRate() const { return AUDIO_SAMPLE_RATE; }
-    float getDurationSeconds() const { return (float)_totalSamplesRecorded / (float)AUDIO_SAMPLE_RATE; }
+    AudioQuality getQuality() const { return _quality; }
+    uint32_t getSampleRate() const {
+        return (_quality == QUALITY_LOW) ? 8000 : 16000;
+    }
+    float getDurationSeconds() const {
+        uint32_t sr = getSampleRate();
+        return (sr > 0) ? ((float)_totalSamplesRecorded / (float)sr) : 0.0f;
+    }
     uint16_t getCurrentClipId() const { return _currentClipId; }
 
     void setLed(bool state);
@@ -30,14 +36,16 @@ private:
     bool _recording;
     File _activeFile;
     uint16_t _currentClipId;
+    AudioQuality _quality;
     size_t _totalCompressedBytesWritten;
     size_t _totalSamplesRecorded;
     unsigned long _recordStartTime;
 
-    // Single-Line Mono ADPCM Encoder (8 KB/s)
+    // Single-Line Mono ADPCM Encoder
     ImaAdpcm _encoder;
     bool _hasPendingNibble;
     uint8_t _pendingNibble;
+    bool _lowQualitySkipToggle;
 
     // Dual-Mic DC-Blocking Filter States (Left & Right)
     float _dcPrevXL, _dcPrevYL;
@@ -47,6 +55,6 @@ private:
     uint8_t _flashWriteBuffer[FLASH_WRITE_BUFFER_SIZE];
     size_t _flashBufferIndex;
 
-    void flushFlashBuffer();
-    void writeWavHeader(File& file, size_t adpcmDataBytes, size_t totalSamples, uint32_t sampleRate);
+    bool flushFlashBuffer();
+    void writeWavHeader(File& file, size_t dataBytes, size_t totalSamples, uint32_t sampleRate, AudioQuality quality);
 };

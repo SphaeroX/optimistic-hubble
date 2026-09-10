@@ -60,13 +60,13 @@ void pushTelemetryUpdate(DeviceState state, uint32_t audioBytes = 0) {
     ble.sendTelemetry(
         state,
         audioBytes,
-        AUDIO_SAMPLE_RATE,
+        recorder.getSampleRate(),
         4180, // 4.18V nominal
         98,   // 98%
         true, // USB Powered
         ESP.getFreeHeap(),
         storage.getUsedBytes(),
-        extFlash.isConnected() ? (uint32_t)extFlash.getCapacityBytes() : storage.getTotalBytes(),
+        storage.getTotalBytes(),
         storage.getClipCount(),
         (int16_t)(imuMetrics.accelX_g * 1000.0f),
         (int16_t)(imuMetrics.accelY_g * 1000.0f),
@@ -79,9 +79,12 @@ void pushTelemetryUpdate(DeviceState state, uint32_t audioBytes = 0) {
 void startActiveRecording() {
     power.notifyActivity();
 
+    AudioQuality quality = storage.getQuality();
+    uint32_t micRate = (quality == QUALITY_LOW) ? 8000 : AUDIO_SAMPLE_RATE;
+
     // 1. Start Stereo I2S Microphones on-demand
-    if (!stereoMic.isInitialized()) {
-        stereoMic.begin(PIN_I2S_SCK, PIN_I2S_WS, PIN_I2S_SD, AUDIO_SAMPLE_RATE);
+    if (!stereoMic.isInitialized() || stereoMic.getSampleRate() != micRate) {
+        stereoMic.begin(PIN_I2S_SCK, PIN_I2S_WS, PIN_I2S_SD, micRate);
     }
 
     // 2. Ensure IMU is in normal high-performance mode
@@ -89,11 +92,12 @@ void startActiveRecording() {
 
     // 3. Start Recording Clip and set LED indicator
     uint16_t nextId = storage.getNextClipId();
-    recorder.startRecording(nextId);
+    recorder.startRecording(nextId, quality);
     leds.setMode(ble.isConnected() ? LedMode::RECORDING_CONNECTED : LedMode::RECORDING);
     pushTelemetryUpdate(STATE_RECORDING, 0);
 
-    Serial.printf("\n[RECORD START] Clip #%u recording started!\n", nextId);
+    Serial.printf("\n[RECORD START] Clip #%u recording started (Quality: %u, Rate: %u Hz)!\n",
+                  nextId, (unsigned int)quality, (unsigned int)micRate);
 }
 
 static unsigned long postRecordingGracePeriodEnd = 0;
@@ -150,22 +154,25 @@ void setup() {
         Serial.println(F("  [WARN] IMU not found! Tap detection may be inactive."));
     }
 
-    // 4. Initialize Persistent Internal Flash Storage (LittleFS)
-    bool fsOk = storage.begin(true);
-    if (fsOk) {
-        Serial.printf("  [PASS] Internal Flash Storage ready. Existing clips: %u | Free: %u KB\n",
-                      storage.getClipCount(), (storage.getTotalBytes() - storage.getUsedBytes()) / 1024);
-    } else {
-        Serial.println(F("  [FAIL] Could not mount LittleFS Flash Storage!"));
-    }
-
-    // 5. Initialize External SPI2 Flash Storage (Winbond W25Q128 16MB)
+    // 4. Initialize External SPI2 Flash Storage (Winbond W25Q128 16MB)
     bool extFlashOk = extFlash.begin();
     if (extFlashOk) {
         Serial.printf("  [PASS] External SPI2 Flash ready: %s (%u MB)\n", 
                       extFlash.getChipName(), (unsigned int)(extFlash.getCapacityBytes() / (1024 * 1024)));
     } else {
         Serial.println(F("  [INFO] External SPI2 Flash not detected or optional."));
+    }
+
+    // 5. Initialize Storage (Mount LittleFS on 16MB External Flash if available)
+    bool fsOk = storage.begin(&extFlash, true);
+    if (fsOk) {
+        Serial.printf("  [PASS] %s ready (%u MB). Clips: %u | Free: %u KB\n",
+                      storage.isExternalFlash() ? "External 16MB SPI Flash Storage" : "Internal Flash Storage",
+                      (unsigned int)(storage.getTotalBytes() / (1024 * 1024)),
+                      (unsigned int)storage.getClipCount(),
+                      (unsigned int)((storage.getTotalBytes() - storage.getUsedBytes()) / 1024));
+    } else {
+        Serial.println(F("  [FAIL] Could not mount LittleFS Storage!"));
     }
 
     // 6. Initialize Audio Recorder
@@ -331,7 +338,20 @@ void loop() {
                               clipId, ok ? "SUCCESSFUL" : "NOT FOUND",
                               storage.getClipCount(),
                               (storage.getTotalBytes() - storage.getUsedBytes()) / 1024);
-                ble.updateState(STATE_IDLE);
+                break;
+            }
+
+            case CMD_SET_QUALITY:
+            {
+                AudioQuality newQuality = (AudioQuality)ble.getCommandParam();
+                if (newQuality <= QUALITY_LOW) {
+                    storage.setQuality(newQuality);
+                    const char* qName = (newQuality == QUALITY_HIGH) ? "High (16kHz PCM)" :
+                                        ((newQuality == QUALITY_LOW) ? "Low (8kHz ADPCM)" : "Medium (16kHz ADPCM)");
+                    Serial.printf("\n[BLE CMD] Audio Recording Quality set to %u (%s)\n",
+                                  (unsigned int)newQuality, qName);
+                    pushTelemetryUpdate(recorder.isRecording() ? STATE_RECORDING : STATE_IDLE);
+                }
                 break;
             }
 

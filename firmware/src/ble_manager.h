@@ -49,6 +49,7 @@ public:
 
     bool hasPendingCommand() const { return _pendingCmd != CMD_NONE; }
     BleCommand getPendingCommand();
+    uint8_t getCommandParam() const { return _cmdParam; }
     uint16_t getCommandClipId() const { return _cmdClipId; }
     uint32_t getCommandOffset() const { return _cmdOffset; }
     HotspotUploadConfig getHotspotUploadConfig() const { return _hotspotConfig; }
@@ -76,6 +77,7 @@ private:
     bool _connected;
     DeviceState _currentState;
     volatile BleCommand _pendingCmd;
+    uint8_t _cmdParam;
     uint16_t _cmdClipId;
     uint32_t _cmdOffset;
     HotspotUploadConfig _hotspotConfig;

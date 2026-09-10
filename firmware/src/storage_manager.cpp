@@ -1,22 +1,59 @@
 #include "storage_manager.h"
+#include "spi_flash_driver.h"
 
 StorageManager::StorageManager()
-    : _initialized(false), _nextClipId(1), _clipCount(0), _usedBytes(0), _totalBytes(0) {}
+    : _initialized(false), _isExternal(false), _nextClipId(1), _clipCount(0), _usedBytes(0), _totalBytes(0) {}
 
-bool StorageManager::begin(bool formatOnFail) {
-    if (!LittleFS.begin(formatOnFail)) {
-        Serial.println(F("[STORAGE] LittleFS mount failed!"));
-        return false;
+bool StorageManager::begin(SpiFlashDriver* extFlash, bool formatOnFail) {
+    bool mounted = false;
+
+    if (extFlash != nullptr && extFlash->isPartitionRegistered()) {
+        Serial.println(F("[STORAGE] Attempting to mount LittleFS on External 16 MB Flash (\"ext_flash\")..."));
+        mounted = LittleFS.begin(false, "/littlefs", 10, extFlash->getPartitionLabel());
+        if (!mounted && formatOnFail) {
+            Serial.println(F("[STORAGE] External LittleFS not formatted, formatting 16 MB flash now..."));
+            if (LittleFS.format()) {
+                mounted = LittleFS.begin(false, "/littlefs", 10, extFlash->getPartitionLabel());
+            }
+        }
+        if (mounted) {
+            _isExternal = true;
+            Serial.printf("[STORAGE] SUCCESS: LittleFS mounted on External 16 MB SPI Flash! Capacity: %u KB\n",
+                          (unsigned int)(LittleFS.totalBytes() / 1024));
+        } else {
+            Serial.println(F("[STORAGE] Warning: External flash mount failed. Falling back to internal flash."));
+        }
+    }
+
+    if (!mounted) {
+        Serial.println(F("[STORAGE] Mounting LittleFS on internal flash partition..."));
+        mounted = LittleFS.begin(formatOnFail);
+        _isExternal = false;
+        if (!mounted) {
+            Serial.println(F("[STORAGE] LittleFS internal mount failed!"));
+            return false;
+        }
     }
 
     _prefs.begin("dictula_store", false);
     _initialized = true;
     _totalBytes = LittleFS.totalBytes();
+    _usedBytes = LittleFS.usedBytes();
     scanExistingClips();
 
-    Serial.printf("[STORAGE] LittleFS mounted. Total: %u KB, Used: %u KB, Clips: %u, NextClipId: %u\n",
-                  getTotalBytes() / 1024, getUsedBytes() / 1024, getClipCount(), _nextClipId);
+    Serial.printf("[STORAGE] LittleFS ready (%s). Total: %u KB, Used: %u KB, Clips: %u, NextClipId: %u\n",
+                  _isExternal ? "External 16MB" : "Internal 1.9MB",
+                  (unsigned int)(getTotalBytes() / 1024), (unsigned int)(getUsedBytes() / 1024),
+                  (unsigned int)getClipCount(), (unsigned int)_nextClipId);
     return true;
+}
+
+void StorageManager::setQuality(AudioQuality quality) {
+    _prefs.putUChar("quality", (uint8_t)quality);
+}
+
+AudioQuality StorageManager::getQuality() {
+    return (AudioQuality)_prefs.getUChar("quality", (uint8_t)QUALITY_MEDIUM);
 }
 
 static int extractClipIdFromFilename(const String& rawName) {
@@ -83,11 +120,24 @@ std::vector<ClipInfo> StorageManager::listClips() {
                 info.id = (uint16_t)id;
                 snprintf(info.filename, sizeof(info.filename), "%s", name.c_str());
                 info.fileSize = file.size();
-                info.sampleRate = 16000;
-                
-                // 4-bit Mono IMA-ADPCM at 16 kHz = 8,000 bytes per second
-                size_t dataBytes = (info.fileSize > 60) ? (info.fileSize - 60) : ((info.fileSize > 44) ? (info.fileSize - 44) : 0);
-                info.duration = (float)dataBytes / 8000.0f;
+
+                // Read WAV header to determine sample rate & byte rate
+                uint32_t sampleRate = 16000;
+                uint32_t byteRate = 8000;
+                if (info.fileSize >= 44) {
+                    uint8_t hdr[44];
+                    file.seek(0);
+                    if (file.read(hdr, 44) == 44) {
+                        sampleRate = hdr[24] | (hdr[25] << 8) | (hdr[26] << 16) | (hdr[27] << 24);
+                        byteRate = hdr[28] | (hdr[29] << 8) | (hdr[30] << 16) | (hdr[31] << 24);
+                    }
+                }
+                if (byteRate == 0) byteRate = (sampleRate == 8000) ? 4000 : 8000;
+
+                size_t headerSize = (info.fileSize > 60) ? 60 : 44;
+                size_t dataBytes = (info.fileSize > headerSize) ? (info.fileSize - headerSize) : 0;
+                info.sampleRate = sampleRate;
+                info.duration = (float)dataBytes / (float)byteRate;
 
                 clips.push_back(info);
             }

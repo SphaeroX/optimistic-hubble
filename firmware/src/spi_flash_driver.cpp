@@ -1,69 +1,109 @@
 #include "spi_flash_driver.h"
 
-static const SPISettings FLASH_SPI_SETTINGS(20000000, MSBFIRST, SPI_MODE0);
-
 SpiFlashDriver::SpiFlashDriver(int8_t sck, int8_t miso, int8_t mosi, int8_t cs)
     : _sck(sck),
       _miso(miso),
       _mosi(mosi),
       _cs(cs),
       _initialized(false),
+      _busInitialized(false),
       _jedecId(0),
-      _spi(nullptr) {}
+      _chipSize(0),
+      _extChip(nullptr),
+      _partition(nullptr) {}
+
+SpiFlashDriver::~SpiFlashDriver() {
+    end();
+}
 
 bool SpiFlashDriver::begin() {
-    pinMode(_cs, OUTPUT);
-    deselect();
+    if (_initialized) return true;
 
-    if (!_spi) {
-        _spi = new SPIClass(FSPI);
-    }
-    _spi->begin(_sck, _miso, _mosi, _cs);
+    // 1. Configure and initialize SPI2 bus
+    spi_bus_config_t bus_cfg = {};
+    bus_cfg.mosi_io_num = _mosi;
+    bus_cfg.miso_io_num = _miso;
+    bus_cfg.sclk_io_num = _sck;
+    bus_cfg.quadwp_io_num = -1;
+    bus_cfg.quadhd_io_num = -1;
+    bus_cfg.max_transfer_sz = 4096;
 
-    // Wakeup in case it was in power-down mode
-    wakeup();
-    delay(5);
-
-    _jedecId = readJedecId();
-    uint8_t mfg = (_jedecId >> 16) & 0xFF;
-
-    if (mfg == 0xEF || mfg == 0xC8 || mfg == 0x20 || mfg == 0x0B) {
-        _initialized = true;
-        Serial.printf("[FLASH] External SPI2 Flash detected: %s (JEDEC: 0x%06X, %u MB)\n",
-                      getChipName(), _jedecId, (unsigned int)(getCapacityBytes() / (1024 * 1024)));
-        return true;
+    esp_err_t err = spi_bus_initialize(SPI2_HOST, &bus_cfg, SPI_DMA_CH_AUTO);
+    if (err == ESP_OK) {
+        _busInitialized = true;
+    } else if (err != ESP_ERR_INVALID_STATE) {
+        Serial.printf("[FLASH] spi_bus_initialize failed: 0x%X\n", err);
+        return false;
     }
 
-    Serial.printf("[FLASH] External SPI Flash not responding or invalid ID: 0x%06X (mfg=0x%02X)\n", 
-                  _jedecId, mfg);
-    _initialized = false;
-    return false;
+    // 2. Configure SPI flash device on bus
+    esp_flash_spi_device_config_t dev_cfg = {};
+    dev_cfg.host_id = SPI2_HOST;
+    dev_cfg.cs_io_num = _cs;
+    dev_cfg.io_mode = SPI_FLASH_SLOWRD; // Robust standard read
+    dev_cfg.speed = ESP_FLASH_20MHZ;
+    dev_cfg.cs_id = 0;
+
+    err = spi_bus_add_flash_device(&_extChip, &dev_cfg);
+    if (err != ESP_OK || !_extChip) {
+        Serial.printf("[FLASH] spi_bus_add_flash_device failed: 0x%X\n", err);
+        return false;
+    }
+
+    // 3. Initialize flash chip
+    err = esp_flash_init(_extChip);
+    if (err != ESP_OK) {
+        Serial.printf("[FLASH] esp_flash_init failed: 0x%X\n", err);
+        spi_bus_remove_flash_device(_extChip);
+        _extChip = nullptr;
+        return false;
+    }
+
+    // 4. Read JEDEC ID and probed size
+    err = esp_flash_read_id(_extChip, &_jedecId);
+    if (err != ESP_OK) {
+        Serial.printf("[FLASH] esp_flash_read_id failed: 0x%X\n", err);
+    }
+    _chipSize = _extChip->size;
+    if (_chipSize == 0) {
+        _chipSize = W25Q128_CAPACITY_BYTES;
+    }
+
+    // 5. Register partition with ESP-IDF partition table for LittleFS
+    err = esp_partition_register_external(_extChip, 0, _chipSize, "ext_flash",
+                                         ESP_PARTITION_TYPE_DATA,
+                                         ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
+                                         &_partition);
+    if (err != ESP_OK) {
+        Serial.printf("[FLASH] esp_partition_register_external failed: 0x%X\n", err);
+        _partition = nullptr;
+    }
+
+    _initialized = true;
+    Serial.printf("[FLASH] External SPI2 Flash registered: %s (JEDEC: 0x%06X, %u MB, Partition: %s)\n",
+                  getChipName(), (unsigned int)_jedecId, (unsigned int)(getCapacityBytes() / (1024 * 1024)),
+                  _partition ? "OK" : "FAILED");
+    return true;
 }
 
 void SpiFlashDriver::end() {
-    if (_spi) {
-        _spi->end();
-        delete _spi;
-        _spi = nullptr;
+    if (_partition) {
+        esp_partition_deregister_external(_partition);
+        _partition = nullptr;
     }
-    pinMode(_cs, INPUT);
+    if (_extChip) {
+        spi_bus_remove_flash_device(_extChip);
+        _extChip = nullptr;
+    }
+    if (_busInitialized) {
+        spi_bus_free(SPI2_HOST);
+        _busInitialized = false;
+    }
     _initialized = false;
 }
 
-uint32_t SpiFlashDriver::readJedecId() {
-    _spi->beginTransaction(FLASH_SPI_SETTINGS);
-    select();
-    _spi->transfer(W25Q_CMD_JEDEC_ID);
-    uint8_t b1 = _spi->transfer(0x00);
-    uint8_t b2 = _spi->transfer(0x00);
-    uint8_t b3 = _spi->transfer(0x00);
-    deselect();
-    _spi->endTransaction();
-
-    return ((uint32_t)b1 << 16) | ((uint32_t)b2 << 8) | (uint32_t)b3;
-}
-
 size_t SpiFlashDriver::getCapacityBytes() const {
+    if (_chipSize > 0) return _chipSize;
     uint8_t capCode = _jedecId & 0xFF;
     switch (capCode) {
         case 0x18: return 16UL * 1024UL * 1024UL; // W25Q128 (16MB)
@@ -89,125 +129,30 @@ const char* SpiFlashDriver::getChipName() const {
     return "Generic SPI NOR Flash";
 }
 
-uint8_t SpiFlashDriver::readStatus1() {
-    _spi->beginTransaction(FLASH_SPI_SETTINGS);
-    select();
-    _spi->transfer(W25Q_CMD_READ_STATUS_1);
-    uint8_t status = _spi->transfer(0x00);
-    deselect();
-    _spi->endTransaction();
-    return status;
-}
-
-bool SpiFlashDriver::writeEnable() {
-    _spi->beginTransaction(FLASH_SPI_SETTINGS);
-    select();
-    _spi->transfer(W25Q_CMD_WRITE_ENABLE);
-    deselect();
-    _spi->endTransaction();
-
-    uint8_t status = readStatus1();
-    return (status & W25Q_STATUS_WEL_BIT) != 0;
-}
-
-bool SpiFlashDriver::waitBusy(uint32_t timeoutMs) {
-    unsigned long start = millis();
-    while (millis() - start < timeoutMs) {
-        if ((readStatus1() & W25Q_STATUS_BUSY_BIT) == 0) {
-            return true;
-        }
-        delay(1);
-    }
-    return false;
-}
-
 bool SpiFlashDriver::read(uint32_t address, uint8_t* buffer, size_t length) {
-    if (!_initialized || !buffer || length == 0) return false;
-
-    _spi->beginTransaction(FLASH_SPI_SETTINGS);
-    select();
-    _spi->transfer(W25Q_CMD_READ_DATA);
-    _spi->transfer((address >> 16) & 0xFF);
-    _spi->transfer((address >> 8) & 0xFF);
-    _spi->transfer(address & 0xFF);
-
-    _spi->transferBytes(nullptr, buffer, length);
-
-    deselect();
-    _spi->endTransaction();
-    return true;
+    if (!_initialized || !_extChip || !buffer || length == 0) return false;
+    return esp_flash_read(_extChip, buffer, address, length) == ESP_OK;
 }
 
-bool SpiFlashDriver::writePage(uint32_t address, const uint8_t* data, size_t length) {
-    if (!_initialized || !data || length == 0 || length > W25Q_PAGE_SIZE) return false;
-
-    if (!waitBusy()) return false;
-    if (!writeEnable()) return false;
-
-    _spi->beginTransaction(FLASH_SPI_SETTINGS);
-    select();
-    _spi->transfer(W25Q_CMD_PAGE_PROGRAM);
-    _spi->transfer((address >> 16) & 0xFF);
-    _spi->transfer((address >> 8) & 0xFF);
-    _spi->transfer(address & 0xFF);
-
-    _spi->transferBytes(const_cast<uint8_t*>(data), nullptr, length);
-
-    deselect();
-    _spi->endTransaction();
-
-    return waitBusy(100);
+bool SpiFlashDriver::write(uint32_t address, const uint8_t* data, size_t length) {
+    if (!_initialized || !_extChip || !data || length == 0) return false;
+    return esp_flash_write(_extChip, data, address, length) == ESP_OK;
 }
 
-bool SpiFlashDriver::eraseSector(uint32_t address) {
-    if (!_initialized) return false;
-
-    if (!waitBusy()) return false;
-    if (!writeEnable()) return false;
-
-    _spi->beginTransaction(FLASH_SPI_SETTINGS);
-    select();
-    _spi->transfer(W25Q_CMD_SECTOR_ERASE_4K);
-    _spi->transfer((address >> 16) & 0xFF);
-    _spi->transfer((address >> 8) & 0xFF);
-    _spi->transfer(address & 0xFF);
-    deselect();
-    _spi->endTransaction();
-
-    return waitBusy(800); // 4KB sector erase typically ~45ms, max 400ms
+bool SpiFlashDriver::eraseRegion(uint32_t address, size_t length) {
+    if (!_initialized || !_extChip) return false;
+    return esp_flash_erase_region(_extChip, address, length) == ESP_OK;
 }
 
 bool SpiFlashDriver::eraseChip() {
-    if (!_initialized) return false;
-
-    if (!waitBusy()) return false;
-    if (!writeEnable()) return false;
-
-    _spi->beginTransaction(FLASH_SPI_SETTINGS);
-    select();
-    _spi->transfer(W25Q_CMD_CHIP_ERASE);
-    deselect();
-    _spi->endTransaction();
-
-    return waitBusy(100000); // Chip erase can take tens of seconds
+    if (!_initialized || !_extChip) return false;
+    return esp_flash_erase_chip(_extChip) == ESP_OK;
 }
 
 void SpiFlashDriver::sleep() {
-    if (!_initialized) return;
-    waitBusy();
-    _spi->beginTransaction(FLASH_SPI_SETTINGS);
-    select();
-    _spi->transfer(W25Q_CMD_POWER_DOWN);
-    deselect();
-    _spi->endTransaction();
+    // esp_flash driver manages power states cleanly
 }
 
 void SpiFlashDriver::wakeup() {
-    if (!_spi) return;
-    _spi->beginTransaction(FLASH_SPI_SETTINGS);
-    select();
-    _spi->transfer(W25Q_CMD_RELEASE_POWER_DOWN);
-    deselect();
-    _spi->endTransaction();
-    delayMicroseconds(50);
+    // esp_flash driver manages power states cleanly
 }

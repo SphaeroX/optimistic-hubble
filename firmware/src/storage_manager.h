@@ -3,6 +3,9 @@
 #include <LittleFS.h>
 #include <Preferences.h>
 #include <vector>
+#include "config.h"
+
+class SpiFlashDriver;
 
 struct ClipInfo {
     uint16_t id;
@@ -16,7 +19,7 @@ class StorageManager {
 public:
     StorageManager();
 
-    bool begin(bool formatOnFail = true);
+    bool begin(SpiFlashDriver* extFlash = nullptr, bool formatOnFail = true);
     bool saveWavClip(const uint8_t* pcmData, size_t pcmBytes, uint32_t sampleRate, uint16_t* clipIdOut = nullptr);
     
     std::vector<ClipInfo> listClips();
@@ -29,9 +32,14 @@ public:
     void refresh() { scanExistingClips(); }
     size_t getUsedBytes() const { return _usedBytes; }
     size_t getTotalBytes() const { return _totalBytes; }
+    bool isExternalFlash() const { return _isExternal; }
+
+    void setQuality(AudioQuality quality);
+    AudioQuality getQuality();
 
 private:
     bool _initialized;
+    bool _isExternal;
     uint16_t _nextClipId;
     size_t _clipCount;
     size_t _usedBytes;
