@@ -410,6 +410,31 @@ class RecordingsRepository with ChangeNotifier {
     }
   }
 
+  /// Deletes multiple recordings in batch and cleans up local audio files.
+  Future<void> deleteMultipleRecordings(Iterable<String> ids, {bool deleteFilesOnDisk = true}) async {
+    final idSet = ids.toSet();
+    if (idSet.isEmpty) return;
+
+    if (deleteFilesOnDisk) {
+      for (final rec in _recordings) {
+        if (idSet.contains(rec.id)) {
+          try {
+            final audioFile = File(rec.localWavPath);
+            if (await audioFile.exists()) {
+              await audioFile.delete();
+            }
+          } catch (e) {
+            debugPrint('[RecordingsRepository] Error deleting audio file: $e');
+          }
+        }
+      }
+    }
+
+    _recordings.removeWhere((r) => idSet.contains(r.id));
+    await _save();
+    notifyListeners();
+  }
+
   DictulaRecording? getRecordingById(String id) {
     try {
       return _recordings.firstWhere((r) => r.id == id);

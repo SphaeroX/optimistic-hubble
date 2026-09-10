@@ -89,6 +89,18 @@ void main() {
       expect(repo.recordings.length, 1);
       expect(repo.recordings.first.hardwareClipId, 1);
     });
+
+    test('deleteMultipleRecordings removes all targeted recordings from list', () {
+      final repo = FakeRecordingsRepository();
+      repo.addFakeRecording('rec_1');
+      repo.addFakeRecording('rec_2');
+      repo.addFakeRecording('rec_3');
+      expect(repo.recordings.length, 3);
+
+      repo.deleteMultipleRecordings({'rec_1', 'rec_3'});
+      expect(repo.recordings.length, 1);
+      expect(repo.recordings.first.id, 'rec_2');
+    });
   });
 }
 
@@ -122,5 +134,22 @@ class FakeRecordingsRepository {
       }
       return false;
     });
+  }
+
+  void addFakeRecording(String id) {
+    _recordings.add(DictulaRecording(
+      id: id,
+      title: 'Recording $id',
+      localWavPath: '/path/to/$id.wav',
+      duration: const Duration(seconds: 10),
+      fileSizeBytes: 1024,
+      recordedAt: DateTime.now(),
+      source: RecordingSource.phone,
+    ));
+  }
+
+  void deleteMultipleRecordings(Iterable<String> ids) {
+    final idSet = ids.toSet();
+    _recordings.removeWhere((r) => idSet.contains(r.id));
   }
 }

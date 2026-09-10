@@ -9,8 +9,11 @@ class RecordingCard extends StatelessWidget {
   final DictulaRecording recording;
   final RecordingGroup? group;
   final bool isPlaying;
+  final bool isSelectionMode;
+  final bool isSelected;
   final VoidCallback onPlayToggle;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final VoidCallback onPinToggle;
   final VoidCallback onShareAudio;
   final VoidCallback onShareZip;
@@ -21,8 +24,11 @@ class RecordingCard extends StatelessWidget {
     required this.recording,
     this.group,
     required this.isPlaying,
+    this.isSelectionMode = false,
+    this.isSelected = false,
     required this.onPlayToggle,
     required this.onTap,
+    this.onLongPress,
     required this.onPinToggle,
     required this.onShareAudio,
     required this.onShareZip,
@@ -32,21 +38,27 @@ class RecordingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isHardware = recording.source == RecordingSource.hardware;
+    final cardColor = isSelected
+        ? const Color(0xFF132840)
+        : (recording.isPinned ? const Color(0xFF132035) : AppTheme.cardDark);
+    final borderColor = isSelected
+        ? AppTheme.primaryCyan
+        : (recording.isPinned ? AppTheme.primaryCyan.withAlpha(120) : const Color(0xFF223046));
+    final borderWidth = (isSelected || recording.isPinned) ? 1.5 : 1.0;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      color: recording.isPinned ? const Color(0xFF132035) : AppTheme.cardDark,
+      color: cardColor,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: recording.isPinned
-              ? AppTheme.primaryCyan.withAlpha(120)
-              : const Color(0xFF223046),
-          width: recording.isPinned ? 1.5 : 1.0,
+          color: borderColor,
+          width: borderWidth,
         ),
       ),
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(14),
@@ -57,48 +69,68 @@ class RecordingCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Play / Download / Progress Circle
-                  GestureDetector(
-                    onTap: onPlayToggle,
-                    child: Container(
+                  // Play / Download / Progress Circle OR Selection Checkbox
+                  if (isSelectionMode)
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: isPlaying
-                            ? AppTheme.primaryCyan
-                            : (recording.syncState == SyncState.onDevice
-                                ? AppTheme.accentOrange.withAlpha(30)
-                                : (isHardware ? const Color(0xFF1E3A5F) : const Color(0xFF1B283C))),
+                        color: isSelected ? AppTheme.primaryCyan : const Color(0xFF162235),
                         border: Border.all(
+                          color: isSelected ? AppTheme.primaryCyan : const Color(0xFF354865),
+                          width: isSelected ? 2 : 1.5,
+                        ),
+                      ),
+                      child: Center(
+                        child: isSelected
+                            ? const Icon(Icons.check, color: Colors.black, size: 24)
+                            : null,
+                      ),
+                    )
+                  else
+                    GestureDetector(
+                      onTap: onPlayToggle,
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
                           color: isPlaying
                               ? AppTheme.primaryCyan
                               : (recording.syncState == SyncState.onDevice
-                                  ? AppTheme.accentOrange.withAlpha(120)
-                                  : const Color(0xFF2C3E58)),
+                                  ? AppTheme.accentOrange.withAlpha(30)
+                                  : (isHardware ? const Color(0xFF1E3A5F) : const Color(0xFF1B283C))),
+                          border: Border.all(
+                            color: isPlaying
+                                ? AppTheme.primaryCyan
+                                : (recording.syncState == SyncState.onDevice
+                                    ? AppTheme.accentOrange.withAlpha(120)
+                                    : const Color(0xFF2C3E58)),
+                          ),
                         ),
-                      ),
-                      child: recording.syncState == SyncState.downloading
-                          ? const Center(
-                              child: SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryCyan),
+                        child: recording.syncState == SyncState.downloading
+                            ? const Center(
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryCyan),
+                                ),
+                              )
+                            : Icon(
+                                recording.syncState == SyncState.onDevice
+                                    ? Icons.bolt
+                                    : (isPlaying ? Icons.pause : Icons.play_arrow),
+                                color: isPlaying
+                                    ? Colors.black
+                                    : (recording.syncState == SyncState.onDevice
+                                        ? AppTheme.accentOrange
+                                        : AppTheme.primaryCyan),
+                                size: 24,
                               ),
-                            )
-                          : Icon(
-                              recording.syncState == SyncState.onDevice
-                                  ? Icons.bolt
-                                  : (isPlaying ? Icons.pause : Icons.play_arrow),
-                              color: isPlaying
-                                  ? Colors.black
-                                  : (recording.syncState == SyncState.onDevice
-                                      ? AppTheme.accentOrange
-                                      : AppTheme.primaryCyan),
-                              size: 24,
-                            ),
+                      ),
                     ),
-                  ),
                   const SizedBox(width: 12),
 
                   // Title, Date, Badges
@@ -149,62 +181,63 @@ class RecordingCard extends StatelessWidget {
                     ),
                   ),
 
-                  // More Options Menu
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert, size: 20, color: AppTheme.textMuted),
-                    onSelected: (val) {
-                      if (val == 'pin') onPinToggle();
-                      if (val == 'share_audio') onShareAudio();
-                      if (val == 'share_zip') onShareZip();
-                      if (val == 'delete') onDelete();
-                    },
-                    itemBuilder: (ctx) => [
-                      PopupMenuItem(
-                        value: 'pin',
-                        child: Row(
-                          children: [
-                            Icon(
-                              recording.isPinned ? Icons.push_pin_outlined : Icons.push_pin,
-                              size: 18,
-                              color: AppTheme.primaryCyan,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(recording.isPinned ? 'Lösen' : 'Oben anpinnen'),
-                          ],
+                  // More Options Menu (hidden in selection mode)
+                  if (!isSelectionMode)
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, size: 20, color: AppTheme.textMuted),
+                      onSelected: (val) {
+                        if (val == 'pin') onPinToggle();
+                        if (val == 'share_audio') onShareAudio();
+                        if (val == 'share_zip') onShareZip();
+                        if (val == 'delete') onDelete();
+                      },
+                      itemBuilder: (ctx) => [
+                        PopupMenuItem(
+                          value: 'pin',
+                          child: Row(
+                            children: [
+                              Icon(
+                                recording.isPinned ? Icons.push_pin_outlined : Icons.push_pin,
+                                size: 18,
+                                color: AppTheme.primaryCyan,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(recording.isPinned ? 'Lösen' : 'Oben anpinnen'),
+                            ],
+                          ),
                         ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'share_audio',
-                        child: Row(
-                          children: [
-                            Icon(Icons.audiotrack, size: 18, color: AppTheme.primaryCyan),
-                            SizedBox(width: 8),
-                            Text('Audiodatei teilen'),
-                          ],
+                        const PopupMenuItem(
+                          value: 'share_audio',
+                          child: Row(
+                            children: [
+                              Icon(Icons.audiotrack, size: 18, color: AppTheme.primaryCyan),
+                              SizedBox(width: 8),
+                              Text('Audiodatei teilen'),
+                            ],
+                          ),
                         ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'share_zip',
-                        child: Row(
-                          children: [
-                            Icon(Icons.archive, size: 18, color: AppTheme.accentOrange),
-                            SizedBox(width: 8),
-                            Text('Als ZIP teilen'),
-                          ],
+                        const PopupMenuItem(
+                          value: 'share_zip',
+                          child: Row(
+                            children: [
+                              Icon(Icons.archive, size: 18, color: AppTheme.accentOrange),
+                              SizedBox(width: 8),
+                              Text('Als ZIP teilen'),
+                            ],
+                          ),
                         ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
-                          children: [
-                            Icon(Icons.delete_outline, size: 18, color: AppTheme.accentRed),
-                            SizedBox(width: 8),
-                            Text('Löschen'),
-                          ],
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete_outline, size: 18, color: AppTheme.accentRed),
+                              SizedBox(width: 8),
+                              Text('Löschen'),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                 ],
               ),
               const SizedBox(height: 10),
