@@ -9,7 +9,8 @@ enum class LedMode : uint8_t {
     WIFI_AP,
     BLE_CONNECTED,
     SYNCING,
-    ERROR
+    ERROR,
+    SERVICE_MODE
 };
 
 class LedIndicator {

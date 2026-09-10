@@ -64,6 +64,11 @@ void LedIndicator::setMode(LedMode mode) {
             writePin(_redPin, false);
             writePin(_greenPin, false);
             break;
+        case LedMode::SERVICE_MODE:
+            // Permanent Solid Green for Flash / Service Mode, Red OFF
+            writePin(_redPin, false);
+            writePin(_greenPin, true);
+            break;
         case LedMode::WIFI_AP:
         case LedMode::ERROR:
             // Handled dynamically in update()

@@ -4,6 +4,8 @@
 #include "config.h"
 #include "imu_driver.h"
 
+class SpiFlashDriver;
+
 enum WakeupSource {
     WAKEUP_COLD_BOOT = 0,
     WAKEUP_IMU_SHOCK = 1,
@@ -28,11 +30,18 @@ public:
     unsigned long getInactivityMs() const;
     bool isIdleTimeoutExpired(unsigned long timeoutMs = INACTIVITY_SLEEP_TIMEOUT_MS) const;
 
-    void enterDeepSleep(ImuDriver& imu, float shockThresholdG = IMU_WAKEUP_THRESHOLD_G);
+    // Sleep prevention & USB connection check
+    bool isUsbConnected() const;
+    void setPreventSleep(bool prevent) { _preventSleep = prevent; }
+    bool isSleepPrevented() const { return _preventSleep; }
+
+    void enterDeepSleep(ImuDriver& imu, SpiFlashDriver* extFlash = nullptr, float shockThresholdG = IMU_WAKEUP_THRESHOLD_G);
 
 private:
     WakeupSource _wakeupSource;
     unsigned long _lastActivityTime;
     esp_sleep_wakeup_cause_t _rawCause;
     uint64_t _gpioWakeupMask;
+    bool _preventSleep;
 };
+

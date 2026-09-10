@@ -38,10 +38,10 @@
 // ============================================================================
 // Ultra-Low-Power & Deep Sleep Parameters
 // ============================================================================
-#define INACTIVITY_SLEEP_TIMEOUT_MS 15000UL // 15 seconds of idle inactivity
+#define INACTIVITY_SLEEP_TIMEOUT_MS 15000UL // 15 seconds of idle inactivity before Deep Sleep
 #define WIFI_INACTIVITY_TIMEOUT_MS 120000UL // 2 minutes of idle Wi-Fi -> Stop SoftAP to save ~150 mA
 #define IMU_WAKEUP_THRESHOLD_G 1.4f         // Hardware shock acceleration threshold
-#define ENABLE_DEEP_SLEEP_AUTO false        // Deep Sleep disabled for active debugging
+#define ENABLE_DEEP_SLEEP_AUTO true         // Deep Sleep enabled for battery saving
 
 // ============================================================================
 // Audio Recording & Preamp Parameters
@@ -50,10 +50,12 @@
 #define MIC_GAIN_MULTIPLIER 8.0f // +18 dB Digital Preamp Gain (Crisp, loud & full-scale voice)
 
 // ============================================================================
-// Tap & Shock Detection Parameters
+// Tap & Double-Tap Detection Parameters
 // ============================================================================
-#define TAP_JERK_THRESHOLD_G 0.5f // Shock delta acceleration threshold in g
-#define TAP_DEBOUNCE_MS 500       // Minimum time between tap triggers (ms)
+#define TAP_JERK_THRESHOLD_G 0.55f    // Shock delta acceleration threshold in g
+#define TAP_DEBOUNCE_MS 120           // Minimum time between raw tap triggers (ms)
+#define DOUBLE_TAP_WINDOW_MIN_MS 120  // Minimum interval between 1st and 2nd tap (debounce)
+#define DOUBLE_TAP_WINDOW_MAX_MS 650  // Maximum interval between 1st and 2nd tap for valid double tap
 
 // ============================================================================
 // Wi-Fi High-Speed Audio Server Parameters

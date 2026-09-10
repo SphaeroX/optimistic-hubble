@@ -16,7 +16,7 @@
 // Global Hardware Modules
 static ImuDriver imu;
 static I2sMicDriver stereoMic;
-static TapDetector tapDetector(TAP_JERK_THRESHOLD_G, TAP_DEBOUNCE_MS);
+static TapDetector tapDetector(TAP_JERK_THRESHOLD_G, TAP_DEBOUNCE_MS, DOUBLE_TAP_WINDOW_MIN_MS, DOUBLE_TAP_WINDOW_MAX_MS);
 static LedIndicator leds(PIN_STATUS_LED, PIN_LED_GREEN);
 static AudioRecorder recorder(0xFF); // LED indicator managed exclusively by LedIndicator
 static StorageManager storage;
@@ -136,6 +136,8 @@ void setup() {
     bool imuOk = imu.begin();
     if (imuOk) {
         Serial.printf("  [PASS] Identified IMU: %s @ 0x%02X\n", imu.getChipName(), imu.getAddress());
+        // Clear any latched wake-up / tap interrupts to reset INT1 pin
+        imu.clearInterrupts();
     } else {
         Serial.println(F("  [WARN] IMU not found! Tap detection may be inactive."));
     }
@@ -172,16 +174,21 @@ void setup() {
 
     // 8. Handle Wake-up Routing & LED Sequence
     if (power.wasWokenByMotion()) {
-        Serial.println(F("  >>> Woken by SHOCK! Starting audio recording instantly..."));
-        startActiveRecording();
+        Serial.println(F("\n  >>> Woken from Deep Sleep by Tap / Shock! <<<"));
+        Serial.println(F("  >>> MCU is now AWAKE. Double-tap to START recording."));
+        Serial.println(F("  >>> (Device will return to Deep Sleep if idle for 15s)\n"));
+        // Acknowledge wake-up with quick double-blink green
+        leds.blink(PIN_LED_GREEN, 2, 70);
+        leds.setMode(LedMode::IDLE);
     } else {
         leds.bootSequence();
         leds.setMode(LedMode::IDLE);
         Serial.println(F("\n========================================================"));
         Serial.println(F("  READY:"));
-        Serial.println(F("  1. Tap device to RECORD (or wake from Deep Sleep)."));
-        Serial.println(F("  2. Tap again to STOP & SAVE (ADPCM 8 KB/s)."));
-        Serial.println(F("  3. Press BTN button or send BLE command to start Wi-Fi."));
+        Serial.println(F("  1. Tap device to WAKE from Deep Sleep."));
+        Serial.println(F("  2. Double-tap to START recording (ADPCM 8 KB/s)."));
+        Serial.println(F("  3. Double-tap again to STOP & SAVE recording."));
+        Serial.println(F("  4. Press BTN button to toggle Wi-Fi, hold 2s for Flash Mode."));
         Serial.println(F("========================================================\n"));
     }
 }
@@ -196,16 +203,17 @@ void loop() {
     if (recorder.isRecording()) {
         bool stillRecording = recorder.processRecording(stereoMic);
 
-        // Check IMU for stop tap at a clean 50 Hz interval
+        // Check IMU for stop double-tap at a clean 50 Hz interval
         if (now - lastImuPollTime >= IMU_POLL_INTERVAL_MS) {
             lastImuPollTime = now;
 
             ImuMetricData imuData;
             if (imu.readSensorData(imuData)) {
                 float shock = 0.0f;
-                if (tapDetector.update(imuData, &shock)) {
+                TapEventType tapEvt = tapDetector.update(imuData, &shock);
+                if (tapEvt == TapEventType::DOUBLE_TAP) {
                     totalTapEvents++;
-                    Serial.printf("\n[TAP DETECTED] Stop trigger! Shock: %.2f g\n", shock);
+                    Serial.printf("\n[DOUBLE TAP DETECTED] Stop trigger! Shock: %.2f g\n", shock);
                     ble.notifyTap(shock);
                     handleStopAndSave();
                 }
@@ -248,7 +256,7 @@ void loop() {
                 ble.updateState(STATE_SLEEPING);
                 leds.turnOffAll();
                 delay(100);
-                power.enterDeepSleep(imu, IMU_WAKEUP_THRESHOLD_G);
+                power.enterDeepSleep(imu, &extFlash, IMU_WAKEUP_THRESHOLD_G);
                 return;
 
             case CMD_START_RECORDING:
@@ -312,22 +320,51 @@ void loop() {
         }
     }
 
-    // 3. Check Boot Button (GPIO 9 / BTN) for Manual Wi-Fi Toggle
-    if (now - lastButtonCheckTime >= 50) {
+    // 3. Check Boot Button (GPIO 9 / BTN) for Wi-Fi Toggle (short press) or Flash Mode (long press >= 2s)
+    static unsigned long buttonPressStartTime = 0;
+    static bool buttonIsHeld = false;
+    static bool longPressHandled = false;
+
+    if (now - lastButtonCheckTime >= 20) {
         lastButtonCheckTime = now;
         bool btnState = digitalRead(PIN_BOOT_BTN);
-        if (lastButtonState == HIGH && btnState == LOW) { // Button Pressed
+        if (lastButtonState == HIGH && btnState == LOW) {
+            // Button pressed down (Active LOW)
+            buttonPressStartTime = now;
+            buttonIsHeld = true;
+            longPressHandled = false;
             power.notifyActivity();
-            if (wifiServer.isActive()) {
-                Serial.println(F("[BUTTON] Toggling Wi-Fi OFF..."));
-                wifiServer.stop();
-                leds.setMode(ble.isConnected() ? LedMode::BLE_CONNECTED : LedMode::IDLE);
-                ble.updateState(STATE_IDLE);
-            } else {
-                Serial.println(F("[BUTTON] Toggling Wi-Fi ON..."));
-                wifiServer.begin(WIFI_AP_SSID, WIFI_AP_PASS, HTTP_SERVER_PORT);
-                leds.setMode(LedMode::WIFI_AP);
-                ble.updateState(STATE_WIFI_ACTIVE);
+        } else if (lastButtonState == LOW && btnState == LOW) {
+            // Button being held down
+            if (buttonIsHeld && !longPressHandled && (now - buttonPressStartTime >= 2000)) {
+                longPressHandled = true;
+                bool newPrevent = !power.isSleepPrevented();
+                power.setPreventSleep(newPrevent);
+                Serial.printf("\n[BUTTON] Long press! Service/Flash Mode: %s\n", 
+                              newPrevent ? "ACTIVATED (Deep Sleep permanently locked off)" : "DEACTIVATED (Auto Deep Sleep restored)");
+                if (newPrevent) {
+                    leds.setMode(LedMode::SERVICE_MODE);
+                } else {
+                    leds.setMode(ble.isConnected() ? LedMode::BLE_CONNECTED : LedMode::IDLE);
+                }
+            }
+        } else if (lastButtonState == LOW && btnState == HIGH) {
+            // Button released
+            buttonIsHeld = false;
+            if (!longPressHandled) {
+                // Short press: Toggle Wi-Fi SoftAP
+                power.notifyActivity();
+                if (wifiServer.isActive()) {
+                    Serial.println(F("[BUTTON] Short press: Toggling Wi-Fi OFF..."));
+                    wifiServer.stop();
+                    leds.setMode(ble.isConnected() ? LedMode::BLE_CONNECTED : (power.isSleepPrevented() ? LedMode::SERVICE_MODE : LedMode::IDLE));
+                    ble.updateState(STATE_IDLE);
+                } else {
+                    Serial.println(F("[BUTTON] Short press: Toggling Wi-Fi ON..."));
+                    wifiServer.begin(WIFI_AP_SSID, WIFI_AP_PASS, HTTP_SERVER_PORT);
+                    leds.setMode(LedMode::WIFI_AP);
+                    ble.updateState(STATE_WIFI_ACTIVE);
+                }
             }
         }
         lastButtonState = btnState;
@@ -340,31 +377,47 @@ void loop() {
         power.notifyActivity();
     }
 
-    // 5. IDLE State: Monitor IMU for Start Tap (when not recording and awake)
+    // 5. IDLE State: Monitor IMU for Start Double-Tap (when not recording and awake)
     if (!recorder.isRecording() && (now - lastImuPollTime >= IMU_POLL_INTERVAL_MS)) {
         lastImuPollTime = now;
 
         ImuMetricData imuData;
         if (imu.readSensorData(imuData)) {
             float shock = 0.0f;
-            if (tapDetector.update(imuData, &shock)) {
+            TapEventType tapEvt = tapDetector.update(imuData, &shock);
+            if (tapEvt == TapEventType::DOUBLE_TAP) {
                 totalTapEvents++;
-                Serial.printf("\n[TAP DETECTED] Start trigger! Shock: %.2f g -> RECORDING...\n", shock);
+                Serial.printf("\n[DOUBLE TAP DETECTED] Start trigger! Shock: %.2f g -> RECORDING...\n", shock);
                 ble.notifyTap(shock);
                 startActiveRecording();
+            } else if (tapEvt == TapEventType::SINGLE_TAP) {
+                // A single tap occurred while awake: reset inactivity timer to keep device awake
+                power.notifyActivity();
+                Serial.println(F("[IMU] Single tap detected while awake. Inactivity timer extended."));
             }
         }
     }
 
-    // 6. Automatic Deep Sleep Transition (Disabled for Debugging)
+    // 6. Automatic Deep Sleep Transition
     if (ENABLE_DEEP_SLEEP_AUTO && !recorder.isRecording() && !wifiServer.isActive() && !ble.isConnected()) {
-        if (power.isIdleTimeoutExpired(INACTIVITY_SLEEP_TIMEOUT_MS)) {
-            Serial.printf("[POWER] Inactivity timeout (%u s) expired with no clients. Entering Deep Sleep...\n",
-                          (unsigned int)(INACTIVITY_SLEEP_TIMEOUT_MS / 1000));
-            ble.stop();
-            leds.turnOffAll();
-            power.enterDeepSleep(imu, IMU_WAKEUP_THRESHOLD_G);
-            return;
+        if (!power.isSleepPrevented()) {
+            if (power.isIdleTimeoutExpired(INACTIVITY_SLEEP_TIMEOUT_MS)) {
+                if (power.isUsbConnected()) {
+                    // Host PC is connected via USB CDC - do not sleep so terminal and flashing stay responsive
+                    static unsigned long lastUsbLogTime = 0;
+                    if (now - lastUsbLogTime >= 10000) {
+                        lastUsbLogTime = now;
+                        Serial.println(F("[POWER] Inactivity timeout reached, but USB connection active. Deep Sleep deferred."));
+                    }
+                } else {
+                    Serial.printf("[POWER] Inactivity timeout (%u s) expired with no active connections. Entering Deep Sleep...\n",
+                                  (unsigned int)(INACTIVITY_SLEEP_TIMEOUT_MS / 1000));
+                    ble.stop();
+                    leds.turnOffAll();
+                    power.enterDeepSleep(imu, &extFlash, IMU_WAKEUP_THRESHOLD_G);
+                    return;
+                }
+            }
         }
     }
 

@@ -37,6 +37,7 @@ public:
     // Hardware Low-Power Wake-up Interrupt Configuration for Deep Sleep
     bool configureLowPowerWakeup(float thresholdG = 1.4f);
     bool setPowerMode(bool active);
+    void clearInterrupts();
 
     ImuType getType() const { return _type; }
     uint8_t getAddress() const { return _address; }

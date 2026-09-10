@@ -22,6 +22,9 @@
 #define LSM6DS_REG_CTRL1_XL     0x10 // Accel control
 #define LSM6DS_REG_CTRL2_G      0x11 // Gyro control
 #define LSM6DS_REG_CTRL6_C      0x15 // Accel low power mode
+#define LSM6DS_REG_WAKE_UP_SRC  0x1B // Wake-up source (reading clears latched WU interrupt)
+#define LSM6DS_REG_TAP_SRC      0x1C // Tap source (reading clears latched TAP interrupt)
+#define LSM6DS_REG_STATUS_REG   0x1E // Status register
 #define LSM6DS_REG_DATA_START   0x22 // Gyro X, Y, Z (0x22-0x27), Accel X, Y, Z (0x28-0x2D)
 #define LSM6DS_REG_TAP_CFG      0x58 // Interrupt enable
 #define LSM6DS_REG_WAKE_UP_THS  0x5B // Wake-up threshold
@@ -273,6 +276,9 @@ bool ImuDriver::configureLowPowerWakeup(float thresholdG) {
         writeRegister(LSM6DS_REG_TAP_CFG, 0x81); // INTERRUPTS_ENABLE = 1, LIR = 1 (latched interrupt)
         writeRegister(LSM6DS_REG_MD1_CFG, 0x20); // INT1_WU = 1 (Wake-Up routed to INT1)
 
+        // Clear any residual triggers so INT1 starts LOW
+        clearInterrupts();
+
         Serial.printf("[IMU] LSM6DS configured for Low-Power Wake-up (~6 uA). Threshold: %.2f g (reg=0x%02X)\n", 
                       thresholdG, ths);
         return true;
@@ -327,6 +333,21 @@ bool ImuDriver::configureLowPowerWakeup(float thresholdG) {
     return false;
 }
 
+void ImuDriver::clearInterrupts() {
+    if (!_initialized) return;
+    uint8_t dummy = 0;
+    if (_type == IMU_TYPE_LSM6DS) {
+        readRegisters(LSM6DS_REG_WAKE_UP_SRC, &dummy, 1);
+        readRegisters(LSM6DS_REG_TAP_SRC, &dummy, 1);
+        readRegisters(LSM6DS_REG_STATUS_REG, &dummy, 1);
+    } else if (_type == IMU_TYPE_BMI160) {
+        readRegisters(0x1C, &dummy, 1); // INT_STATUS_0
+        readRegisters(0x1D, &dummy, 1); // INT_STATUS_1
+    } else if (_type == IMU_TYPE_MPU6050) {
+        readRegisters(0x3A, &dummy, 1); // INT_STATUS
+    }
+}
+
 bool ImuDriver::setPowerMode(bool active) {
     if (!_initialized) return false;
 
@@ -340,6 +361,7 @@ bool ImuDriver::setPowerMode(bool active) {
             delay(10);
             writeRegister(LSM6DS_REG_CTRL2_G, 0x4C);  // 104 Hz Gyro
             delay(10);
+            clearInterrupts();
             return true;
         } else if (_type == IMU_TYPE_BMI160) {
             writeRegister(BMI160_REG_INT_EN_0, 0x00);
@@ -347,12 +369,14 @@ bool ImuDriver::setPowerMode(bool active) {
             delay(10);
             writeRegister(BMI160_REG_CMD, 0x15); // Gyro normal mode
             delay(50);
+            clearInterrupts();
             return true;
         } else if (_type == IMU_TYPE_MPU6050) {
             writeRegister(MPU_REG_INT_ENABLE, 0x00);
             writeRegister(MPU_REG_PWR_MGMT_1, 0x00);
             writeRegister(MPU_REG_PWR_MGMT_2, 0x00);
             delay(10);
+            clearInterrupts();
             return true;
         }
     } else {
@@ -360,3 +384,4 @@ bool ImuDriver::setPowerMode(bool active) {
     }
     return false;
 }
+

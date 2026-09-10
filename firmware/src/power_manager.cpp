@@ -1,4 +1,5 @@
 #include "power_manager.h"
+#include "spi_flash_driver.h"
 #include <WiFi.h>
 #include <driver/rtc_io.h>
 
@@ -6,7 +7,8 @@ PowerManager::PowerManager()
     : _wakeupSource(WAKEUP_COLD_BOOT),
       _lastActivityTime(0),
       _rawCause(ESP_SLEEP_WAKEUP_UNDEFINED),
-      _gpioWakeupMask(0) {}
+      _gpioWakeupMask(0),
+      _preventSleep(false) {}
 
 void PowerManager::begin() {
     _lastActivityTime = millis();
@@ -51,7 +53,17 @@ bool PowerManager::isIdleTimeoutExpired(unsigned long timeoutMs) const {
     return (millis() - _lastActivityTime) >= timeoutMs;
 }
 
-void PowerManager::enterDeepSleep(ImuDriver& imu, float shockThresholdG) {
+bool PowerManager::isUsbConnected() const {
+    // When USB CDC is open on the host side (e.g. Serial Monitor or Flash Tool), Serial evaluates to true
+    return (bool)Serial;
+}
+
+void PowerManager::enterDeepSleep(ImuDriver& imu, SpiFlashDriver* extFlash, float shockThresholdG) {
+    if (_preventSleep) {
+        Serial.println(F("[POWER] Deep Sleep blocked by Service/Flash mode lock."));
+        return;
+    }
+
     Serial.println(F("\n========================================================"));
     Serial.println(F("  ENTERING ULTRA-LOW-POWER DEEP SLEEP (< 10 uA)..."));
     Serial.printf("  Arming IMU for shock detection (> %.2f g on GPIO 5 / INT1)\n", shockThresholdG);
@@ -65,22 +77,28 @@ void PowerManager::enterDeepSleep(ImuDriver& imu, float shockThresholdG) {
     pinMode(PIN_STATUS_LED, INPUT);
     pinMode(PIN_LED_GREEN, INPUT);
 
-    // 2. Configure IMU for ultra-low-power motion detection on INT1
+    // 2. Put external SPI Flash to deep sleep to save current
+    if (extFlash != nullptr && extFlash->isConnected()) {
+        extFlash->sleep();
+    }
+
+    // 3. Configure IMU for ultra-low-power motion detection on INT1
     if (imu.isConnected()) {
         imu.configureLowPowerWakeup(shockThresholdG);
     }
 
-    // 3. Ensure Wi-Fi radio is completely powered off
+    // 4. Ensure Wi-Fi radio is completely powered off
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     delay(20);
 
-    // 4. Configure ESP32-C3 RTC GPIO wakeup on IMU INT pin (GPIO 5, Active High)
+    // 5. Configure ESP32-C3 RTC GPIO wakeup on IMU INT pin (GPIO 5, Active High)
     pinMode(PIN_IMU_INT, INPUT_PULLDOWN);
     esp_deep_sleep_enable_gpio_wakeup(1ULL << PIN_IMU_INT, ESP_GPIO_WAKEUP_GPIO_HIGH);
 
-    // 5. Enter Deep Sleep (draws ~5-8 uA)
+    // 6. Enter Deep Sleep (draws ~5-8 uA)
     Serial.println(F("[POWER] Going to deep sleep now..."));
     Serial.flush();
     esp_deep_sleep_start();
 }
+
