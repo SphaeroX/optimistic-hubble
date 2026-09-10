@@ -12,26 +12,38 @@ void main() {
 
   group('2-Stage Plaud Note Hybrid Sync Tests', () {
     test('Clips correctly categorize into BLE Standard or WiFi Fast Transfer tier', () {
-      final smallClip = RecordingItem(
+      final defaultClip = RecordingItem(
         id: 1,
         remoteFilename: 'clip_001.wav',
-        sizeBytes: 192000, // 192 KB (< 512 KB threshold)
+        sizeBytes: 192000, // 192 KB
         duration: const Duration(seconds: 24),
         sampleRate: 16000,
         recordedAt: DateTime.now(),
       );
 
-      final largeClip = RecordingItem(
+      final explicitBleClip = RecordingItem(
         id: 2,
         remoteFilename: 'clip_002.wav',
+        sizeBytes: 192000,
+        duration: const Duration(seconds: 24),
+        sampleRate: 16000,
+        recordedAt: DateTime.now(),
+        recommendedTier: SyncTier.bleStandard,
+      );
+
+      final largeClip = RecordingItem(
+        id: 3,
+        remoteFilename: 'clip_003.wav',
         sizeBytes: 4800000, // 4.8 MB (>= 512 KB threshold)
         duration: const Duration(minutes: 10),
         sampleRate: 16000,
         recordedAt: DateTime.now(),
       );
 
-      expect(smallClip.recommendedTier, SyncTier.bleStandard);
-      expect(smallClip.isFastTransferRecommended, isFalse);
+      expect(defaultClip.recommendedTier, SyncTier.wifiFast);
+      expect(defaultClip.isFastTransferRecommended, isTrue);
+      expect(explicitBleClip.recommendedTier, SyncTier.bleStandard);
+      expect(explicitBleClip.isFastTransferRecommended, isFalse);
       expect(largeClip.recommendedTier, SyncTier.wifiFast);
       expect(largeClip.isFastTransferRecommended, isTrue);
     });
@@ -290,6 +302,28 @@ void main() {
       // Fetch clips should reset phase to none
       await manager.fetchDeviceClips();
       expect(manager.fastTransferPhase, FastTransferPhase.none);
+
+      manager.dispose();
+      bleService.dispose();
+      audioPlayer.dispose();
+    });
+
+    test('RecordingSyncManager preferWifiFastTransfer defaults to true and is togglable', () async {
+      final audioPlayer = FakeNativeAudioPlayer();
+      final bleService = BleService();
+      bleService.enableMockMode();
+      final manager = RecordingSyncManager(
+        audioPlayer: audioPlayer,
+        bleService: bleService,
+      );
+
+      expect(manager.preferWifiFastTransfer, isTrue);
+
+      manager.preferWifiFastTransfer = false;
+      expect(manager.preferWifiFastTransfer, isFalse);
+
+      manager.preferWifiFastTransfer = true;
+      expect(manager.preferWifiFastTransfer, isTrue);
 
       manager.dispose();
       bleService.dispose();

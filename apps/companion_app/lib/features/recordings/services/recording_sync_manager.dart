@@ -32,6 +32,7 @@ class RecordingSyncManager extends ChangeNotifier {
   FastTransferPhase _fastTransferPhase = FastTransferPhase.none;
   bool _autoDeleteAfterSync = true;
   bool _autoSyncOnConnect = true;
+  bool _preferWifiFastTransfer = true;
   int _autoFastTransferThresholdBytes = AppConstants.autoFastTransferThresholdBytes;
   Completer<bool>? _uploadBatchCompleter;
 
@@ -59,6 +60,7 @@ class RecordingSyncManager extends ChangeNotifier {
   FastTransferPhase get fastTransferPhase => _fastTransferPhase;
   bool get autoDeleteAfterSync => _autoDeleteAfterSync;
   bool get autoSyncOnConnect => _autoSyncOnConnect;
+  bool get preferWifiFastTransfer => _preferWifiFastTransfer;
   int get autoFastTransferThresholdBytes => _autoFastTransferThresholdBytes;
   String get deviceIp => _deviceIp;
   int get devicePort => _devicePort;
@@ -70,6 +72,11 @@ class RecordingSyncManager extends ChangeNotifier {
 
   set autoSyncOnConnect(bool val) {
     _autoSyncOnConnect = val;
+    notifyListeners();
+  }
+
+  set preferWifiFastTransfer(bool val) {
+    _preferWifiFastTransfer = val;
     notifyListeners();
   }
 
@@ -575,12 +582,17 @@ class RecordingSyncManager extends ChangeNotifier {
     final clip = _clipsMap[clipId];
     if (clip == null) return false;
 
-    // Smart routing: Large clips or explicit Wi-Fi tier trigger Fast Transfer
-    if (forcedTier == SyncTier.wifiFast || (forcedTier == null && clip.isFastTransferRecommended)) {
-      return await startFastTransfer(targetClipId: clipId);
+    // Smart routing: Prefer Wi-Fi Fast Transfer if enabled, forced, or clip recommends it
+    final shouldTryWifi = forcedTier == SyncTier.wifiFast ||
+        (forcedTier == null && (_preferWifiFastTransfer || clip.isFastTransferRecommended));
+
+    if (shouldTryWifi) {
+      final fastOk = await startFastTransfer(targetClipId: clipId);
+      if (fastOk) return true;
+      _log('Wi-Fi Fast Transfer unavailable or failed, falling back to BLE 5.0...');
     }
 
-    // Small clips / standard route: BLE 5.0 GATT / L2CAP
+    // Small clips / standard fallback route: BLE 5.0 GATT / L2CAP
     if (bleService == null || !bleService!.isConnected) {
       _errorMessage = 'Please connect to Xiao ESP32 via BLE first';
       notifyListeners();
@@ -673,15 +685,19 @@ class RecordingSyncManager extends ChangeNotifier {
   }
 
   /// Sequential Sync for all unsynced clips
-  Future<void> syncAllClips({bool forceWifiFast = false}) async {
+  Future<void> syncAllClips({bool? forceWifiFast}) async {
     final unsynced = _clipsMap.values.where((c) => c.syncState != SyncState.synced).toList();
     if (unsynced.isEmpty) return;
 
-    // Check if any clip is large enough to warrant Fast Transfer, or forced
+    // Check if Wi-Fi Fast Transfer should be used (default: true if _preferWifiFastTransfer)
     final hasLargeClips = unsynced.any((c) => c.isFastTransferRecommended);
-    if (forceWifiFast || hasLargeClips) {
-      await startFastTransfer();
-      return;
+    final shouldTryWifi = forceWifiFast == true ||
+        (forceWifiFast != false && (_preferWifiFastTransfer || hasLargeClips));
+
+    if (shouldTryWifi) {
+      final ok = await startFastTransfer();
+      if (ok) return;
+      _log('Batch Fast Transfer failed or was cancelled, falling back to sequential BLE...');
     }
 
     if (_isSyncing) return;

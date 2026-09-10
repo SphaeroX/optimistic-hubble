@@ -36,10 +36,7 @@ class RecordingItem {
     SyncTier? recommendedTier,
     this.transferSpeed,
     this.crcVerified = false,
-  }) : recommendedTier = recommendedTier ??
-            (sizeBytes >= AppConstants.autoFastTransferThresholdBytes || duration.inSeconds >= 60
-                ? SyncTier.wifiFast
-                : SyncTier.bleStandard);
+  }) : recommendedTier = recommendedTier ?? SyncTier.wifiFast;
 
   bool get isFastTransferRecommended =>
       recommendedTier == SyncTier.wifiFast || sizeBytes >= AppConstants.autoFastTransferThresholdBytes;

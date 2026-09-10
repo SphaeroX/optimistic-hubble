@@ -309,6 +309,22 @@ class _DeviceTabState extends State<DeviceTab> {
                         activeThumbColor: AppTheme.primaryCyan,
                         onChanged: (val) => widget.syncManager.autoDeleteAfterSync = val,
                       ),
+                      const Divider(color: Color(0xFF1E2A3C), height: 1),
+                      SwitchListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          'Wi-Fi Turbo Hotspot (Standard)',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: const Text(
+                          'Öffnet Handy-Hotspot für schnellen Upload (> 2.0 MB/s)',
+                          style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                        ),
+                        value: widget.syncManager.preferWifiFastTransfer,
+                        activeThumbColor: AppTheme.primaryCyan,
+                        onChanged: (val) => widget.syncManager.preferWifiFastTransfer = val,
+                      ),
                     ],
                   ),
                 ),

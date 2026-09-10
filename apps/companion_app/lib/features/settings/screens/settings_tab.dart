@@ -59,6 +59,22 @@ class _SettingsTabState extends State<SettingsTab> {
                     });
                   },
                 ),
+                const Divider(color: Color(0xFF1E2A3C), height: 1),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Wi-Fi Turbo Hotspot (Standard)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: const Text(
+                    'Öffnet Handy-Hotspot für schnellen Upload (> 2.0 MB/s) statt langsamem BLE 5.0.',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                  ),
+                  value: widget.syncManager.preferWifiFastTransfer,
+                  activeThumbColor: AppTheme.primaryCyan,
+                  onChanged: (val) {
+                    setState(() {
+                      widget.syncManager.preferWifiFastTransfer = val;
+                    });
+                  },
+                ),
               ],
             ),
           ),
