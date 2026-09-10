@@ -266,6 +266,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       groupsRepository: widget.groupsRepository,
                       geminiService: widget.geminiService,
                       audioPlayer: widget.syncManager.audioPlayer,
+                      syncManager: widget.syncManager,
+                      bleService: widget.bleService,
                       recorderController: widget.recorderController,
                       onSwitchToRecorderTab: () => setState(() => _currentTabIndex = 0),
                     ),

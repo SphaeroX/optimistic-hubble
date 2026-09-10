@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dictula/features/recordings/models/dictula_recording.dart';
+import 'package:dictula/features/recordings/models/recording_item.dart';
 import 'package:dictula/features/groups/models/recording_group.dart';
 
 void main() {
@@ -53,5 +54,73 @@ void main() {
       expect(fromJson.name, equals('Tagesberichte'));
       expect(fromJson.colorValue, equals(0xFF00E5FF));
     });
+
+    test('registerPendingHardwareClips and pruneUnsyncedHardwareClips lifecycle', () {
+      final repo = FakeRecordingsRepository();
+
+      final hwClips = [
+        RecordingItem(
+          id: 1,
+          remoteFilename: 'clip_001.wav',
+          sizeBytes: 64000,
+          duration: const Duration(seconds: 8),
+          sampleRate: 16000,
+          recordedAt: DateTime.now(),
+          syncState: SyncState.onDevice,
+        ),
+        RecordingItem(
+          id: 2,
+          remoteFilename: 'clip_002.wav',
+          sizeBytes: 128000,
+          duration: const Duration(seconds: 16),
+          sampleRate: 16000,
+          recordedAt: DateTime.now(),
+          syncState: SyncState.onDevice,
+        ),
+      ];
+
+      repo.registerPendingHardwareClips(hwClips);
+      expect(repo.recordings.length, 2);
+      expect(repo.recordings.any((r) => r.hardwareClipId == 1 && r.syncState == SyncState.onDevice), isTrue);
+      expect(repo.recordings.any((r) => r.hardwareClipId == 2 && r.syncState == SyncState.onDevice), isTrue);
+
+      // Prune if device reports only 1 clip remains
+      repo.pruneUnsyncedHardwareClips(1);
+      expect(repo.recordings.length, 1);
+      expect(repo.recordings.first.hardwareClipId, 1);
+    });
   });
+}
+
+class FakeRecordingsRepository {
+  final List<DictulaRecording> _recordings = [];
+  List<DictulaRecording> get recordings => List.unmodifiable(_recordings);
+
+  void registerPendingHardwareClips(List<RecordingItem> hwClips) {
+    for (final clip in hwClips) {
+      final existingIndex = _recordings.indexWhere((r) => r.hardwareClipId == clip.id);
+      if (existingIndex == -1) {
+        _recordings.insert(0, DictulaRecording(
+          id: 'hw_${clip.id}',
+          title: 'Hardware Aufnahme #${clip.id.toString().padLeft(3, '0')}',
+          localWavPath: clip.localWavPath ?? '',
+          duration: clip.duration,
+          fileSizeBytes: clip.sizeBytes,
+          recordedAt: clip.recordedAt,
+          source: RecordingSource.hardware,
+          hardwareClipId: clip.id,
+          syncState: clip.syncState,
+        ));
+      }
+    }
+  }
+
+  void pruneUnsyncedHardwareClips(int totalClipsOnDevice) {
+    _recordings.removeWhere((r) {
+      if (r.source == RecordingSource.hardware && r.syncState != SyncState.synced) {
+        return (r.hardwareClipId == null || r.hardwareClipId! > totalClipsOnDevice || totalClipsOnDevice == 0);
+      }
+      return false;
+    });
+  }
 }

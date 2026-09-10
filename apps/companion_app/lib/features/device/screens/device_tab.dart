@@ -5,7 +5,9 @@ import '../../../core/utils/formatters.dart';
 import '../../connection/services/ble_service.dart';
 import '../../connection/widgets/device_scanner_sheet.dart';
 import '../../debug_console/debug_log_sheet.dart';
+import '../../recordings/models/recording_item.dart';
 import '../../recordings/services/recording_sync_manager.dart';
+import '../../recordings/widgets/clip_card.dart';
 import '../../recordings/widgets/fast_transfer_sheet.dart';
 import '../../recordings/widgets/sync_progress_banner.dart';
 import '../../recordings/widgets/waveform_visualizer.dart';
@@ -31,6 +33,19 @@ class DeviceTab extends StatefulWidget {
 }
 
 class _DeviceTabState extends State<DeviceTab> {
+  bool _isRefreshing = false;
+
+  Future<void> _handleRefresh() async {
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+    try {
+      await widget.syncManager.fetchDeviceClips(showError: true);
+    } catch (e) {
+      debugPrint('[DeviceTab] Refresh error: $e');
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
+  }
   void _openDeviceScanner() {
     showModalBottomSheet(
       context: context,
@@ -50,7 +65,7 @@ class _DeviceTabState extends State<DeviceTab> {
     );
   }
 
-  void _openFastTransferSheet() {
+  void _openFastTransferSheet({int? targetClipId}) {
     if (!widget.syncManager.isSyncing) {
       widget.syncManager.resetFastTransferState();
     }
@@ -61,6 +76,7 @@ class _DeviceTabState extends State<DeviceTab> {
       builder: (_) => FastTransferSheet(
         bleService: widget.bleService,
         syncManager: widget.syncManager,
+        targetClipId: targetClipId,
       ),
     );
   }
@@ -202,7 +218,7 @@ class _DeviceTabState extends State<DeviceTab> {
               ),
               const SizedBox(height: 14),
 
-              // Action Buttons Row: Wi-Fi Turbo Sync & Auto-Sync Switch
+              // Action Buttons Row: Wi-Fi Turbo Sync, Refresh & Debug Console
               Row(
                 children: [
                   Expanded(
@@ -220,6 +236,18 @@ class _DeviceTabState extends State<DeviceTab> {
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.outlined(
+                    onPressed: _isRefreshing ? null : _handleRefresh,
+                    icon: _isRefreshing
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryCyan),
+                          )
+                        : const Icon(Icons.refresh, color: AppTheme.primaryCyan, size: 20),
+                    tooltip: 'Hardware & Telemetrie aktualisieren',
                   ),
                   const SizedBox(width: 8),
                   IconButton.outlined(
@@ -298,6 +326,54 @@ class _DeviceTabState extends State<DeviceTab> {
               ),
               const SizedBox(height: 14),
               MemoryStorageCard(telemetry: uiTelemetry),
+              const SizedBox(height: 14),
+
+              // Hardware Recordings List on ESP32 Flash
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Hardware Aufnahmen (${widget.syncManager.clips.length})',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                  if (widget.syncManager.clips.any((c) => c.syncState != SyncState.synced))
+                    TextButton.icon(
+                      onPressed: widget.syncManager.isSyncing ? null : () => widget.syncManager.syncAllClips(),
+                      icon: const Icon(Icons.download, size: 16, color: AppTheme.primaryCyan),
+                      label: const Text('Alle laden', style: TextStyle(fontSize: 12, color: AppTheme.primaryCyan)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (widget.syncManager.clips.isEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.cardDark,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF223046)),
+                  ),
+                  child: Center(
+                    child: Text(
+                      isConnected
+                          ? 'Keine Aufnahmen im Flash-Speicher gefunden.\nNimm etwas auf oder tippe auf Aktualisieren.'
+                          : 'Hardware nicht verbunden. Verbinde den XIAO ESP32, um Clips anzuzeigen.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppTheme.textMuted, fontSize: 12.5),
+                    ),
+                  ),
+                )
+              else
+                ...widget.syncManager.clips.map((clip) => ClipCard(
+                  clip: clip,
+                  isConnectedToMcu: isConnected,
+                  onPlayToggle: () => widget.syncManager.togglePlayback(clip),
+                  onDownload: () => _openFastTransferSheet(targetClipId: clip.id),
+                  onShare: () => widget.syncManager.shareClip(clip),
+                  onDeleteLocal: () => widget.syncManager.deleteClipLocally(clip.id),
+                  onDeleteRemote: () => widget.syncManager.deleteClipOnDevice(clip.id),
+                  onDeleteEverywhere: () => widget.syncManager.deleteClipEverywhere(clip.id),
+                )),
               const SizedBox(height: 14),
 
               // Format Storage Button

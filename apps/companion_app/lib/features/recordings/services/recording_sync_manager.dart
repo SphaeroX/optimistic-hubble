@@ -93,6 +93,7 @@ class RecordingSyncManager extends ChangeNotifier {
 
   @override
   void dispose() {
+    _autoSyncTimer?.cancel();
     audioPlayer.removeListener(_onAudioPlayerUpdate);
     bleService?.removeListener(_onBleUpdate);
     _nativeSyncSubscription?.cancel();
@@ -217,9 +218,29 @@ class RecordingSyncManager extends ChangeNotifier {
     }
   }
 
+  Timer? _autoSyncTimer;
+
   /// Automatically synchronizes clips registry based on real-time BLE telemetry from ESP32.
   void _onBleUpdate() {
     _syncClipsWithTelemetry();
+  }
+
+  void _checkAutoSync(int totalClipsOnDevice) {
+    if (!_autoSyncOnConnect || bleService == null || !bleService!.isConnected || _isSyncing) {
+      return;
+    }
+    final unsynced = _clipsMap.values.where((c) => c.syncState != SyncState.synced).toList();
+    if (unsynced.isEmpty) return;
+
+    _autoSyncTimer?.cancel();
+    _autoSyncTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (_autoSyncOnConnect && bleService?.isConnected == true && !_isSyncing) {
+        final pending = _clipsMap.values.where((c) => c.syncState != SyncState.synced).toList();
+        if (pending.isNotEmpty) {
+          syncAllClips();
+        }
+      }
+    });
   }
 
   /// Reconciles local recordings and remote BLE inventory into _clipsMap.
@@ -247,6 +268,9 @@ class RecordingSyncManager extends ChangeNotifier {
       for (final key in orphanedKeys) {
         _clipsMap.remove(key);
         listChanged = true;
+      }
+      if (orphanedKeys.isNotEmpty) {
+        recordingsRepository?.pruneUnsyncedHardwareClips(totalClipsOnDevice);
       }
 
       // 2. Populate / update all clips from 1 to totalClipsOnDevice
@@ -299,9 +323,15 @@ class RecordingSyncManager extends ChangeNotifier {
         }
       }
 
+      if (_clipsMap.isNotEmpty) {
+        recordingsRepository?.registerPendingHardwareClips(_clipsMap.values.toList());
+      }
+
       if (listChanged) {
         notifyListeners();
       }
+
+      _checkAutoSync(totalClipsOnDevice);
     } catch (e) {
       debugPrint('[RecordingSyncManager] Error reconciling clips with telemetry: $e');
     } finally {
@@ -374,7 +404,10 @@ class RecordingSyncManager extends ChangeNotifier {
     // 2. Reload local WAV recordings from disk
     await loadSavedLocalRecordings();
 
-    // 3. Unconditionally reconcile clips inventory with device telemetry
+    // 3. Scan repository local files to register newly saved audio files
+    await recordingsRepository?.syncWithLocalStorage();
+
+    // 4. Unconditionally reconcile clips inventory with device telemetry
     await _syncClipsWithTelemetry(force: true);
   }
 
@@ -447,6 +480,14 @@ class RecordingSyncManager extends ChangeNotifier {
             localWavPath: savedFile.path,
             crcVerified: true,
             transferSpeed: 'Verified (2.4 MB/s Wi-Fi)',
+          );
+
+          recordingsRepository?.importHardwareClip(
+            clipId: clip.id,
+            localWavPath: savedFile.path,
+            duration: clip.duration,
+            sizeBytes: syntheticWav.length,
+            recordedAt: clip.recordedAt,
           );
           notifyListeners();
         }
@@ -571,6 +612,13 @@ class RecordingSyncManager extends ChangeNotifier {
           crcVerified: true,
           transferSpeed: 'Verified (Simulated BLE)',
         );
+        recordingsRepository?.importHardwareClip(
+          clipId: clip.id,
+          localWavPath: savedFile.path,
+          duration: clip.duration,
+          sizeBytes: syntheticWav.length,
+          recordedAt: clip.recordedAt,
+        );
         _currentSyncFile = '';
         _currentSpeed = null;
         notifyListeners();
@@ -598,6 +646,14 @@ class RecordingSyncManager extends ChangeNotifier {
         localWavPath: savedFile.path,
         crcVerified: true,
         transferSpeed: 'Verified (BLE 5.0 Auto-Sync)',
+      );
+
+      recordingsRepository?.importHardwareClip(
+        clipId: clip.id,
+        localWavPath: savedFile.path,
+        duration: clip.duration,
+        sizeBytes: finalWavBytes.length,
+        recordedAt: clip.recordedAt,
       );
       _currentSyncFile = '';
       _currentSpeed = null;

@@ -48,6 +48,8 @@ Thumbs.db
 
 # Build Outputs & APKs
 output/
-*.apk
-**/recordings/
+# Audio recordings output folder
+/apps/companion_app/recordings/
+*.wav
+!**/test/**/*.wav
 
