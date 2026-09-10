@@ -118,6 +118,18 @@ class LocalStorageManager {
     return null;
   }
 
+  /// Generates a unique filename for an imported hardware clip to avoid overwriting or collision.
+  static String generateHardwareClipFilename(int clipId, [DateTime? timestamp]) {
+    final time = timestamp ?? DateTime.now();
+    return 'hw_clip_${clipId}_${time.millisecondsSinceEpoch}.wav';
+  }
+
+  /// Returns a unique target File instance for an imported hardware clip.
+  static Future<File> getTargetHardwareFile(int clipId, [DateTime? timestamp]) async {
+    final filename = generateHardwareClipFilename(clipId, timestamp);
+    return getTargetFile(filename);
+  }
+
   /// Returns the target File instance in the recordings directory, regardless of whether it already exists on disk.
   static Future<File> getTargetFile(String filename) async {
     final dir = await getRecordingsDirectory();

@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <LittleFS.h>
+#include <Preferences.h>
 #include <vector>
 
 struct ClipInfo {
@@ -24,7 +25,7 @@ public:
     bool clearAll();
 
     size_t getClipCount() const { return _clipCount; }
-    uint16_t getNextClipId() const { return _nextClipId; }
+    uint16_t getNextClipId();
     void refresh() { scanExistingClips(); }
     size_t getUsedBytes() const { return _usedBytes; }
     size_t getTotalBytes() const { return _totalBytes; }
@@ -35,6 +36,7 @@ private:
     size_t _clipCount;
     size_t _usedBytes;
     size_t _totalBytes;
+    Preferences _prefs;
 
     void scanExistingClips();
     void writeWavHeader(File& file, size_t pcmBytes, uint32_t sampleRate);

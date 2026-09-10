@@ -9,12 +9,13 @@ bool StorageManager::begin(bool formatOnFail) {
         return false;
     }
 
+    _prefs.begin("dictula_store", false);
     _initialized = true;
     _totalBytes = LittleFS.totalBytes();
     scanExistingClips();
 
-    Serial.printf("[STORAGE] LittleFS mounted. Total: %u KB, Used: %u KB, Clips: %u\n",
-                  getTotalBytes() / 1024, getUsedBytes() / 1024, getClipCount());
+    Serial.printf("[STORAGE] LittleFS mounted. Total: %u KB, Used: %u KB, Clips: %u, NextClipId: %u\n",
+                  getTotalBytes() / 1024, getUsedBytes() / 1024, getClipCount(), _nextClipId);
     return true;
 }
 
@@ -28,27 +29,41 @@ static int extractClipIdFromFilename(const String& rawName) {
 }
 
 void StorageManager::scanExistingClips() {
-    _nextClipId = 1;
     _clipCount = 0;
-    if (!_initialized) return;
+    uint16_t maxOnDisk = 0;
 
-    File root = LittleFS.open("/");
-    if (!root || !root.isDirectory()) return;
-
-    File file = root.openNextFile();
-    while (file) {
-        String name = file.name();
-        if (name.indexOf("clip_") != -1 && name.endsWith(".wav")) {
-            _clipCount++;
-            int id = extractClipIdFromFilename(name);
-            if (id >= _nextClipId) {
-                _nextClipId = id + 1;
+    if (_initialized) {
+        File root = LittleFS.open("/");
+        if (root && root.isDirectory()) {
+            File file = root.openNextFile();
+            while (file) {
+                String name = file.name();
+                if (name.indexOf("clip_") != -1 && name.endsWith(".wav")) {
+                    _clipCount++;
+                    int id = extractClipIdFromFilename(name);
+                    if (id > (int)maxOnDisk) {
+                        maxOnDisk = (uint16_t)id;
+                    }
+                }
+                file = root.openNextFile();
             }
         }
-        file = root.openNextFile();
+        _usedBytes = LittleFS.usedBytes();
+        _totalBytes = LittleFS.totalBytes();
     }
-    _usedBytes = LittleFS.usedBytes();
-    _totalBytes = LittleFS.totalBytes();
+
+    uint16_t lastSavedId = _prefs.getUShort("last_id", 0);
+    uint16_t baseId = (maxOnDisk > lastSavedId) ? maxOnDisk : lastSavedId;
+    _nextClipId = baseId + 1;
+    if (_nextClipId == 0) _nextClipId = 1;
+}
+
+uint16_t StorageManager::getNextClipId() {
+    uint16_t id = _nextClipId;
+    _prefs.putUShort("last_id", id);
+    _nextClipId++;
+    if (_nextClipId == 0) _nextClipId = 1;
+    return id;
 }
 
 std::vector<ClipInfo> StorageManager::listClips() {
@@ -174,9 +189,10 @@ bool StorageManager::clearAll() {
         LittleFS.remove(path);
     }
 
+    _prefs.putUShort("last_id", 0);
     _nextClipId = 1;
     _clipCount = 0;
     _usedBytes = LittleFS.usedBytes();
-    Serial.println(F("[STORAGE] Cleared all audio clips from Flash."));
+    Serial.println(F("[STORAGE] Cleared all audio clips from Flash and reset clip ID."));
     return true;
 }

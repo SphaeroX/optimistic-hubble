@@ -267,17 +267,25 @@ class RecordingSyncManager extends ChangeNotifier {
       _lastKnownClipCount = totalClipsOnDevice;
       bool listChanged = false;
 
-      // 1. Clean up unsynced clips whose ID exceeds the device's actual clip count
-      final orphanedKeys = _clipsMap.entries
-          .where((e) => e.value.syncState != SyncState.synced && (totalClipsOnDevice == 0 || e.key > totalClipsOnDevice))
-          .map((e) => e.key)
-          .toList();
-      for (final key in orphanedKeys) {
-        _clipsMap.remove(key);
-        listChanged = true;
-      }
-      if (orphanedKeys.isNotEmpty) {
-        recordingsRepository?.pruneUnsyncedHardwareClips(totalClipsOnDevice);
+      // 1. If device has no clips, clear inventory; otherwise prune orphaned clip IDs
+      if (totalClipsOnDevice == 0) {
+        if (_clipsMap.isNotEmpty) {
+          _clipsMap.clear();
+          listChanged = true;
+        }
+        recordingsRepository?.pruneUnsyncedHardwareClips(0);
+      } else {
+        final orphanedKeys = _clipsMap.entries
+            .where((e) => e.key > totalClipsOnDevice)
+            .map((e) => e.key)
+            .toList();
+        for (final key in orphanedKeys) {
+          _clipsMap.remove(key);
+          listChanged = true;
+        }
+        if (orphanedKeys.isNotEmpty) {
+          recordingsRepository?.pruneUnsyncedHardwareClips(totalClipsOnDevice);
+        }
       }
 
       // 2. Populate / update all clips from 1 to totalClipsOnDevice
@@ -290,33 +298,21 @@ class RecordingSyncManager extends ChangeNotifier {
       for (int i = 1; i <= totalClipsOnDevice; i++) {
         final existing = _clipsMap[i];
 
-        // Check local disk for both clip_001.wav and clip_1.wav
-        final localFile = await LocalStorageManager.getLocalFile('clip_${i.toString().padLeft(3, '0')}.wav');
-        final isLocal = localFile != null && localFile.existsSync();
-
         if (existing == null) {
           _clipsMap[i] = RecordingItem(
             id: i,
             remoteFilename: 'clip_${i.toString().padLeft(3, '0')}.wav',
-            sizeBytes: isLocal ? localFile.lengthSync() : estimatedBytes,
+            sizeBytes: estimatedBytes,
             duration: Duration(milliseconds: (durSec * 1000).round()),
             sampleRate: 16000,
-            recordedAt: isLocal ? localFile.lastModifiedSync() : DateTime.now(),
-            syncState: isLocal ? SyncState.synced : SyncState.onDevice,
-            downloadProgress: isLocal ? 1.0 : 0.0,
-            localWavPath: isLocal ? localFile.path : null,
-            crcVerified: isLocal,
+            recordedAt: DateTime.now(),
+            syncState: SyncState.onDevice,
+            downloadProgress: 0.0,
+            localWavPath: null,
+            crcVerified: false,
           );
           listChanged = true;
-        } else if (isLocal && existing.syncState != SyncState.synced) {
-          _clipsMap[i] = existing.copyWith(
-            syncState: SyncState.synced,
-            downloadProgress: 1.0,
-            localWavPath: localFile.path,
-            crcVerified: true,
-          );
-          listChanged = true;
-        } else if (!isLocal && existing.syncState == SyncState.synced && existing.localWavPath != null) {
+        } else if (existing.syncState == SyncState.synced && existing.localWavPath != null) {
           final f = File(existing.localWavPath!);
           if (!f.existsSync()) {
             _clipsMap[i] = existing.copyWith(
@@ -331,7 +327,10 @@ class RecordingSyncManager extends ChangeNotifier {
       }
 
       if (_clipsMap.isNotEmpty) {
-        recordingsRepository?.registerPendingHardwareClips(_clipsMap.values.toList());
+        final unsynced = _clipsMap.values.where((c) => c.syncState != SyncState.synced).toList();
+        if (unsynced.isNotEmpty) {
+          recordingsRepository?.registerPendingHardwareClips(unsynced);
+        }
       }
 
       if (listChanged) {
@@ -356,38 +355,29 @@ class RecordingSyncManager extends ChangeNotifier {
   Future<void> loadSavedLocalRecordings() async {
     try {
       final List<File> savedFiles = await LocalStorageManager.listSavedWavFiles();
-
-      for (int i = 0; i < savedFiles.length; i++) {
-        var file = savedFiles[i];
+      for (var file in savedFiles) {
         // Ensure any legacy or newly downloaded file is standard 16-bit Linear PCM
-        file = await AdpcmDecoder.ensureFileIsLinearPcmWav(file);
-
-        final size = file.lengthSync();
-        final durSec = size > 44 ? ((size - 44) / 32000.0) : 0.0;
-        final name = file.uri.pathSegments.last;
-
-        int id = i + 1;
-        final match = RegExp(r'clip_(\d+)').firstMatch(name);
-        if (match != null) {
-          id = int.tryParse(match.group(1)!) ?? (i + 1);
-        }
-
-        final existing = _clipsMap[id];
-        _clipsMap[id] = RecordingItem(
-          id: id,
-          remoteFilename: name,
-          sizeBytes: size,
-          duration: Duration(milliseconds: (durSec * 1000).round()),
-          sampleRate: 16000,
-          recordedAt: file.lastModifiedSync(),
-          syncState: SyncState.synced,
-          downloadProgress: 1.0,
-          localWavPath: file.path,
-          crcVerified: true,
-          isPlaying: existing?.isPlaying ?? false,
-        );
+        await AdpcmDecoder.ensureFileIsLinearPcmWav(file);
       }
-      notifyListeners();
+
+      bool changed = false;
+      for (final entry in _clipsMap.entries) {
+        final clip = entry.value;
+        if (clip.syncState == SyncState.synced && clip.localWavPath != null) {
+          if (!File(clip.localWavPath!).existsSync()) {
+            _clipsMap[entry.key] = clip.copyWith(
+              syncState: SyncState.onDevice,
+              downloadProgress: 0.0,
+              localWavPath: null,
+              crcVerified: false,
+            );
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        notifyListeners();
+      }
     } catch (e) {
       debugPrint('[RecordingSyncManager] Error loading local recordings: $e');
     }
@@ -476,8 +466,9 @@ class RecordingSyncManager extends ChangeNotifier {
           final syntheticWav = _generateSyntheticAudioWav(
             durationSeconds: clip.duration.inSeconds > 0 ? clip.duration.inSeconds : 6,
           );
+          final uniqueFilename = LocalStorageManager.generateHardwareClipFilename(clip.id, clip.recordedAt);
           final savedFile = await LocalStorageManager.saveWavFile(
-            filename: 'clip_${clip.id}.wav',
+            filename: uniqueFilename,
             wavBytes: syntheticWav,
           );
 
@@ -613,8 +604,9 @@ class RecordingSyncManager extends ChangeNotifier {
         final syntheticWav = _generateSyntheticAudioWav(
           durationSeconds: clip.duration.inSeconds > 0 ? clip.duration.inSeconds : 5,
         );
+        final uniqueFilename = LocalStorageManager.generateHardwareClipFilename(clip.id, clip.recordedAt);
         final savedFile = await LocalStorageManager.saveWavFile(
-          filename: 'clip_${clip.id}.wav',
+          filename: uniqueFilename,
           wavBytes: syntheticWav,
         );
         _clipsMap[clipId] = _clipsMap[clipId]!.copyWith(
@@ -647,8 +639,9 @@ class RecordingSyncManager extends ChangeNotifier {
         defaultSampleRate: clip.sampleRate,
       );
 
+      final uniqueFilename = LocalStorageManager.generateHardwareClipFilename(clip.id, clip.recordedAt);
       final savedFile = await LocalStorageManager.saveWavFile(
-        filename: 'clip_${clip.id}.wav',
+        filename: uniqueFilename,
         wavBytes: finalWavBytes,
       );
 

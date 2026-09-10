@@ -135,8 +135,12 @@ class RecordingsRepository with ChangeNotifier {
     bool changed = false;
     for (final clip in hwClips) {
       final existingIndex = _recordings.indexWhere(
-        (r) => r.hardwareClipId == clip.id ||
-            (clip.localWavPath != null && r.localWavPath == clip.localWavPath),
+        (r) => (r.source == RecordingSource.hardware &&
+                r.syncState != SyncState.synced &&
+                r.hardwareClipId == clip.id) ||
+            (clip.localWavPath != null &&
+                clip.localWavPath!.isNotEmpty &&
+                r.localWavPath == clip.localWavPath),
       );
 
       if (existingIndex == -1) {
@@ -259,7 +263,10 @@ class RecordingsRepository with ChangeNotifier {
     final points = await AudioEditorService.extractWaveformPoints(file);
 
     final existingIndex = _recordings.indexWhere(
-      (r) => r.hardwareClipId == clipId || r.localWavPath == localWavPath,
+      (r) => (r.source == RecordingSource.hardware &&
+              r.syncState != SyncState.synced &&
+              r.hardwareClipId == clipId) ||
+          (localWavPath.isNotEmpty && r.localWavPath == localWavPath),
     );
 
     if (existingIndex != -1) {

@@ -126,12 +126,12 @@ class EmbeddedAudioUploadServer {
 
     debugPrint('[EmbeddedAudioServer] Receiving upload for Clip #$clipId (Expected: $expectedLength bytes)');
 
-    final targetFile = await LocalStorageManager.getTargetFile('clip_$clipId.wav');
+    final startTime = DateTime.now();
+    final targetFile = await LocalStorageManager.getTargetHardwareFile(clipId, startTime);
     final tempFile = File('${targetFile.path}.part');
 
     IOSink? sink;
     int bytesReceived = 0;
-    final startTime = DateTime.now();
 
     _progressController.add(SyncProgressEvent(
       status: 'transferring',

@@ -90,6 +90,78 @@ void main() {
       expect(repo.recordings.first.hardwareClipId, 1);
     });
 
+    test('New recordings on MCU with reused IDs do not collide with existing synced recordings', () {
+      final repo = FakeRecordingsRepository();
+
+      // Session 1: MCU has clip 1
+      repo.registerPendingHardwareClips([
+        RecordingItem(
+          id: 1,
+          remoteFilename: 'clip_001.wav',
+          sizeBytes: 64000,
+          duration: const Duration(seconds: 8),
+          sampleRate: 16000,
+          recordedAt: DateTime(2026, 9, 9, 10, 0),
+          syncState: SyncState.onDevice,
+        ),
+      ]);
+      expect(repo.recordings.length, 1);
+      expect(repo.recordings.first.syncState, SyncState.onDevice);
+
+      // Session 1: Clip 1 is imported to unique path and marked synced
+      repo.importHardwareClip(
+        clipId: 1,
+        localWavPath: '/recordings/hw_clip_1_1000.wav',
+        duration: const Duration(seconds: 8),
+        sizeBytes: 64000,
+        recordedAt: DateTime(2026, 9, 9, 10, 0),
+      );
+      expect(repo.recordings.length, 1);
+      expect(repo.recordings.first.syncState, SyncState.synced);
+      expect(repo.recordings.first.localWavPath, '/recordings/hw_clip_1_1000.wav');
+
+      // Session 1: MCU deletes clip -> 0 clips on MCU
+      repo.pruneUnsyncedHardwareClips(0);
+      expect(repo.recordings.length, 1);
+      expect(repo.recordings.first.syncState, SyncState.synced);
+
+      // Session 2: User records new audio on MCU. LittleFS was empty so MCU gives it ID 1 again!
+      repo.registerPendingHardwareClips([
+        RecordingItem(
+          id: 1,
+          remoteFilename: 'clip_001.wav',
+          sizeBytes: 96000,
+          duration: const Duration(seconds: 12),
+          sampleRate: 16000,
+          recordedAt: DateTime(2026, 9, 10, 12, 0),
+          syncState: SyncState.onDevice,
+        ),
+      ]);
+
+      // Both recordings must coexist: the old synced recording AND the new onDevice pending recording!
+      expect(repo.recordings.length, 2);
+      final syncedOld = repo.recordings.firstWhere((r) => r.syncState == SyncState.synced);
+      final pendingNew = repo.recordings.firstWhere((r) => r.syncState == SyncState.onDevice);
+      expect(syncedOld.localWavPath, '/recordings/hw_clip_1_1000.wav');
+      expect(pendingNew.syncState, SyncState.onDevice);
+
+      // Session 2: Import the new clip to its own unique path
+      repo.importHardwareClip(
+        clipId: 1,
+        localWavPath: '/recordings/hw_clip_1_2000.wav',
+        duration: const Duration(seconds: 12),
+        sizeBytes: 96000,
+        recordedAt: DateTime(2026, 9, 10, 12, 0),
+      );
+
+      // Both recordings are now synced with their separate paths and durations
+      expect(repo.recordings.length, 2);
+      expect(repo.recordings.every((r) => r.syncState == SyncState.synced), isTrue);
+      final paths = repo.recordings.map((r) => r.localWavPath).toSet();
+      expect(paths.contains('/recordings/hw_clip_1_1000.wav'), isTrue);
+      expect(paths.contains('/recordings/hw_clip_1_2000.wav'), isTrue);
+    });
+
     test('deleteMultipleRecordings removes all targeted recordings from list', () {
       final repo = FakeRecordingsRepository();
       repo.addFakeRecording('rec_1');
@@ -110,10 +182,17 @@ class FakeRecordingsRepository {
 
   void registerPendingHardwareClips(List<RecordingItem> hwClips) {
     for (final clip in hwClips) {
-      final existingIndex = _recordings.indexWhere((r) => r.hardwareClipId == clip.id);
+      final existingIndex = _recordings.indexWhere(
+        (r) => (r.source == RecordingSource.hardware &&
+                r.syncState != SyncState.synced &&
+                r.hardwareClipId == clip.id) ||
+            (clip.localWavPath != null &&
+                clip.localWavPath!.isNotEmpty &&
+                r.localWavPath == clip.localWavPath),
+      );
       if (existingIndex == -1) {
         _recordings.insert(0, DictulaRecording(
-          id: 'hw_${clip.id}',
+          id: 'hw_${clip.id}_${clip.recordedAt.millisecondsSinceEpoch}',
           title: 'Hardware Aufnahme #${clip.id.toString().padLeft(3, '0')}',
           localWavPath: clip.localWavPath ?? '',
           duration: clip.duration,
@@ -124,6 +203,43 @@ class FakeRecordingsRepository {
           syncState: clip.syncState,
         ));
       }
+    }
+  }
+
+  void importHardwareClip({
+    required int clipId,
+    required String localWavPath,
+    required Duration duration,
+    required int sizeBytes,
+    DateTime? recordedAt,
+  }) {
+    final now = recordedAt ?? DateTime.now();
+    final existingIndex = _recordings.indexWhere(
+      (r) => (r.source == RecordingSource.hardware &&
+              r.syncState != SyncState.synced &&
+              r.hardwareClipId == clipId) ||
+          (localWavPath.isNotEmpty && r.localWavPath == localWavPath),
+    );
+
+    if (existingIndex != -1) {
+      _recordings[existingIndex] = _recordings[existingIndex].copyWith(
+        localWavPath: localWavPath,
+        duration: duration,
+        fileSizeBytes: sizeBytes,
+        syncState: SyncState.synced,
+      );
+    } else {
+      _recordings.insert(0, DictulaRecording(
+        id: 'hw_${clipId}_${now.millisecondsSinceEpoch}',
+        title: 'Hardware Aufnahme #$clipId',
+        localWavPath: localWavPath,
+        duration: duration,
+        fileSizeBytes: sizeBytes,
+        recordedAt: now,
+        source: RecordingSource.hardware,
+        hardwareClipId: clipId,
+        syncState: SyncState.synced,
+      ));
     }
   }
 
