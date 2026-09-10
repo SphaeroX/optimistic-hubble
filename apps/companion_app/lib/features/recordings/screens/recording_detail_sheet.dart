@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:open_file/open_file.dart';
 import '../../../core/audio/native_audio_player.dart';
+import '../../../core/services/audio_share_service.dart';
 import '../../../core/services/zip_export_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
@@ -180,6 +181,25 @@ class _RecordingDetailSheetState extends State<RecordingDetailSheet> with Single
     if (!success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Fehler beim Exportieren des ZIP-Archivs.')),
+      );
+    }
+  }
+
+  Future<void> _handleShareAudio() async {
+    final rec = _recording;
+    if (rec == null) return;
+
+    final result = await AudioShareService.shareAudio(
+      filePath: rec.localWavPath,
+      title: rec.title,
+    );
+
+    if (!result.success && mounted && result.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.errorMessage!),
+          backgroundColor: AppTheme.accentRed,
+        ),
       );
     }
   }
@@ -523,39 +543,7 @@ class _RecordingDetailSheetState extends State<RecordingDetailSheet> with Single
                         ),
                       ),
 
-                    const SizedBox(height: 18),
-
-                    // Gemini AI Section Header & TabBar
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.auto_awesome, color: AppTheme.accentGreen, size: 20),
-                            SizedBox(width: 8),
-                            Text('Gemini KI & Transkript', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                        if (!rec.hasTranscription)
-                          ElevatedButton.icon(
-                            onPressed: _isTranscribing ? null : _handleTranscribe,
-                            icon: _isTranscribing
-                                ? const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                                  )
-                                : const Icon(Icons.auto_awesome, size: 16),
-                            label: Text(_isTranscribing ? 'Transkribiert...' : 'Transkribieren'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.accentGreen,
-                              foregroundColor: Colors.black,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 14),
 
                     // AI Transkript & Chat Container
                     Container(
@@ -653,32 +641,42 @@ class _RecordingDetailSheetState extends State<RecordingDetailSheet> with Single
                     ),
                     const SizedBox(height: 20),
 
-                    // Action Buttons Row: Pin, ZIP Export, Delete
+                    // Action Buttons Row: Pin, Audio Share, ZIP Export
                     Row(
                       children: [
+                        IconButton.outlined(
+                          onPressed: () => widget.repository.togglePin(rec.id),
+                          icon: Icon(
+                            rec.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                            color: AppTheme.primaryCyan,
+                            size: 19,
+                          ),
+                          tooltip: rec.isPinned ? 'Oben lösen' : 'Oben anpinnen',
+                          style: IconButton.styleFrom(
+                            side: const BorderSide(color: AppTheme.primaryCyan),
+                            padding: const EdgeInsets.all(12),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => widget.repository.togglePin(rec.id),
-                            icon: Icon(
-                              rec.isPinned ? Icons.push_pin_outlined : Icons.push_pin,
-                              color: AppTheme.primaryCyan,
-                            ),
-                            label: Text(rec.isPinned ? 'Lösen' : 'Anpinnen'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppTheme.primaryCyan,
-                              side: const BorderSide(color: AppTheme.primaryCyan),
+                          child: ElevatedButton.icon(
+                            onPressed: _handleShareAudio,
+                            icon: const Icon(Icons.share, color: Colors.black, size: 17),
+                            label: const Text('Audio teilen', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black, fontSize: 13)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryCyan,
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                         Expanded(
-                          child: ElevatedButton.icon(
+                          child: OutlinedButton.icon(
                             onPressed: _handleExportZip,
-                            icon: const Icon(Icons.archive, color: Colors.black),
-                            label: const Text('Als ZIP teilen', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.accentOrange,
+                            icon: const Icon(Icons.archive, color: AppTheme.accentOrange, size: 17),
+                            label: const Text('Als ZIP', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.accentOrange, fontSize: 13)),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: AppTheme.accentOrange),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                           ),

@@ -53,7 +53,7 @@ class DeviceTelemetry {
       freeHeapBytes: null,
       totalHeapBytes: 327680,
       usedStorageBytes: null,
-      totalStorageBytes: 1966080,
+      totalStorageBytes: 16777216,
       totalClips: 0,
       accelX: null,
       accelY: null,

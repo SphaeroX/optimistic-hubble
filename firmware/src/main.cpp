@@ -64,7 +64,7 @@ void pushTelemetryUpdate(DeviceState state, uint32_t audioBytes = 0) {
         true, // USB Powered
         ESP.getFreeHeap(),
         storage.getUsedBytes(),
-        storage.getTotalBytes(),
+        extFlash.isConnected() ? (uint32_t)extFlash.getCapacityBytes() : storage.getTotalBytes(),
         storage.getClipCount(),
         (int16_t)(imuMetrics.accelX_g * 1000.0f),
         (int16_t)(imuMetrics.accelY_g * 1000.0f),

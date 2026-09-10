@@ -12,6 +12,7 @@ class RecordingCard extends StatelessWidget {
   final VoidCallback onPlayToggle;
   final VoidCallback onTap;
   final VoidCallback onPinToggle;
+  final VoidCallback onShareAudio;
   final VoidCallback onShareZip;
   final VoidCallback onDelete;
 
@@ -23,6 +24,7 @@ class RecordingCard extends StatelessWidget {
     required this.onPlayToggle,
     required this.onTap,
     required this.onPinToggle,
+    required this.onShareAudio,
     required this.onShareZip,
     required this.onDelete,
   });
@@ -152,7 +154,8 @@ class RecordingCard extends StatelessWidget {
                     icon: const Icon(Icons.more_vert, size: 20, color: AppTheme.textMuted),
                     onSelected: (val) {
                       if (val == 'pin') onPinToggle();
-                      if (val == 'share') onShareZip();
+                      if (val == 'share_audio') onShareAudio();
+                      if (val == 'share_zip') onShareZip();
                       if (val == 'delete') onDelete();
                     },
                     itemBuilder: (ctx) => [
@@ -171,7 +174,17 @@ class RecordingCard extends StatelessWidget {
                         ),
                       ),
                       const PopupMenuItem(
-                        value: 'share',
+                        value: 'share_audio',
+                        child: Row(
+                          children: [
+                            Icon(Icons.audiotrack, size: 18, color: AppTheme.primaryCyan),
+                            SizedBox(width: 8),
+                            Text('Audiodatei teilen'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'share_zip',
                         child: Row(
                           children: [
                             Icon(Icons.archive, size: 18, color: AppTheme.accentOrange),

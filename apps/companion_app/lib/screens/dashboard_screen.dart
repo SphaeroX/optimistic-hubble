@@ -323,7 +323,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       freeHeapBytes: telem.freeHeapBytes,
       totalHeapBytes: telem.totalHeapBytes ?? 327680,
       usedStorageBytes: telem.usedStorageBytes,
-      totalStorageBytes: telem.totalStorageBytes ?? 1966080,
+      totalStorageBytes: telem.totalStorageBytes ?? 16777216,
       accelX: telem.accelX,
       accelY: telem.accelY,
       accelZ: telem.accelZ,

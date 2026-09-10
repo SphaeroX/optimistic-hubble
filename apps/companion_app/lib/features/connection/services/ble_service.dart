@@ -827,7 +827,7 @@ class BleService extends ChangeNotifier {
       isCharging: true,
       freeHeapBytes: 194560,
       usedStorageBytes: 420 * 1024,
-      totalStorageBytes: 1966080,
+      totalStorageBytes: 16777216,
       totalClips: 4,
       motionMagnitude: 1.00,
       accelX: 0.01,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/audio/native_audio_player.dart';
+import '../../../core/services/audio_share_service.dart';
 import '../../../core/services/zip_export_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../ai_gemini/services/gemini_service.dart';
@@ -147,6 +148,22 @@ class _RecordingsTabState extends State<RecordingsTab> {
     if (!success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Fehler beim Exportieren des ZIP-Archivs.')),
+      );
+    }
+  }
+
+  Future<void> _handleShareAudio(DictulaRecording rec) async {
+    final result = await AudioShareService.shareAudio(
+      filePath: rec.localWavPath,
+      title: rec.title,
+    );
+
+    if (!result.success && mounted && result.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.errorMessage!),
+          backgroundColor: AppTheme.accentRed,
+        ),
       );
     }
   }
@@ -398,6 +415,7 @@ class _RecordingsTabState extends State<RecordingsTab> {
                                 }
                               },
                               onPinToggle: () => widget.repository.togglePin(rec.id),
+                              onShareAudio: () => _handleShareAudio(rec),
                               onShareZip: () => _handleShareZip(rec),
                               onDelete: () => _handleDelete(rec),
                             );
