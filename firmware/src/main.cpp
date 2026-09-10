@@ -96,11 +96,17 @@ void startActiveRecording() {
     Serial.printf("\n[RECORD START] Clip #%u recording started!\n", nextId);
 }
 
+static unsigned long postRecordingGracePeriodEnd = 0;
+
 void handleStopAndSave() {
     recorder.stopRecording();
     
     // Stop I2S to save microphone power
     stereoMic.stop();
+
+    // Prevent immediate return to deep sleep: guarantee 15s awake after recording stops
+    postRecordingGracePeriodEnd = millis() + 15000UL;
+    power.notifyActivity();
 
     // Update LED mode according to current connectivity
     leds.setMode(wifiServer.isActive() ? LedMode::WIFI_AP : (ble.isConnected() ? LedMode::BLE_CONNECTED : LedMode::IDLE));
@@ -111,9 +117,9 @@ void handleStopAndSave() {
 
     Serial.printf("\n[RECORD STOP] Clip #%u saved! Total in Flash: %u (Free: %u KB)\n", 
                   clipId, totalClips, (storage.getTotalBytes() - storage.getUsedBytes()) / 1024);
+    Serial.println(F("[POWER] Post-recording 15s stay-awake grace period started."));
 
     pushTelemetryUpdate(STATE_DONE, 0);
-    power.notifyActivity();
 }
 
 void setup() {
@@ -176,20 +182,31 @@ void setup() {
 
     // 8. Handle Wake-up Routing & LED Sequence
     if (power.wasWokenByMotion()) {
-        Serial.println(F("\n  >>> Woken from Deep Sleep by Double-Tap! <<<"));
-        Serial.println(F("  >>> MCU is now AWAKE (IDLE). Shake device to START recording."));
-        Serial.println(F("  >>> (Device will return to Deep Sleep if idle for 15s)\n"));
-        // Acknowledge wake-up with quick double-blink green
-        leds.blink(PIN_LED_GREEN, 2, 70);
-        leds.setMode(LedMode::IDLE);
+        ImuMetricData bootImu{};
+        bool hasBootImu = imu.readSensorData(bootImu);
+        bool isArmUp = hasBootImu && (bootImu.accelY_g <= IMU_ARM_UP_Y_THRESHOLD_G);
+
+        if (isArmUp) {
+            Serial.printf("\n  >>> Woken from Deep Sleep with ARM UP (Y=%+.2f g)! <<<\n", bootImu.accelY_g);
+            Serial.println(F("  >>> Starting recording immediately!\n"));
+            startActiveRecording();
+        } else {
+            Serial.printf("\n  >>> Woken from Deep Sleep with ARM DOWN (Y=%+.2f g). <<<\n", 
+                          hasBootImu ? bootImu.accelY_g : 0.0f);
+            Serial.println(F("  >>> MCU is now AWAKE (IDLE). Shake with arm UP to START recording."));
+            Serial.println(F("  >>> (Device will return to Deep Sleep if idle for 15s)\n"));
+            // Acknowledge wake-up with quick double-blink green
+            leds.blink(PIN_LED_GREEN, 2, 70);
+            leds.setMode(LedMode::IDLE);
+        }
     } else {
         leds.bootSequence();
         leds.setMode(LedMode::IDLE);
         Serial.println(F("\n========================================================"));
         Serial.println(F("  READY:"));
-        Serial.println(F("  1. Double-tap device to WAKE from Deep Sleep."));
-        Serial.println(F("  2. Shake device to START recording."));
-        Serial.println(F("  3. Shake device again to STOP & SAVE recording."));
+        Serial.println(F("  1. Shake device with ARM DOWN to WAKE from Deep Sleep."));
+        Serial.println(F("  2. Shake device with ARM UP (Y-axis ~ -1g) to START recording."));
+        Serial.println(F("  3. Shake device in ANY orientation to STOP recording."));
         Serial.println(F("  4. Press BTN button to toggle Wi-Fi, hold 2s for Flash Mode."));
         Serial.println(F("  5. Connect USB to keep permanently awake."));
         Serial.println(F("========================================================\n"));
@@ -390,9 +407,17 @@ void loop() {
             ShakeEventType shakeEvt = shakeDetector.update(imuData, &intensity);
             if (shakeEvt == ShakeEventType::SHAKE_DETECTED) {
                 totalTapEvents++;
-                Serial.printf("\n[SHAKE DETECTED] Start trigger! Intensity: %.2f g -> STARTING RECORDING...\n", intensity);
-                ble.notifyTap(intensity);
-                startActiveRecording();
+                power.notifyActivity();
+
+                if (imuData.accelY_g <= IMU_ARM_UP_Y_THRESHOLD_G) {
+                    Serial.printf("\n[SHAKE DETECTED] Arm is UP (Y=%+.2f g, Intensity: %.2f g) -> STARTING RECORDING...\n",
+                                  imuData.accelY_g, intensity);
+                    ble.notifyTap(intensity);
+                    startActiveRecording();
+                } else {
+                    Serial.printf("\n[SHAKE DETECTED] Arm is DOWN (Y=%+.2f g) -> Recording not started (raise arm to record).\n",
+                                  imuData.accelY_g);
+                }
             } else {
                 // Keep device awake if any tap/motion is detected
                 float shock = 0.0f;
@@ -416,6 +441,9 @@ void loop() {
                     lastUsbLogTime = now;
                     Serial.println(F("[POWER] USB host connected -> Deep Sleep blocked. Device stays permanently awake for dev/flashing."));
                 }
+            } else if (now < postRecordingGracePeriodEnd) {
+                // Guarantee at least 15s stay-awake after recording stops before deep sleep
+                power.notifyActivity();
             } else if (power.isIdleTimeoutExpired(INACTIVITY_SLEEP_TIMEOUT_MS)) {
                 Serial.printf("[POWER] Inactivity timeout (%u s) expired on battery. Entering Deep Sleep...\n",
                               (unsigned int)(INACTIVITY_SLEEP_TIMEOUT_MS / 1000));

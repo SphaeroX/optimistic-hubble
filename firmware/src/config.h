@@ -65,6 +65,10 @@
 #define SHAKE_REVERSALS_REQUIRED 2     // Minimum direction reversals to qualify as shake
 #define SHAKE_COOLDOWN_MS 1200         // Cooldown after trigger before next shake (ms)
 
+// Orientation Threshold: Y-axis points downwards (-1g Earth gravity) when arm is raised
+// Arm raised: accelY_g <= -0.50g
+#define IMU_ARM_UP_Y_THRESHOLD_G -0.50f
+
 // ============================================================================
 // Wi-Fi High-Speed Audio Server Parameters
 // ============================================================================

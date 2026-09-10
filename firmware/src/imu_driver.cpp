@@ -264,31 +264,26 @@ bool ImuDriver::configureLowPowerWakeup(float thresholdG) {
         writeRegister(LSM6DS_REG_CTRL2_G, 0x00);
         delay(10);
 
-        // 2. Set Accelerometer to Low Power mode @ 52 Hz, +/- 2g
-        writeRegister(LSM6DS_REG_CTRL1_XL, 0x30); // 52 Hz ODR for responsive tap detection
-        writeRegister(LSM6DS_REG_CTRL6_C, 0x10);  // XL_HM_MODE = 1 (Low-Power Accel enabled)
+        // 2. Set Accelerometer to Low Power mode @ 26 Hz, +/- 2g
+        writeRegister(LSM6DS_REG_CTRL1_XL, 0x20); // 26 Hz ODR
+        writeRegister(LSM6DS_REG_CTRL6_C, 0x10);  // XL_HM_MODE = 1 (Low-Power Accel enabled ~6 uA)
         delay(10);
 
-        // 3. Configure Hardware Double-Tap detection on X, Y, Z
-        // Enable X, Y, Z tap axes and latched interrupt mode (LIR = 1)
-        writeRegister(LSM6DS_REG_TAP_CFG0, 0x0F);   // TAP_X/Y/Z enable, LIR = 1
-        writeRegister(LSM6DS_REG_TAP_CFG1, 0x0C);   // TAP_THS_X = 12 (~0.75g threshold)
-        writeRegister(LSM6DS_REG_TAP_CFG, 0x8C);    // TAP_CFG2: INTERRUPTS_ENABLE = 1, TAP_THS_Y = 0.75g
-        writeRegister(LSM6DS_REG_TAP_THS_6D, 0x0C); // TAP_THS_Z = 0.75g
+        // 3. Configure Wake-up threshold (1 LSB = 2000mg / 64 = 31.25mg)
+        uint8_t ths = (uint8_t)(thresholdG * 1000.0f / 31.25f);
+        if (ths < 1) ths = 1;
+        if (ths > 63) ths = 63; // 6-bit field
+        writeRegister(LSM6DS_REG_WAKE_UP_THS, ths);
+        writeRegister(LSM6DS_REG_WAKE_UP_DUR, 0x00); // Instant pulse
 
-        // 4. Configure Double-Tap Timing Window (INT_DUR2: DUR=7 -> ~430ms window, QUIET=2 -> 77ms, SHOCK=3 -> 115ms)
-        writeRegister(LSM6DS_REG_INT_DUR2, 0x7B);
-
-        // 5. Enable Double-Tap mode in WAKE_UP_THS (bit 7 = SINGLE_DOUBLE_TAP = 1)
-        writeRegister(LSM6DS_REG_WAKE_UP_THS, 0x80);
-
-        // 6. Route ONLY Double-Tap to INT1 pin (MD1_CFG: bit 3 = INT1_DOUBLE_TAP = 0x08)
-        writeRegister(LSM6DS_REG_MD1_CFG, 0x08);
+        // 4. Enable interrupt logic (latched mode) and route wake-up to INT1
+        writeRegister(LSM6DS_REG_TAP_CFG, 0x81); // INTERRUPTS_ENABLE = 1, LIR = 1 (latched interrupt)
+        writeRegister(LSM6DS_REG_MD1_CFG, 0x20); // INT1_WU = 1 (Wake-Up routed to INT1)
 
         // Clear any residual triggers so INT1 starts LOW
         clearInterrupts();
 
-        Serial.println(F("[IMU] LSM6DS configured for Hardware Double-Tap Wake-up on INT1 (~26 uA)."));
+        Serial.printf("[IMU] LSM6DS configured for Motion/Shake Wake-up on INT1 (~6 uA). Threshold: %.2f g\n", thresholdG);
         return true;
     }
     else if (_type == IMU_TYPE_BMI160) {
