@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -30,18 +31,26 @@ class GeminiChatMessage {
 
 /// Service for Google Gemini API integration (Audio transcription, AI chat, group summarization).
 class GeminiService with ChangeNotifier {
-  static const String _prefApiKey = 'dictula_gemini_api_key';
+  static const String _secureApiKey = 'dictula_gemini_api_key_secure';
+  static const String _legacyPrefApiKey = 'dictula_gemini_api_key';
   static const String _prefModel = 'dictula_gemini_model';
+  static const String defaultModel = 'gemini-3.8-flash';
 
+  /// Standard recommended models for quick selection.
   static const List<String> availableModels = [
+    'gemini-3.8-flash',
     'gemini-2.5-flash',
-    'gemini-2.0-flash',
     'gemini-2.5-pro',
+    'gemini-2.0-flash',
     'gemini-1.5-flash',
   ];
 
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
+    aOptions: AndroidOptions(resetOnError: true),
+  );
+
   String _apiKey = '';
-  String _selectedModel = 'gemini-2.5-flash';
+  String _selectedModel = defaultModel;
   bool _isInitialized = false;
 
   String get apiKey => _apiKey;
@@ -54,25 +63,71 @@ class GeminiService with ChangeNotifier {
   }
 
   Future<void> _loadPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    _apiKey = prefs.getString(_prefApiKey) ?? '';
-    _selectedModel = prefs.getString(_prefModel) ?? 'gemini-2.5-flash';
-    _isInitialized = true;
-    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _selectedModel = prefs.getString(_prefModel) ?? defaultModel;
+
+      // 1. Try reading encrypted API key from secure storage
+      String? key;
+      try {
+        key = await _secureStorage.read(key: _secureApiKey);
+      } catch (e) {
+        debugPrint('[GeminiService] Error reading secure storage: $e');
+      }
+
+      // 2. Migration: If no secure key found, check legacy SharedPreferences
+      if (key == null || key.trim().isEmpty) {
+        final legacyKey = prefs.getString(_legacyPrefApiKey);
+        if (legacyKey != null && legacyKey.trim().isNotEmpty) {
+          debugPrint('[GeminiService] Migrating legacy API key to encrypted secure storage...');
+          key = legacyKey.trim();
+          try {
+            await _secureStorage.write(key: _secureApiKey, value: key);
+            // Clean up unencrypted key from SharedPreferences
+            await prefs.remove(_legacyPrefApiKey);
+          } catch (e) {
+            debugPrint('[GeminiService] Migration to secure storage failed: $e');
+          }
+        }
+      }
+
+      _apiKey = key ?? '';
+    } catch (e) {
+      debugPrint('[GeminiService] _loadPreferences error: $e');
+    } finally {
+      _isInitialized = true;
+      notifyListeners();
+    }
   }
 
+  /// Persistently and securely saves the Gemini API key.
   Future<void> setApiKey(String key) async {
     _apiKey = key.trim();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefApiKey, _apiKey);
+    try {
+      if (_apiKey.isEmpty) {
+        await _secureStorage.delete(key: _secureApiKey);
+      } else {
+        await _secureStorage.write(key: _secureApiKey, value: _apiKey);
+      }
+      // Ensure legacy plain text key is removed from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_legacyPrefApiKey);
+    } catch (e) {
+      debugPrint('[GeminiService] Error writing to secure storage: $e');
+      // Fallback in case secure storage fails on a specific desktop environment
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_legacyPrefApiKey, _apiKey);
+    }
     notifyListeners();
   }
 
+  /// Sets the active Gemini model. Accepts any custom model identifier.
   Future<void> setSelectedModel(String model) async {
-    if (availableModels.contains(model)) {
-      _selectedModel = model;
+    final trimmed = model.trim();
+    if (trimmed.isNotEmpty) {
+      _selectedModel = trimmed;
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_prefModel, model);
+      await prefs.setString(_prefModel, trimmed);
       notifyListeners();
     }
   }

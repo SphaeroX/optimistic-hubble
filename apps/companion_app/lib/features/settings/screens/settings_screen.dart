@@ -29,17 +29,33 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _apiKeyController;
+  late final TextEditingController _modelController;
   bool _obscureApiKey = true;
 
   @override
   void initState() {
     super.initState();
     _apiKeyController = TextEditingController(text: widget.geminiService.apiKey);
+    _modelController = TextEditingController(text: widget.geminiService.selectedModel);
+    widget.geminiService.addListener(_onGeminiServiceChanged);
+  }
+
+  void _onGeminiServiceChanged() {
+    if (!mounted) return;
+    if (_apiKeyController.text.isEmpty && widget.geminiService.apiKey.isNotEmpty) {
+      _apiKeyController.text = widget.geminiService.apiKey;
+    }
+    if (_modelController.text != widget.geminiService.selectedModel) {
+      _modelController.text = widget.geminiService.selectedModel;
+    }
+    setState(() {});
   }
 
   @override
   void dispose() {
+    widget.geminiService.removeListener(_onGeminiServiceChanged);
     _apiKeyController.dispose();
+    _modelController.dispose();
     super.dispose();
   }
 
@@ -48,10 +64,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Gemini API-Key erfolgreich gespeichert!'),
+          content: Text('Gemini API-Key verschlüsselt gespeichert!'),
           backgroundColor: AppTheme.accentGreen,
         ),
       );
+    }
+  }
+
+  Future<void> _saveModel() async {
+    final modelText = _modelController.text.trim();
+    if (modelText.isNotEmpty) {
+      await widget.geminiService.setSelectedModel(modelText);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gemini-Modell auf "$modelText" gesetzt!'),
+            backgroundColor: AppTheme.accentGreen,
+          ),
+        );
+      }
     }
   }
 
@@ -107,27 +138,85 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                           IconButton(
                             icon: const Icon(Icons.check, color: AppTheme.accentGreen, size: 20),
-                            tooltip: 'Key speichern',
+                            tooltip: 'Key verschlüsselt speichern',
                             onPressed: _saveApiKey,
                           ),
                         ],
                       ),
                     ),
+                    onSubmitted: (_) => _saveApiKey(),
                   ),
-                  const SizedBox(height: 14),
-
-                  // Model Selector
-                  const Text('Standard KI-Modell:', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
                   const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    initialValue: widget.geminiService.selectedModel,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
-                    items: GeminiService.availableModels
-                        .map((m) => DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontSize: 13))))
-                        .toList(),
-                    onChanged: (val) {
-                      if (val != null) widget.geminiService.setSelectedModel(val);
-                    },
+                  Row(
+                    children: [
+                      Icon(
+                        widget.geminiService.hasApiKey ? Icons.lock : Icons.info_outline,
+                        size: 13,
+                        color: widget.geminiService.hasApiKey ? AppTheme.accentGreen : AppTheme.textMuted,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        widget.geminiService.hasApiKey
+                            ? 'Dauerhaft & verschlüsselt im Keystore gespeichert'
+                            : 'Kein API-Key hinterlegt (aistudio.google.com)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: widget.geminiService.hasApiKey ? AppTheme.accentGreen : AppTheme.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Model Selector & Manual Editor
+                  const Text('KI-Modell:', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _modelController,
+                    decoration: InputDecoration(
+                      labelText: 'Modellbezeichnung (manuell anpassbar)',
+                      hintText: GeminiService.defaultModel,
+                      border: const OutlineInputBorder(),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.check, color: AppTheme.accentGreen, size: 20),
+                        tooltip: 'Modell speichern',
+                        onPressed: _saveModel,
+                      ),
+                    ),
+                    onSubmitted: (_) => _saveModel(),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text('Schnellauswahl:', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: GeminiService.availableModels.map((model) {
+                      final isSelected = widget.geminiService.selectedModel == model;
+                      return ChoiceChip(
+                        label: Text(
+                          model == GeminiService.defaultModel ? '$model (Standard)' : model,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            color: isSelected ? Colors.white : AppTheme.textMuted,
+                          ),
+                        ),
+                        selected: isSelected,
+                        selectedColor: AppTheme.primaryCyan.withAlpha(80),
+                        backgroundColor: const Color(0xFF131D2E),
+                        side: BorderSide(
+                          color: isSelected ? AppTheme.primaryCyan : const Color(0xFF22324A),
+                        ),
+                        onSelected: (selected) {
+                          if (selected) {
+                            _modelController.text = model;
+                            widget.geminiService.setSelectedModel(model);
+                          }
+                        },
+                      );
+                    }).toList(),
                   ),
                 ],
               ),
