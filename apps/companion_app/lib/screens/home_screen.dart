@@ -125,30 +125,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      AppConstants.appName,
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
-                    ),
-                    Text(
-                      isConnected
-                          ? (widget.bleService.connectedDevice?.name ?? 'Hardware verbunden')
-                          : (widget.bleService.isAutoConnecting
-                              ? 'Suche XIAO...'
-                              : (widget.bleService.isConnecting ? 'Verbinde...' : 'Bereit')),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isConnected
-                            ? AppTheme.accentGreen
-                            : ((widget.bleService.isConnecting || widget.bleService.isAutoConnecting)
-                                ? AppTheme.accentOrange
-                                : AppTheme.textMuted),
-                      ),
-                    ),
-                  ],
+                const Text(
+                  AppConstants.appName,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                 ),
               ],
             ),
@@ -170,7 +149,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                 label: Text(
                   isConnected
-                      ? 'XIAO Online'
+                      ? 'XIAO'
                       : (widget.bleService.isAutoConnecting
                           ? 'Suche...'
                           : (widget.bleService.isConnecting ? '...' : 'XIAO')),

@@ -171,21 +171,24 @@ class _GroupsTabState extends State<GroupsTab> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Gruppen & Logbücher', style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold)),
-                      Text('${groups.length} Gruppe${groups.length == 1 ? '' : 'n'} angelegt', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-                    ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Gruppen & Logbücher', style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold)),
+                        Text('${groups.length} Gruppe${groups.length == 1 ? '' : 'n'} angelegt', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                      ],
+                    ),
                   ),
-                  ElevatedButton.icon(
+                  const SizedBox(width: 8),
+                  IconButton.filled(
                     onPressed: () => _showCreateGroupDialog(),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Neue Gruppe'),
-                    style: ElevatedButton.styleFrom(
+                    icon: const Icon(Icons.add, size: 22),
+                    tooltip: 'Neue Gruppe anlegen',
+                    style: IconButton.styleFrom(
                       backgroundColor: AppTheme.primaryCyan,
                       foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                 ],

@@ -265,7 +265,7 @@ class _RecordingsTabState extends State<RecordingsTab> {
               ),
               const SizedBox(height: 8),
 
-              // Recordings Count & Header Info with Refresh & Sync Actions
+              // Recordings Count & Header Info with Refresh Action
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
                 child: Row(
@@ -275,54 +275,52 @@ class _RecordingsTabState extends State<RecordingsTab> {
                       '${list.length} Sprachaufnahme${list.length == 1 ? '' : 'n'}',
                       style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textMuted),
                     ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (pendingHwCount > 0) ...[
-                          InkWell(
-                            onTap: isSyncing ? null : _handleSyncAll,
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: AppTheme.accentOrange.withAlpha(25),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: AppTheme.accentOrange.withAlpha(80)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.bolt, size: 13, color: AppTheme.accentOrange),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '$pendingHwCount neu auf Controller (Sync)',
-                                    style: const TextStyle(fontSize: 11, color: AppTheme.accentOrange, fontWeight: FontWeight.bold),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                        ],
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                          icon: _isRefreshing
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryCyan),
-                                )
-                              : const Icon(Icons.refresh, size: 18, color: AppTheme.primaryCyan),
-                          tooltip: 'Aufnahmen aktualisieren (Controller & Speicher)',
-                          onPressed: _isRefreshing ? null : _handleRefresh,
-                        ),
-                      ],
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                      icon: _isRefreshing
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryCyan),
+                            )
+                          : const Icon(Icons.refresh, size: 18, color: AppTheme.primaryCyan),
+                      tooltip: 'Aufnahmen aktualisieren (Controller & Speicher)',
+                      onPressed: _isRefreshing ? null : _handleRefresh,
                     ),
                   ],
                 ),
               ),
+
+              // Pending Controller Recordings Sync Action (in separate row below)
+              if (pendingHwCount > 0)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
+                  child: InkWell(
+                    onTap: isSyncing ? null : _handleSyncAll,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: AppTheme.accentOrange.withAlpha(25),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.accentOrange.withAlpha(80)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.bolt, size: 15, color: AppTheme.accentOrange),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$pendingHwCount neu auf Controller (Sync)',
+                            style: const TextStyle(fontSize: 12, color: AppTheme.accentOrange, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
 
               // Active Sync Progress Banner if syncing
               if (widget.syncManager != null && isSyncing)
