@@ -398,25 +398,24 @@ void loop() {
         }
     }
 
-    // 6. Automatic Deep Sleep Transition
+    // 6. Automatic Deep Sleep Transition (Active only when on battery / USB disconnected)
     if (ENABLE_DEEP_SLEEP_AUTO && !recorder.isRecording() && !wifiServer.isActive() && !ble.isConnected()) {
         if (!power.isSleepPrevented()) {
-            if (power.isIdleTimeoutExpired(INACTIVITY_SLEEP_TIMEOUT_MS)) {
-                if (power.isUsbConnected()) {
-                    // Host PC is connected via USB CDC - do not sleep so terminal and flashing stay responsive
-                    static unsigned long lastUsbLogTime = 0;
-                    if (now - lastUsbLogTime >= 10000) {
-                        lastUsbLogTime = now;
-                        Serial.println(F("[POWER] Inactivity timeout reached, but USB connection active. Deep Sleep deferred."));
-                    }
-                } else {
-                    Serial.printf("[POWER] Inactivity timeout (%u s) expired with no active connections. Entering Deep Sleep...\n",
-                                  (unsigned int)(INACTIVITY_SLEEP_TIMEOUT_MS / 1000));
-                    ble.stop();
-                    leds.turnOffAll();
-                    power.enterDeepSleep(imu, &extFlash, IMU_WAKEUP_THRESHOLD_G);
-                    return;
+            if (power.isUsbConnected()) {
+                // Refresh activity so that the 15s timer starts cleanly when USB is unplugged
+                power.notifyActivity();
+                static unsigned long lastUsbLogTime = 0;
+                if (now - lastUsbLogTime >= 10000) {
+                    lastUsbLogTime = now;
+                    Serial.println(F("[POWER] USB host connected -> Deep Sleep blocked. Device stays permanently awake for dev/flashing."));
                 }
+            } else if (power.isIdleTimeoutExpired(INACTIVITY_SLEEP_TIMEOUT_MS)) {
+                Serial.printf("[POWER] Inactivity timeout (%u s) expired on battery. Entering Deep Sleep...\n",
+                              (unsigned int)(INACTIVITY_SLEEP_TIMEOUT_MS / 1000));
+                ble.stop();
+                leds.turnOffAll();
+                power.enterDeepSleep(imu, &extFlash, IMU_WAKEUP_THRESHOLD_G);
+                return;
             }
         }
     }

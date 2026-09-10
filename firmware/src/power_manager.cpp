@@ -53,14 +53,26 @@ bool PowerManager::isIdleTimeoutExpired(unsigned long timeoutMs) const {
     return (millis() - _lastActivityTime) >= timeoutMs;
 }
 
+#if ARDUINO_USB_MODE
+#include <HWCDC.h>
+#endif
+
 bool PowerManager::isUsbConnected() const {
-    // When USB CDC is open on the host side (e.g. Serial Monitor or Flash Tool), Serial evaluates to true
+#if ARDUINO_USB_MODE
+    return HWCDC::isPlugged() || (bool)Serial;
+#else
     return (bool)Serial;
+#endif
 }
 
 void PowerManager::enterDeepSleep(ImuDriver& imu, SpiFlashDriver* extFlash, float shockThresholdG) {
     if (_preventSleep) {
         Serial.println(F("[POWER] Deep Sleep blocked by Service/Flash mode lock."));
+        return;
+    }
+
+    if (isUsbConnected()) {
+        Serial.println(F("[POWER] Deep Sleep blocked: USB cable is connected to a host PC!"));
         return;
     }
 
