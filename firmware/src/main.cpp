@@ -221,26 +221,57 @@ void setup() {
         Serial.printf("  [PASS] BLE advertising active as \"%s\".\n", BLE_DEVICE_NAME);
     }
 
-    // 8. Handle Wake-up Routing & LED Sequence
+    // 8. Handle Wake-up Routing: Deep Sleep Wake-Up ONLY with Shake!
     if (power.wasWokenByMotion()) {
+        Serial.println(F("\n[POWER] Motion detected on INT1 -> Verifying SHAKE pattern (Deep Sleep wake-up requires SHAKE)..."));
+
         ImuMetricData bootImu{};
-        bool hasBootImu = imu.readSensorData(bootImu);
-        if (hasBootImu) {
+        if (imu.readSensorData(bootImu)) {
             shakeDetector.initializeBaseline(bootImu);
         }
-        bool isArmUp = hasBootImu && (bootImu.accelY_g <= IMU_ARM_UP_Y_THRESHOLD_G);
 
-        if (isArmUp) {
-            Serial.printf("\n  >>> Woken from Deep Sleep with ARM UP / TILT (Y=%+.2f g)! <<<\n", bootImu.accelY_g);
-            Serial.println(F("  >>> Arm-Up / Tilt Wakeup detected -> Red LED blinking for 2 seconds!\n"));
-            leds.showTiltFeedback();
-        } else {
-            Serial.printf("\n  >>> Woken from Deep Sleep with ARM DOWN (Y=%+.2f g). <<<\n", 
-                          hasBootImu ? bootImu.accelY_g : 0.0f);
-            Serial.println(F("  >>> MCU is now AWAKE (IDLE). Shake with arm UP to START recording."));
-            Serial.println(F("  >>> (Device will return to Deep Sleep if idle for 15s)\n"));
+        bool verifiedShake = false;
+        unsigned long verifyStart = millis();
+        const unsigned long MAX_SHAKE_VERIFY_MS = 500;
+
+        while (millis() - verifyStart < MAX_SHAKE_VERIFY_MS) {
+            delay(IMU_POLL_INTERVAL_MS); // 20 ms polling (50 Hz)
+            ImuMetricData imuData{};
+            if (imu.readSensorData(imuData)) {
+                float intensity = 0.0f;
+                ShakeEventType shakeEvt = shakeDetector.update(imuData, &intensity);
+                if (shakeEvt == ShakeEventType::SHAKE_DETECTED) {
+                    verifiedShake = true;
+                    totalTapEvents++;
+                    power.notifyActivity();
+
+                    if (shakeDetector.isArmUp(IMU_ARM_UP_Y_THRESHOLD_G)) {
+                        Serial.printf("\n[POWER] Shake verified with ARM UP (GravY=%+.2f g, Intensity: %.2f g) -> STARTING RECORDING!\n",
+                                      shakeDetector.getShakeStartGravityY(), intensity);
+                        ble.notifyTap(intensity);
+                        startActiveRecording();
+                    } else {
+                        Serial.printf("\n[POWER] Shake verified with ARM DOWN (GravY=%+.2f g) -> MCU is now AWAKE (IDLE).\n",
+                                      shakeDetector.getShakeStartGravityY());
+                        Serial.println(F("  >>> Shake with arm UP to START recording."));
+                        Serial.println(F("  >>> (Device will return to Deep Sleep if idle for 15s)\n"));
+                        leds.setMode(LedMode::IDLE);
+                    }
+                    break;
+                }
+            }
         }
-        leds.setMode(LedMode::IDLE);
+
+        if (!verifiedShake) {
+            Serial.println(F("[POWER] Motion was NOT a shake (no reversals). Deep sleep wake-up requires SHAKE."));
+            Serial.println(F("[POWER] Returning to Deep Sleep immediately...\n"));
+            Serial.flush();
+            battery.persistState();
+            ble.stop();
+            leds.turnOffAll();
+            power.enterDeepSleep(imu, &extFlash, IMU_WAKEUP_THRESHOLD_G);
+            return;
+        }
     } else {
         leds.bootSequence();
         leds.setMode(LedMode::IDLE);
