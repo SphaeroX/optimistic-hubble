@@ -344,7 +344,7 @@ class _RecordingDetailSheetState extends State<RecordingDetailSheet> with Single
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                rec.source == RecordingSource.hardware ? 'Hardware XIAO' : 'Handy Aufnahme',
+                                rec.source == RecordingSource.hardware ? 'Hardware' : 'Handy Aufnahme',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,

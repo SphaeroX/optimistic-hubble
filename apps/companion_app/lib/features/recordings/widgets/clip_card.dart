@@ -82,7 +82,7 @@ class ClipCard extends StatelessWidget {
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.memory, color: AppTheme.accentOrange),
                 title: const Text('Vom ESP32 Flash löschen', style: TextStyle(fontSize: 14, color: Colors.white)),
-                subtitle: const Text('Aus dem internen Speicher des XIAO entfernen', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                subtitle: const Text('Aus dem internen Speicher des Geräts entfernen', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
                 onTap: () {
                   Navigator.pop(ctx);
                   onDeleteRemote?.call();
@@ -93,7 +93,7 @@ class ClipCard extends StatelessWidget {
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.delete_forever, color: AppTheme.accentRed),
                 title: const Text('Überall löschen', style: TextStyle(fontSize: 14, color: AppTheme.accentRed, fontWeight: FontWeight.bold)),
-                subtitle: const Text('Sowohl lokal als auch vom XIAO Flash löschen', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                subtitle: const Text('Sowohl lokal als auch vom Geräte-Flash löschen', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
                 onTap: () {
                   Navigator.pop(ctx);
                   onDeleteEverywhere?.call();

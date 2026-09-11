@@ -500,7 +500,7 @@ class RecordingSyncManager extends ChangeNotifier {
 
       // 2. Real Hardware: Phase 1 -> Start Embedded Server & Local-Only Hotspot on Phone
       if (bleService == null || !bleService!.isConnected) {
-        throw Exception('Please connect to Xiao ESP32 via BLE first');
+        throw Exception('Please connect to Audio Vault via BLE first');
       }
 
       _fastTransferPhase = FastTransferPhase.activatingHotspot;
@@ -585,7 +585,7 @@ class RecordingSyncManager extends ChangeNotifier {
 
     // Small clips / standard fallback route: BLE 5.0 GATT / L2CAP
     if (bleService == null || !bleService!.isConnected) {
-      _errorMessage = 'Please connect to Xiao ESP32 via BLE first';
+      _errorMessage = 'Please connect to Audio Vault via BLE first';
       notifyListeners();
       return false;
     }
@@ -775,7 +775,7 @@ class RecordingSyncManager extends ChangeNotifier {
       if (updated?.localWavPath != null) {
         await LocalStorageManager.shareFile(
           filePath: updated!.localWavPath!,
-          text: 'Xiao Audio Recording #${clip.id} (${Formatters.formatDuration(clip.duration)})',
+          text: 'Audio Vault Recording #${clip.id} (${Formatters.formatDuration(clip.duration)})',
           sharePositionOrigin: sharePositionOrigin,
         );
         return true;

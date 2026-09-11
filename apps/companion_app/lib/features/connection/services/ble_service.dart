@@ -90,16 +90,15 @@ class BleService extends ChangeNotifier {
   void _initBleCallbacks() {
     UniversalBle.onScanResult = (BleDevice scanResult) {
       final name = scanResult.name?.trim() ?? 'Unknown Device';
-      final isXiao = name.contains('XIAO') ||
-          name.contains('Xiao') ||
-          name.contains('Dictula') ||
+      final isHardware = name.contains('Audio') ||
+          name.contains('Vault') ||
           name.contains('ESP32') ||
           name == AppConstants.bleDeviceName;
       final item = BleDeviceItem(
         id: scanResult.deviceId,
         name: name,
         rssi: scanResult.rssi ?? -100,
-        isXiaoDevice: isXiao,
+        isHardwareDevice: isHardware,
       );
 
       final index = _discoveredDevices.indexWhere((d) => d.id == item.id);
@@ -107,8 +106,8 @@ class BleService extends ChangeNotifier {
         _discoveredDevices[index] = item;
       } else {
         _discoveredDevices.add(item);
-        if (isXiao) {
-          _log('SCAN', 'Discovered XIAO peripheral: ${item.name} (${item.id}) RSSI: ${item.rssi} dBm');
+        if (isHardware) {
+          _log('SCAN', 'Discovered Audio Vault peripheral: ${item.name} (${item.id}) RSSI: ${item.rssi} dBm');
         }
       }
       notifyListeners();
@@ -121,7 +120,7 @@ class BleService extends ChangeNotifier {
         _status = ConnectionStatus.connected;
         _connectedDevice ??= _discoveredDevices.firstWhere(
           (d) => d.id == deviceId,
-          orElse: () => BleDeviceItem(id: deviceId, name: AppConstants.bleDeviceName, rssi: 0, isXiaoDevice: true),
+          orElse: () => BleDeviceItem(id: deviceId, name: AppConstants.bleDeviceName, rssi: 0, isHardwareDevice: true),
         );
         _statusMessage = 'Connected to ${_connectedDevice!.name}';
         notifyListeners();
@@ -154,7 +153,7 @@ class BleService extends ChangeNotifier {
 
     _discoveredDevices.clear();
     _status = ConnectionStatus.scanning;
-    _statusMessage = 'Scanning for Xiao ESP32-C3...';
+    _statusMessage = 'Scanning for Audio Vault ESP32-C3...';
     _log('SCAN', 'Started BLE scan for UUID ${AppConstants.bleServiceUuid}');
     notifyListeners();
 
@@ -186,9 +185,9 @@ class BleService extends ChangeNotifier {
     }
   }
 
-  /// Automatically scan for nearby Xiao devices, select the one with the strongest signal
+  /// Automatically scan for nearby Audio Vault devices, select the one with the strongest signal
   /// (highest RSSI / closest proximity), and establish connection without manual picker.
-  Future<bool> autoConnectNearestXiao({
+  Future<bool> autoConnectNearestDevice({
     Duration scanWindow = const Duration(milliseconds: 1500),
     Duration totalTimeout = const Duration(seconds: 6),
   }) async {
@@ -206,9 +205,9 @@ class BleService extends ChangeNotifier {
 
     _isAutoConnecting = true;
     _status = ConnectionStatus.scanning;
-    _statusMessage = 'Searching for nearest Xiao device...';
+    _statusMessage = 'Searching for nearest Audio Vault device...';
     _discoveredDevices.clear();
-    _log('AUTOCONNECT', 'Starting proximity scan for nearest Xiao ESP32 (RSSI auto-selection)...');
+    _log('AUTOCONNECT', 'Starting proximity scan for nearest Audio Vault ESP32 (RSSI auto-selection)...');
     notifyListeners();
 
     try {
@@ -227,18 +226,18 @@ class BleService extends ChangeNotifier {
     BleDeviceItem? targetDevice;
 
     while (DateTime.now().isBefore(deadline) && _isAutoConnecting) {
-      final xiaoCandidates = _discoveredDevices.where((d) =>
-        d.isXiaoDevice ||
-        d.name.toLowerCase().contains('xiao') ||
+      final candidates = _discoveredDevices.where((d) =>
+        d.isHardwareDevice ||
+        d.name.toLowerCase().contains('audio') ||
         d.name == AppConstants.bleDeviceName
       ).toList();
 
       final elapsed = DateTime.now().difference(startTime);
-      if (xiaoCandidates.isNotEmpty && elapsed >= scanWindow) {
+      if (candidates.isNotEmpty && elapsed >= scanWindow) {
         // Sort descending by RSSI (closest / best radio link first, e.g. -45 dBm > -75 dBm)
-        xiaoCandidates.sort((a, b) => b.rssi.compareTo(a.rssi));
-        targetDevice = xiaoCandidates.first;
-        _log('AUTOCONNECT', 'Found ${xiaoCandidates.length} candidate(s). Selected strongest: ${targetDevice.name} (${targetDevice.id}) with RSSI: ${targetDevice.rssi} dBm');
+        candidates.sort((a, b) => b.rssi.compareTo(a.rssi));
+        targetDevice = candidates.first;
+        _log('AUTOCONNECT', 'Found ${candidates.length} candidate(s). Selected strongest: ${targetDevice.name} (${targetDevice.id}) with RSSI: ${targetDevice.rssi} dBm');
         break;
       }
 
@@ -261,12 +260,18 @@ class BleService extends ChangeNotifier {
       await stopScan();
       _isAutoConnecting = false;
       _status = ConnectionStatus.disconnected;
-      _statusMessage = 'No Xiao device found in range';
-      _log('AUTOCONNECT', 'No matching Xiao device discovered within range', isError: true);
+      _statusMessage = 'No Audio Vault device found in range';
+      _log('AUTOCONNECT', 'No matching Audio Vault device discovered within range', isError: true);
       notifyListeners();
       return false;
     }
   }
+
+  /// Backward-compatibility alias
+  Future<bool> autoConnectNearestXiao({
+    Duration scanWindow = const Duration(milliseconds: 1500),
+    Duration totalTimeout = const Duration(seconds: 6),
+  }) => autoConnectNearestDevice(scanWindow: scanWindow, totalTimeout: totalTimeout);
 
   Future<void> connect(BleDeviceItem device) async {
     _mockTelemetryTimer?.cancel();
@@ -332,7 +337,7 @@ class BleService extends ChangeNotifier {
     _telemetryPollTimer = null;
   }
 
-  /// Reads the current State/Telemetry characteristic directly from the connected Xiao MCU over BLE GATT.
+  /// Reads the current State/Telemetry characteristic directly from the connected Audio Vault MCU over BLE GATT.
   Future<bool> readTelemetry() async {
     if (_isMockMode) {
       notifyListeners();
@@ -791,7 +796,7 @@ class BleService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Request Xiao ESP32 to stream the audio file over high-throughput BLE GATT notifications
+  /// Request Audio Vault ESP32 to stream the audio file over high-throughput BLE GATT notifications
   Future<Uint8List?> streamClipOverGatt(int clipId) async {
     if (!isConnected) {
       _log('AUDIO', 'Cannot stream clip #$clipId: Not connected to BLE', isError: true);
@@ -831,10 +836,10 @@ class BleService extends ChangeNotifier {
     _isMockMode = true;
     _status = ConnectionStatus.connected;
     _connectedDevice = BleDeviceItem(
-      id: 'SIM-XIAO-C3-01',
-      name: 'XIAO-Audio-Recorder (Simulated)',
+      id: 'SIM-AUDIO-VAULT-01',
+      name: 'Audio-Vault (Simulated)',
       rssi: -38,
-      isXiaoDevice: true,
+      isHardwareDevice: true,
     );
     _telemetry = _telemetry.copyWith(
       hasRealData: true,

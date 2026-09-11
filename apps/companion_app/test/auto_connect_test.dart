@@ -7,61 +7,61 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('Auto-Connect & Proximity RSSI Tests', () {
-    test('Correctly sorts Xiao candidates by RSSI (closest / best link first)', () {
-      final devFarXiao = BleDeviceItem(
+    test('Correctly sorts hardware candidates by RSSI (closest / best link first)', () {
+      final devFar = BleDeviceItem(
         id: 'AA:BB:CC:11:22:33',
-        name: 'XIAO-Audio-Recorder',
+        name: 'Audio-Vault',
         rssi: -85,
-        isXiaoDevice: true,
+        isHardwareDevice: true,
       );
 
-      final devNearXiao = BleDeviceItem(
+      final devNear = BleDeviceItem(
         id: 'AA:BB:CC:44:55:66',
-        name: 'XIAO-Audio-Recorder',
+        name: 'Audio-Vault',
         rssi: -42, // Stronger / closer signal
-        isXiaoDevice: true,
+        isHardwareDevice: true,
       );
 
-      final devMediumXiao = BleDeviceItem(
+      final devMedium = BleDeviceItem(
         id: 'AA:BB:CC:77:88:99',
-        name: 'Xiao-ESP32C3-Node',
+        name: 'Audio-Vault-Node',
         rssi: -65,
-        isXiaoDevice: true,
+        isHardwareDevice: true,
       );
 
-      final devNonXiao = BleDeviceItem(
+      final devNonHardware = BleDeviceItem(
         id: 'XX:YY:ZZ:00:11:22',
         name: 'Generic Smart TV',
-        rssi: -30, // Strong signal but not a Xiao peripheral
-        isXiaoDevice: false,
+        rssi: -30, // Strong signal but not a hardware peripheral
+        isHardwareDevice: false,
       );
 
-      final discoveredList = [devFarXiao, devNonXiao, devMediumXiao, devNearXiao];
+      final discoveredList = [devFar, devNonHardware, devMedium, devNear];
 
-      // 1. Filter only Xiao peripherals
-      final xiaoCandidates = discoveredList.where((d) =>
-        d.isXiaoDevice ||
-        d.name.toLowerCase().contains('xiao') ||
+      // 1. Filter only hardware peripherals
+      final candidates = discoveredList.where((d) =>
+        d.isHardwareDevice ||
+        d.name.toLowerCase().contains('audio') ||
         d.name == AppConstants.bleDeviceName
       ).toList();
 
-      expect(xiaoCandidates.length, 3);
-      expect(xiaoCandidates.contains(devNonXiao), isFalse);
+      expect(candidates.length, 3);
+      expect(candidates.contains(devNonHardware), isFalse);
 
       // 2. Sort descending by RSSI
-      xiaoCandidates.sort((a, b) => b.rssi.compareTo(a.rssi));
+      candidates.sort((a, b) => b.rssi.compareTo(a.rssi));
 
-      // The closest Xiao (-42 dBm) must be the first element
-      expect(xiaoCandidates.first.id, 'AA:BB:CC:44:55:66');
-      expect(xiaoCandidates.first.rssi, -42);
+      // The closest (-42 dBm) must be the first element
+      expect(candidates.first.id, 'AA:BB:CC:44:55:66');
+      expect(candidates.first.rssi, -42);
 
       // Second must be -65 dBm
-      expect(xiaoCandidates[1].id, 'AA:BB:CC:77:88:99');
-      expect(xiaoCandidates[1].rssi, -65);
+      expect(candidates[1].id, 'AA:BB:CC:77:88:99');
+      expect(candidates[1].rssi, -65);
 
       // Third must be -85 dBm
-      expect(xiaoCandidates[2].id, 'AA:BB:CC:11:22:33');
-      expect(xiaoCandidates[2].rssi, -85);
+      expect(candidates[2].id, 'AA:BB:CC:11:22:33');
+      expect(candidates[2].rssi, -85);
     });
 
     test('BleService default settings have auto-connect enabled', () {
@@ -71,42 +71,42 @@ void main() {
       expect(bleService.isConnected, isFalse);
     });
 
-    test('BleService autoConnectNearestXiao succeeds in mock mode', () async {
+    test('BleService autoConnectNearestDevice succeeds in mock mode', () async {
       final bleService = BleService();
       bleService.enableMockMode();
       expect(bleService.isConnected, isTrue);
-      expect(bleService.connectedDevice?.name, contains('XIAO'));
+      expect(bleService.connectedDevice?.name, contains('Audio-Vault'));
 
-      final result = await bleService.autoConnectNearestXiao();
+      final result = await bleService.autoConnectNearestDevice();
       expect(result, isTrue);
       expect(bleService.isConnected, isTrue);
     });
 
-    test('BleDeviceItem recognizes Xiao device names accurately', () {
-      final standardXiao = BleDeviceItem(
+    test('BleDeviceItem recognizes hardware device names accurately', () {
+      final standardDev = BleDeviceItem(
         id: '01',
-        name: 'XIAO-Audio-Recorder',
+        name: 'Audio-Vault',
         rssi: -50,
-        isXiaoDevice: true,
+        isHardwareDevice: true,
       );
 
-      final customXiao = BleDeviceItem(
+      final customDev = BleDeviceItem(
         id: '02',
-        name: 'Xiao-ESP32-Voice',
+        name: 'Audio-Vault-Voice',
         rssi: -60,
-        isXiaoDevice: true,
+        isHardwareDevice: true,
       );
 
       final otherDevice = BleDeviceItem(
         id: '03',
         name: 'Bluetooth Speaker',
         rssi: -45,
-        isXiaoDevice: false,
+        isHardwareDevice: false,
       );
 
-      expect(standardXiao.isXiaoDevice, isTrue);
-      expect(customXiao.isXiaoDevice, isTrue);
-      expect(otherDevice.isXiaoDevice, isFalse);
+      expect(standardDev.isHardwareDevice, isTrue);
+      expect(customDev.isHardwareDevice, isTrue);
+      expect(otherDevice.isHardwareDevice, isFalse);
     });
   });
 }

@@ -241,7 +241,7 @@ void WifiServerManager::handleHandshake() {
 
     char json[256];
     snprintf(json, sizeof(json),
-             "{\"status\":\"READY\",\"deviceId\":\"XIAO-ESP32C3\",\"fwVersion\":\"2.1.0\",\"protocol\":\"PLAUD_HYBRID_V2\",\"totalClips\":%u,\"usedBytes\":%u,\"totalBytes\":%u,\"freeBytes\":%u}",
+             "{\"status\":\"READY\",\"deviceId\":\"Custom-PCB-V2\",\"fwVersion\":\"2.1.0\",\"protocol\":\"PLAUD_HYBRID_V2\",\"totalClips\":%u,\"usedBytes\":%u,\"totalBytes\":%u,\"freeBytes\":%u}",
              count, used, total, (total > used) ? (total - used) : 0);
 
     _server.send(200, "application/json", json);
@@ -415,7 +415,7 @@ void WifiServerManager::handleRoot() {
 
     String html = "<!DOCTYPE html><html lang='de'><head><meta charset='utf-8'>"
                   "<meta name='viewport' content='width=device-width,initial-scale=1.0'>"
-                  "<title>XIAO Voice Vault</title>"
+                  "<title>Audio Vault</title>"
                   "<style>"
                   "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;background:#0b0f17;color:#f8fafc;padding:16px;margin:0;}"
                   ".container{max-width:560px;margin:0 auto;}"
@@ -428,7 +428,7 @@ void WifiServerManager::handleRoot() {
                   ".btn-secondary{background:#334155;}"
                   ".btn-danger{background:#e11d48;margin-top:10px;width:100%;}"
                   "</style></head><body><div class='container'>"
-                  "<div class='card'><h1>XIAO Voice Vault</h1>"
+                  "<div class='card'><h1>Audio Vault (V2)</h1>"
                   "<p>Hardware Dual-Mic Filter (8 KB/s) &bull; RFC 7233 Range Resume</p>"
                   "<div class='stat'><span>Aufnahmen: <strong>" + String(clips.size()) + "</strong></span>"
                   "<span>Speicher: <strong>" + String(usedKb) + " / " + String(totalKb) + " KB</strong></span></div>";

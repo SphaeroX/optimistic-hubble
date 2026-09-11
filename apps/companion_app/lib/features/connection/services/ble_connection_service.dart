@@ -34,12 +34,16 @@ class BleConnectionService extends ChangeNotifier {
   void _initBleListeners() {
     UniversalBle.onScanResult = (BleDevice scanResult) {
       final name = scanResult.name?.trim() ?? 'Unknown Device';
-      final isXiao = name.contains('XIAO') || name.contains('Xiao') || name == AppConstants.bleDeviceName;
+      final isHardware = name.startsWith('Audio-') ||
+          name.contains('Audio-Vault') ||
+          name.contains('Audio') ||
+          name.contains('ESP32') ||
+          name == AppConstants.bleDeviceName;
       final item = BleDeviceItem(
         id: scanResult.deviceId,
         name: name,
         rssi: scanResult.rssi ?? -100,
-        isXiaoDevice: isXiao,
+        isHardwareDevice: isHardware,
       );
 
       final index = _discoveredDevices.indexWhere((d) => d.id == item.id);
@@ -73,7 +77,7 @@ class BleConnectionService extends ChangeNotifier {
     if (_status == ConnectionStatus.scanning) return;
     _discoveredDevices.clear();
     _status = ConnectionStatus.scanning;
-    _statusMessage = 'Scanning for Xiao ESP32-C3...';
+    _statusMessage = 'Scanning for Audio Vault...';
     notifyListeners();
 
     try {
@@ -101,15 +105,15 @@ class BleConnectionService extends ChangeNotifier {
     }
   }
 
-  /// Automatically connect to the nearest discovered Xiao device with the highest RSSI
-  Future<bool> autoConnectNearestXiao({
+  /// Automatically connect to the nearest discovered Audio Vault hardware device
+  Future<bool> autoConnectNearestDevice({
     Duration scanWindow = const Duration(milliseconds: 1500),
     Duration totalTimeout = const Duration(seconds: 6),
   }) async {
     if (isConnected) return true;
 
     _status = ConnectionStatus.scanning;
-    _statusMessage = 'Searching for nearest Xiao device...';
+    _statusMessage = 'Searching for nearest Audio Vault...';
     _discoveredDevices.clear();
     notifyListeners();
 
@@ -127,16 +131,17 @@ class BleConnectionService extends ChangeNotifier {
     BleDeviceItem? targetDevice;
 
     while (DateTime.now().isBefore(deadline) && _status == ConnectionStatus.scanning) {
-      final xiaoCandidates = _discoveredDevices.where((d) =>
-        d.isXiaoDevice ||
-        d.name.toLowerCase().contains('xiao') ||
+      final candidates = _discoveredDevices.where((d) =>
+        d.isHardwareDevice ||
+        d.name.toLowerCase().contains('audio') ||
+        d.name.toLowerCase().contains('vault') ||
         d.name == AppConstants.bleDeviceName
       ).toList();
 
       final elapsed = DateTime.now().difference(startTime);
-      if (xiaoCandidates.isNotEmpty && elapsed >= scanWindow) {
-        xiaoCandidates.sort((a, b) => b.rssi.compareTo(a.rssi));
-        targetDevice = xiaoCandidates.first;
+      if (candidates.isNotEmpty && elapsed >= scanWindow) {
+        candidates.sort((a, b) => b.rssi.compareTo(a.rssi));
+        targetDevice = candidates.first;
         break;
       }
       await Future.delayed(const Duration(milliseconds: 200));
@@ -148,11 +153,17 @@ class BleConnectionService extends ChangeNotifier {
     } else {
       await stopScan();
       _status = ConnectionStatus.disconnected;
-      _statusMessage = 'No Xiao device found in range';
+      _statusMessage = 'No Audio Vault device found in range';
       notifyListeners();
       return false;
     }
   }
+
+  /// Backwards-compatible alias for autoConnectNearestDevice
+  Future<bool> autoConnectNearestXiao({
+    Duration scanWindow = const Duration(milliseconds: 1500),
+    Duration totalTimeout = const Duration(seconds: 6),
+  }) => autoConnectNearestDevice(scanWindow: scanWindow, totalTimeout: totalTimeout);
 
   Future<void> connect(BleDeviceItem device) async {
     await stopScan();
@@ -241,10 +252,10 @@ class BleConnectionService extends ChangeNotifier {
   void enableMockMode() {
     _status = ConnectionStatus.connected;
     _connectedDevice = BleDeviceItem(
-      id: 'SIM-XIAO-C3-01',
-      name: 'XIAO-Audio-Recorder (Simulated)',
+      id: 'SIM-VAULT-C3-01',
+      name: 'Audio-Vault (Simulated)',
       rssi: -42,
-      isXiaoDevice: true,
+      isHardwareDevice: true,
     );
     _deviceState = DeviceState.idle;
     _statusMessage = 'Connected (Simulated Device)';

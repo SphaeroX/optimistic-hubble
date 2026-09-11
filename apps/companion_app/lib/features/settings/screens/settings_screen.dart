@@ -469,7 +469,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Automatisch mit nächstem ESP32 koppeln (RSSI)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                    subtitle: const Text('Verbindet automatisch mit dem stärksten XIAO-Signal', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                    subtitle: const Text('Verbindet automatisch mit dem stärksten Signal', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
                     value: widget.bleService.autoConnectEnabled,
                     activeThumbColor: AppTheme.primaryCyan,
                     onChanged: (val) => setState(() => widget.bleService.autoConnectEnabled = val),

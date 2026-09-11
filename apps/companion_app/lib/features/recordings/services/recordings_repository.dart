@@ -250,7 +250,7 @@ class RecordingsRepository with ChangeNotifier {
     return recording;
   }
 
-  /// Imports or updates a hardware recording synced from the XIAO ESP32.
+  /// Imports or updates a hardware recording synced from the Audio Vault ESP32.
   Future<DictulaRecording> importHardwareClip({
     required int clipId,
     required String localWavPath,

@@ -243,7 +243,7 @@ class EmbeddedAudioUploadServer {
     final response = request.response;
     response.statusCode = HttpStatus.ok;
     response.headers.contentType = ContentType.json;
-    response.write(jsonEncode({'status': 'completed', 'server': 'XiaoCompanionServer'}));
+    response.write(jsonEncode({'status': 'completed', 'server': 'AudioVaultCompanionServer'}));
     response.close();
   }
 
@@ -253,7 +253,7 @@ class EmbeddedAudioUploadServer {
     response.headers.contentType = ContentType.json;
     response.write(jsonEncode({
       'status': 'READY',
-      'server': 'XiaoCompanionServer',
+      'server': 'AudioVaultCompanionServer',
       'version': '2.0',
       'port': _serverPort,
     }));

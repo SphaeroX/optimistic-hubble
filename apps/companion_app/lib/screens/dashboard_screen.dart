@@ -47,7 +47,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _handleConnect() async {
     if (widget.bleService.autoConnectEnabled) {
-      final success = await widget.bleService.autoConnectNearestXiao();
+      final success = await widget.bleService.autoConnectNearestDevice();
       if (!success && mounted && !widget.bleService.isConnected) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

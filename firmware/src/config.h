@@ -72,14 +72,14 @@
 // ============================================================================
 // Wi-Fi High-Speed Audio Server Parameters
 // ============================================================================
-#define WIFI_AP_SSID "XIAO-Audio-Hotspot"
-#define WIFI_AP_PASS "xiaoesp32c3" // WPA2 Passphrase (>= 8 chars)
+#define WIFI_AP_SSID "Audio-Vault-Hotspot"
+#define WIFI_AP_PASS "audiovault2026" // WPA2 Passphrase (>= 8 chars)
 #define HTTP_SERVER_PORT 80
 
 // ============================================================================
 // BLE GATT UUIDs (128-bit Custom Service)
 // ============================================================================
-#define BLE_DEVICE_NAME "XIAO-Audio-Recorder"
+#define BLE_DEVICE_NAME "Audio-Vault"
 #define BLE_SERVICE_UUID "19b10000-e8f2-537e-4f6c-d104768a1214"
 #define BLE_CHAR_STATE_UUID "19b10001-e8f2-537e-4f6c-d104768a1214"
 #define BLE_CHAR_AUDIO_UUID "19b10002-e8f2-537e-4f6c-d104768a1214"

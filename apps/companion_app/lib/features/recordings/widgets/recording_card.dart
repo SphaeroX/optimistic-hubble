@@ -269,7 +269,7 @@ class RecordingCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          isHardware ? 'Hardware XIAO' : 'Handy',
+                          isHardware ? 'Hardware' : 'Handy',
                           style: TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.bold,

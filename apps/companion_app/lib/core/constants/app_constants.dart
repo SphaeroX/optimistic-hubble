@@ -1,4 +1,4 @@
-/// Application and Firmware Protocol Constants for XIAO ESP32-C3
+/// Application and Firmware Protocol Constants for Audio Vault ESP32-C3
 class AppConstants {
   AppConstants._();
 
@@ -7,7 +7,8 @@ class AppConstants {
   static const String appVersion = '1.0.0';
 
   // BLE Service & Characteristics UUIDs (128-bit Custom Service)
-  static const String bleDeviceName = 'XIAO-Audio-Recorder';
+  static const String bleDeviceName = 'Audio-Vault';
+  static const List<String> bleSupportedDevicePrefixes = ['Audio-Vault', 'Audio-'];
   static const String bleServiceUuid = '19b10000-e8f2-537e-4f6c-d104768a1214';
   static const String bleCharStateUuid = '19b10001-e8f2-537e-4f6c-d104768a1214';
   static const String bleCharAudioUuid = '19b10002-e8f2-537e-4f6c-d104768a1214';
@@ -24,9 +25,9 @@ class AppConstants {
   static const int tier1MaxSizeBytes = 2097152; // 2.0 MB
 
   // Wi-Fi SoftAP Sync Defaults
-  static const String defaultApSsid = 'XIAO-Audio-Hotspot';
-  static const String defaultApSsidPattern = 'XIAO-Audio-.*';
-  static const String defaultApPassword = 'xiaoesp32c3';
+  static const String defaultApSsid = 'Audio-Vault-Hotspot';
+  static const String defaultApSsidPattern = 'Audio-Vault-.*';
+  static const String defaultApPassword = 'audiovault2026';
   static const String defaultDeviceIp = '192.168.4.1';
   static const int defaultHttpPort = 80;
 

@@ -14,7 +14,7 @@ class LocalStorageManager {
 
   /// Returns the persistent directory where downloaded recordings and WAV files are stored.
   /// On Android: /storage/emulated/0/Android/data/com.sphaerox.companion_app/files/Recordings
-  /// On Windows: %USERPROFILE%\Documents\XiaoAudioCompanion\Recordings
+  /// On Windows: %USERPROFILE%\Documents\AudioVaultCompanion\Recordings
   static Future<Directory> getRecordingsDirectory() async {
     if (_cachedDirectory != null && _cachedDirectory!.existsSync()) {
       return _cachedDirectory!;
@@ -24,7 +24,7 @@ class LocalStorageManager {
     try {
       if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
         final docsDir = await getApplicationDocumentsDirectory();
-        baseDir = Directory(p.join(docsDir.path, 'XiaoAudioCompanion', 'Recordings'));
+        baseDir = Directory(p.join(docsDir.path, 'AudioVaultCompanion', 'Recordings'));
       } else if (Platform.isAndroid) {
         final extDir = await getExternalStorageDirectory();
         if (extDir != null) {

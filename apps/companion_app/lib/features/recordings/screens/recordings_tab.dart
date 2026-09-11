@@ -117,7 +117,7 @@ class _RecordingsTabState extends State<RecordingsTab> {
     if (widget.bleService?.isConnected != true && widget.bleService?.isMockMode != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Bitte zuerst oben mit dem XIAO ESP32 verbinden.'),
+          content: Text('Bitte zuerst oben mit dem Audio Vault verbinden.'),
           duration: Duration(seconds: 2),
         ),
       );
@@ -132,7 +132,7 @@ class _RecordingsTabState extends State<RecordingsTab> {
     if (widget.bleService?.isConnected != true && widget.bleService?.isMockMode != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Bitte zuerst oben mit dem XIAO ESP32 verbinden.'),
+          content: Text('Bitte zuerst oben mit dem Audio Vault verbinden.'),
           duration: Duration(seconds: 2),
         ),
       );
@@ -518,7 +518,7 @@ class _RecordingsTabState extends State<RecordingsTab> {
                                     Text(
                                       _searchController.text.isNotEmpty
                                           ? 'Keine Treffer für "${_searchController.text}"'
-                                          : 'Noch keine Aufnahmen vorhanden.\n\nNimm direkt im Tab "Recorder" auf\noder synchronisiere deine XIAO ESP32 Hardware.',
+                                          : 'Noch keine Aufnahmen vorhanden.\n\nNimm direkt im Tab "Recorder" auf\noder synchronisiere deine Hardware-Aufnahmen.',
                                       textAlign: TextAlign.center,
                                       style: const TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.4),
                                     ),

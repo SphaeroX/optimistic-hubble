@@ -17,7 +17,7 @@ import '../../telemetry/widgets/imu_motion_card.dart';
 import '../../telemetry/widgets/memory_storage_card.dart';
 import '../../telemetry/widgets/tap_history_list.dart';
 
-/// Tab 4: Hardware companion dashboard for Seeed Studio XIAO ESP32-C3 with telemetry, auto-sync, and Wi-Fi Fast Transfer.
+/// Tab 4: Hardware companion dashboard for Audio Vault Custom Production PCB V2 with telemetry, auto-sync, and Wi-Fi Fast Transfer.
 class DeviceTab extends StatefulWidget {
   final BleService bleService;
   final RecordingSyncManager syncManager;
@@ -155,7 +155,7 @@ class _DeviceTabState extends State<DeviceTab> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  isConnected ? 'XIAO ESP32-C3 Verbunden' : 'XIAO Nicht verbunden',
+                                  isConnected ? 'Audio Vault V2 Verbunden' : 'Audio Vault Nicht verbunden',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -373,7 +373,7 @@ class _DeviceTabState extends State<DeviceTab> {
                     child: Text(
                       isConnected
                           ? 'Keine Aufnahmen im Flash-Speicher gefunden.\nNimm etwas auf oder tippe auf Aktualisieren.'
-                          : 'Hardware nicht verbunden. Verbinde den XIAO ESP32, um Clips anzuzeigen.',
+                          : 'Hardware nicht verbunden. Verbinde dein Audio Vault, um Clips anzuzeigen.',
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: AppTheme.textMuted, fontSize: 12.5),
                     ),

@@ -42,9 +42,9 @@ static bool lastButtonState = HIGH;
 
 void printBanner() {
     Serial.println(F("\n========================================================"));
-    Serial.println(F("  ESP32-C3-MINI-1 - Audio Vault (V2 Production Design)"));
-    Serial.println(F("  Dual ICS-43434 • LSM6DSL IMU • W25Q128 16MB SPI Flash"));
-    Serial.println(F("  IMA-ADPCM 4:1 (8 KB/s) • Dual Active-LOW LEDs"));
+    Serial.println(F("  Audio Vault (Custom Production PCB V2)"));
+    Serial.println(F("  ESP32-C3-MINI-1-N4 • Dual ICS-43434 • LSM6DSL IMU"));
+    Serial.println(F("  Winbond W25Q128 16MB SPI Flash • TP4054 / AP2112K"));
     Serial.println(F("========================================================"));
 }
 
@@ -189,7 +189,7 @@ void setup() {
     // 7. Initialize BLE GATT Server
     bool bleOk = ble.begin(BLE_DEVICE_NAME);
     if (bleOk) {
-        Serial.println(F("  [PASS] BLE advertising active as \"XIAO-Audio-Recorder\"."));
+        Serial.printf("  [PASS] BLE advertising active as \"%s\".\n", BLE_DEVICE_NAME);
     }
 
     // 8. Handle Wake-up Routing & LED Sequence

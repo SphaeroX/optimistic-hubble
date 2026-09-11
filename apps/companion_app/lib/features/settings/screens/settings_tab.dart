@@ -106,7 +106,7 @@ class _SettingsTabState extends State<SettingsTab> {
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                   ),
                   subtitle: const Text(
-                    'When tapping "Connect", automatically pair with the closest Xiao ESP32 with the strongest radio signal, bypassing manual device selection.',
+                    'When tapping "Connect", automatically pair with the closest Audio Vault hardware device with the strongest radio signal, bypassing manual device selection.',
                     style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                   ),
                   value: widget.bleService.autoConnectEnabled,
@@ -122,7 +122,7 @@ class _SettingsTabState extends State<SettingsTab> {
                   children: [
                     OutlinedButton.icon(
                       onPressed: () {
-                        widget.bleService.autoConnectNearestXiao();
+                        widget.bleService.autoConnectNearestDevice();
                       },
                       icon: const Icon(Icons.flash_on, size: 16),
                       label: const Text('Test Auto-Connect', style: TextStyle(fontSize: 12)),

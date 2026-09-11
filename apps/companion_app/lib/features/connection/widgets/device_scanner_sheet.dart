@@ -15,13 +15,13 @@ class DeviceScannerSheet extends StatelessWidget {
       builder: (context, _) {
         final devices = List<BleDeviceItem>.from(bleService.discoveredDevices)
           ..sort((a, b) {
-            if (a.isXiaoDevice != b.isXiaoDevice) {
-              return a.isXiaoDevice ? -1 : 1;
+            if (a.isHardwareDevice != b.isHardwareDevice) {
+              return a.isHardwareDevice ? -1 : 1;
             }
             return b.rssi.compareTo(a.rssi);
           });
         final isScanning = bleService.isScanning;
-        final hasXiaoDevice = devices.any((d) => d.isXiaoDevice);
+        final hasHardwareDevice = devices.any((d) => d.isHardwareDevice);
 
         return Container(
           decoration: const BoxDecoration(
@@ -82,7 +82,7 @@ class DeviceScannerSheet extends StatelessWidget {
                     ? null
                     : () async {
                         final nav = Navigator.of(context);
-                        final success = await bleService.autoConnectNearestXiao();
+                        final success = await bleService.autoConnectNearestDevice();
                         if (success && nav.canPop()) {
                           nav.pop();
                         }
@@ -91,7 +91,7 @@ class DeviceScannerSheet extends StatelessWidget {
                 label: Text(
                   bleService.isAutoConnecting
                       ? 'Selecting nearest device...'
-                      : (hasXiaoDevice
+                      : (hasHardwareDevice
                           ? 'Auto-Connect Strongest Signal'
                           : 'Smart Auto-Connect (Nearest Device)'),
                   style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
@@ -126,7 +126,7 @@ class DeviceScannerSheet extends StatelessWidget {
                   child: Center(
                     child: Text(
                       isScanning
-                          ? 'Searching for nearby Dictula ESP32-C3...\n(Service UUID: 19b10000-e8f2-537e-4f6c-d104768a1214)'
+                          ? 'Searching for nearby Audio Vault ESP32-C3...\n(Service UUID: 19b10000-e8f2-537e-4f6c-d104768a1214)'
                           : 'No devices found. Tap refresh or use simulation.',
                       style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
                       textAlign: TextAlign.center,
@@ -156,12 +156,12 @@ class DeviceScannerSheet extends StatelessWidget {
 
                       return ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: dev.isXiaoDevice
+                          backgroundColor: dev.isHardwareDevice
                               ? AppTheme.primaryCyan.withAlpha(51)
                               : AppTheme.cardDark,
                           child: Icon(
-                            dev.isXiaoDevice ? Icons.mic : Icons.bluetooth,
-                            color: dev.isXiaoDevice ? AppTheme.primaryCyan : AppTheme.textMuted,
+                            dev.isHardwareDevice ? Icons.mic : Icons.bluetooth,
+                            color: dev.isHardwareDevice ? AppTheme.primaryCyan : AppTheme.textMuted,
                           ),
                         ),
                         title: Row(
@@ -170,12 +170,12 @@ class DeviceScannerSheet extends StatelessWidget {
                               child: Text(
                                 dev.name,
                                 style: TextStyle(
-                                  fontWeight: dev.isXiaoDevice ? FontWeight.bold : FontWeight.normal,
-                                  color: dev.isXiaoDevice ? Colors.white : AppTheme.textMuted,
+                                  fontWeight: dev.isHardwareDevice ? FontWeight.bold : FontWeight.normal,
+                                  color: dev.isHardwareDevice ? Colors.white : AppTheme.textMuted,
                                 ),
                               ),
                             ),
-                            if (index == 0 && dev.isXiaoDevice)
+                            if (index == 0 && dev.isHardwareDevice)
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 margin: const EdgeInsets.only(left: 6),
@@ -213,8 +213,8 @@ class DeviceScannerSheet extends StatelessWidget {
                                   Navigator.of(context).pop();
                                 },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: dev.isXiaoDevice ? AppTheme.primaryCyan : AppTheme.cardDark,
-                            foregroundColor: dev.isXiaoDevice ? Colors.black : Colors.white,
+                            backgroundColor: dev.isHardwareDevice ? AppTheme.primaryCyan : AppTheme.cardDark,
+                            foregroundColor: dev.isHardwareDevice ? Colors.black : Colors.white,
                           ),
                           child: Text(bleService.isConnecting && bleService.connectedDevice?.id == dev.id ? 'Connecting...' : 'Connect'),
                         ),

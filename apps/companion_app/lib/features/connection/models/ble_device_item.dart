@@ -2,14 +2,17 @@ class BleDeviceItem {
   final String id;
   final String name;
   final int rssi;
-  final bool isXiaoDevice;
+  final bool isHardwareDevice;
 
   BleDeviceItem({
     required this.id,
     required this.name,
     required this.rssi,
-    required this.isXiaoDevice,
-  });
+    bool? isHardwareDevice,
+    bool? isXiaoDevice,
+  }) : isHardwareDevice = isHardwareDevice ?? isXiaoDevice ?? false;
+
+  bool get isXiaoDevice => isHardwareDevice;
 
   @override
   bool operator ==(Object other) =>
