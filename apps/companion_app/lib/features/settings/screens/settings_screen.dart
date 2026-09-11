@@ -300,7 +300,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     children: [
                       const Icon(Icons.graphic_eq, color: AppTheme.primaryCyan, size: 22),
                       const SizedBox(width: 8),
-                      const Text('Hardware-Aufnahmequalität (ESP32)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      const Text('Aufnahmequalität', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       const Spacer(),
                       if (widget.bleService.isConnected)
                         Container(
@@ -323,7 +323,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   // Storage & Free Space Banner
                   Builder(builder: (context) {
                     final telem = widget.bleService.telemetry;
-                    final totalBytes = telem.totalStorageBytes ?? (16 * 1024 * 1024);
+                    const totalBytes = 16 * 1024 * 1024; // 16 MB Flash Storage baseline
                     final usedBytes = telem.usedStorageBytes ?? 0;
                     final freeBytes = (totalBytes > usedBytes) ? (totalBytes - usedBytes) : 0;
                     final freeMb = (freeBytes / (1024 * 1024)).toStringAsFixed(1);
@@ -355,7 +355,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ...AudioQuality.values.map((quality) {
                     final isSelected = widget.bleService.selectedAudioQuality == quality;
                     final telem = widget.bleService.telemetry;
-                    final totalBytes = telem.totalStorageBytes ?? (16 * 1024 * 1024);
+                    const totalBytes = 16 * 1024 * 1024; // 16 MB Flash Storage baseline
                     final usedBytes = telem.usedStorageBytes ?? 0;
                     final freeBytes = (totalBytes > usedBytes) ? (totalBytes - usedBytes) : 0;
                     final remainingTimeStr = quality.formatRemainingTime(freeBytes);

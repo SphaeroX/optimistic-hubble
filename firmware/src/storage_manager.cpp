@@ -1,5 +1,8 @@
 #include "storage_manager.h"
 #include "spi_flash_driver.h"
+extern "C" {
+#include "esp_littlefs.h"
+}
 
 StorageManager::StorageManager()
     : _initialized(false), _isExternal(false), _nextClipId(1), _clipCount(0), _usedBytes(0), _totalBytes(0) {}
@@ -9,13 +12,26 @@ bool StorageManager::begin(SpiFlashDriver* extFlash, bool formatOnFail) {
 
     if (extFlash != nullptr && extFlash->isPartitionRegistered()) {
         Serial.println(F("[STORAGE] Attempting to mount LittleFS on External 16 MB Flash (\"ext_flash\")..."));
-        mounted = LittleFS.begin(false, "/littlefs", 10, extFlash->getPartitionLabel());
-        if (!mounted && formatOnFail) {
-            Serial.println(F("[STORAGE] External LittleFS not formatted, formatting 16 MB flash now..."));
-            if (LittleFS.format()) {
-                mounted = LittleFS.begin(false, "/littlefs", 10, extFlash->getPartitionLabel());
-            }
+        
+        esp_vfs_littlefs_conf_t conf = {
+            .base_path = "/littlefs",
+            .partition_label = "ext_flash",
+            .partition = extFlash->getPartition(),
+            .format_if_mount_failed = formatOnFail ? (uint8_t)1 : (uint8_t)0,
+            .read_only = 0,
+            .dont_mount = 0,
+            .grow_on_mount = 1
+        };
+
+        esp_err_t err = esp_vfs_littlefs_register(&conf);
+        if (err == ESP_OK) {
+            mounted = LittleFS.begin(false, "/littlefs", 10, extFlash->getPartitionLabel());
+        } else {
+            Serial.printf("[STORAGE] esp_vfs_littlefs_register failed: 0x%X\n", err);
+            // Retry via standard LittleFS.begin with formatOnFail
+            mounted = LittleFS.begin(formatOnFail, "/littlefs", 10, extFlash->getPartitionLabel());
         }
+
         if (mounted) {
             _isExternal = true;
             Serial.printf("[STORAGE] SUCCESS: LittleFS mounted on External 16 MB SPI Flash! Capacity: %u KB\n",
@@ -38,6 +54,9 @@ bool StorageManager::begin(SpiFlashDriver* extFlash, bool formatOnFail) {
     _prefs.begin("dictula_store", false);
     _initialized = true;
     _totalBytes = LittleFS.totalBytes();
+    if (_isExternal && (_totalBytes == 0 || _totalBytes < 10000000) && extFlash != nullptr) {
+        _totalBytes = extFlash->getCapacityBytes();
+    }
     _usedBytes = LittleFS.usedBytes();
     scanExistingClips();
 

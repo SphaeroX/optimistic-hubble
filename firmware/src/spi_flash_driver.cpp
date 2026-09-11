@@ -19,6 +19,13 @@ SpiFlashDriver::~SpiFlashDriver() {
 bool SpiFlashDriver::begin() {
     if (_initialized) return true;
 
+    // Reset SPI pins to clear default bootloader UART0/ROM mappings (especially GPIO 20/21)
+    gpio_reset_pin((gpio_num_t)_cs);
+    gpio_reset_pin((gpio_num_t)_sck);
+    gpio_reset_pin((gpio_num_t)_mosi);
+    gpio_reset_pin((gpio_num_t)_miso);
+    gpio_set_pull_mode((gpio_num_t)_cs, GPIO_PULLUP_ONLY);
+
     // 1. Configure and initialize SPI2 bus
     spi_bus_config_t bus_cfg = {};
     bus_cfg.mosi_io_num = _mosi;
@@ -61,19 +68,26 @@ bool SpiFlashDriver::begin() {
 
     // 4. Read JEDEC ID and probed size
     err = esp_flash_read_id(_extChip, &_jedecId);
-    if (err != ESP_OK) {
-        Serial.printf("[FLASH] esp_flash_read_id failed: 0x%X\n", err);
+    if (err != ESP_OK || _jedecId == 0x000000 || _jedecId == 0xFFFFFF) {
+        Serial.printf("[FLASH] esp_flash_read_id returned invalid JEDEC ID: 0x%06X (err: 0x%X)\n", (unsigned int)_jedecId, err);
     }
     _chipSize = _extChip->size;
     if (_chipSize == 0) {
         _chipSize = W25Q128_CAPACITY_BYTES;
     }
 
-    // 5. Register partition with ESP-IDF partition table for LittleFS
+    // 5. Register partition with ESP-IDF partition table for LittleFS (subtype 0x83)
     err = esp_partition_register_external(_extChip, 0, _chipSize, "ext_flash",
                                          ESP_PARTITION_TYPE_DATA,
-                                         ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
+                                         (esp_partition_subtype_t)0x83, // ESP_PARTITION_SUBTYPE_DATA_LITTLEFS
                                          &_partition);
+    if (err != ESP_OK) {
+        // Fallback to subtype SPIFFS (0x82) if 0x83 registration fails
+        err = esp_partition_register_external(_extChip, 0, _chipSize, "ext_flash",
+                                             ESP_PARTITION_TYPE_DATA,
+                                             ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
+                                             &_partition);
+    }
     if (err != ESP_OK) {
         Serial.printf("[FLASH] esp_partition_register_external failed: 0x%X\n", err);
         _partition = nullptr;

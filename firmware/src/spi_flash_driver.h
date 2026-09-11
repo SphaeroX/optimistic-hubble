@@ -23,6 +23,7 @@ public:
 
     bool isConnected() const { return _initialized; }
     bool isPartitionRegistered() const { return _partition != nullptr; }
+    const esp_partition_t* getPartition() const { return _partition; }
     const char* getPartitionLabel() const { return "ext_flash"; }
     uint32_t getJedecId() const { return _jedecId; }
     size_t getCapacityBytes() const;
