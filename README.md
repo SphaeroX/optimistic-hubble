@@ -180,3 +180,12 @@ The project supports two target hardware setups:
 3. **Tap again** $\rightarrow$ Status LED turns OFF, audio is saved to Flash in 8 KB/s ADPCM format.
 4. **Download & Play:** Launch the Flutter Companion App (via `02_run_flutter_device.bat` or `05_run_flutter_windows.bat`) and click **"WLAN Synchronisieren"** or BLE sync!
 
+---
+
+## Future Roadmap & Hardware To-Do List
+
+- [ ] **Expose Wi-Fi Antenna & Optimize RF Radiation:**
+  - **Problem:** Current wireless transfer throughput is limited to only ~0.11 MB/s due to RF shielding / PCB attenuation.
+  - **Action:** In the next hardware/enclosure revision, reposition the ESP32-C3 module so the integrated antenna extends further outwards beyond the PCB edge with proper keepout clearance (no copper layers, traces, or battery shielding underneath the antenna) to improve signal strength and transfer speeds.
+
+
