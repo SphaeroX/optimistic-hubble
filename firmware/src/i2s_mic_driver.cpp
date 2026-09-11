@@ -34,6 +34,7 @@ bool I2sMicDriver::begin(int sckPin, int wsPin, int sdPin, uint32_t sampleRate) 
     };
 
     i2s_pin_config_t pin_config = {
+        .mck_io_num = I2S_PIN_NO_CHANGE, // Crucial: Prevents I2S driver from assigning MCLK to GPIO 0 (Flash SCK)
         .bck_io_num = sckPin,
         .ws_io_num = wsPin,
         .data_out_num = I2S_PIN_NO_CHANGE,

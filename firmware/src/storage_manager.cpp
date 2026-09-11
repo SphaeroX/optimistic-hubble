@@ -16,14 +16,28 @@ bool StorageManager::begin(SpiFlashDriver* extFlash, bool formatOnFail) {
     if (extFlash != nullptr && extFlash->isPartitionRegistered()) {
         Serial.println(F("[STORAGE] Attempting to mount LittleFS on External 16 MB Flash (\"ext_flash\")..."));
         mounted = LittleFS.begin(false, "/littlefs", 10, extFlash->getPartitionLabel());
+        
+        // Verify that LittleFS is actually usable (totalBytes > 0 and root directory opens cleanly)
+        if (mounted) {
+            File root = LittleFS.open("/");
+            if (!root || LittleFS.totalBytes() == 0) {
+                Serial.println(F("[STORAGE] External flash partition is blank or corrupted. Unmounting to format..."));
+                if (root) root.close();
+                LittleFS.end();
+                mounted = false;
+            } else {
+                root.close();
+            }
+        }
+
         if (!mounted && formatOnFail) {
-            Serial.println(F("[STORAGE] External 16 MB partition blank or unformatted. Formatting LittleFS (this may take ~15s)..."));
-            LittleFS.end();
-            if (LittleFS.format()) {
-                Serial.println(F("[STORAGE] Formatting complete! Mounting External LittleFS..."));
+            Serial.println(F("[STORAGE] Formatting External 16 MB LittleFS partition (this may take ~10-15s)..."));
+            esp_err_t ferr = esp_littlefs_format_partition(extFlash->getPartition());
+            if (ferr == ESP_OK) {
+                Serial.println(F("[STORAGE] Formatting complete! Remounting External LittleFS..."));
                 mounted = LittleFS.begin(false, "/littlefs", 10, extFlash->getPartitionLabel());
             } else {
-                Serial.println(F("[STORAGE] LittleFS.format() failed on external flash!"));
+                Serial.printf("[STORAGE] esp_littlefs_format_partition failed: 0x%X\n", ferr);
             }
         }
         if (mounted) {

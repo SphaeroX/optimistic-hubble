@@ -27,10 +27,12 @@
 #define LED_LEVEL_OFF HIGH
 
 // External SPI Flash Pins (Winbond W25Q128JVSIQ 16MB Audio Storage on SPI2 / FSPI)
+// Empirically verified on PCB V2 hardware routing:
+// CS=GPIO 21, SCK=GPIO 0, MOSI=GPIO 20, MISO=GPIO 1
 #define PIN_FLASH_CS 21   // GPIO 21 (Module Pin 28) = /CS (Chip Select)
-#define PIN_FLASH_SCK 20  // GPIO 20 (Module Pin 27) = CLK (Clock)
-#define PIN_FLASH_MOSI 1  // GPIO 1  (Module Pin 13) = DI (Serial Data In)
-#define PIN_FLASH_MISO 0  // GPIO 0  (Module Pin 12) = DO (Serial Data Out)
+#define PIN_FLASH_SCK 0   // GPIO 0  (Module Pin 12) = CLK (Clock)
+#define PIN_FLASH_MOSI 20 // GPIO 20 (Module Pin 27) = DI (Serial Data In)
+#define PIN_FLASH_MISO 1  // GPIO 1  (Module Pin 13) = DO (Serial Data Out)
 
 // Serial Baud Rate
 #define SERIAL_BAUD_RATE 115200
