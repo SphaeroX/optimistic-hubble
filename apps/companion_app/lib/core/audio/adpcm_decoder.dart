@@ -224,8 +224,9 @@ class AdpcmDecoder {
         } else if (chunkId == 'data') {
           dataOffset = chunkDataOffset;
           dataSize = chunkSize;
-          if (dataOffset + dataSize > bytes.length) {
-            dataSize = bytes.length - dataOffset;
+          // Auto-repair unfinalized header: if dataSize is 0 or exceeds buffer, use all available payload bytes
+          if (dataSize <= 0 || dataOffset + dataSize > bytes.length) {
+            dataSize = (bytes.length > dataOffset) ? (bytes.length - dataOffset) : 0;
           }
           break;
         }
@@ -240,7 +241,7 @@ class AdpcmDecoder {
 
       // Extract ADPCM data subchunk
       Uint8List adpcmPayload;
-      if (dataOffset >= 0 && dataOffset < bytes.length) {
+      if (dataOffset >= 0 && dataOffset < bytes.length && dataSize > 0) {
         adpcmPayload = bytes.sublist(dataOffset, dataOffset + dataSize);
       } else if (bytes.length > 60) {
         adpcmPayload = bytes.sublist(60);

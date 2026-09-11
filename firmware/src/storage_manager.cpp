@@ -10,28 +10,12 @@ StorageManager::StorageManager()
 bool StorageManager::begin(SpiFlashDriver* extFlash, bool formatOnFail) {
     bool mounted = false;
 
+    // Ensure any previously mounted LittleFS instance is cleanly closed
+    LittleFS.end();
+
     if (extFlash != nullptr && extFlash->isPartitionRegistered()) {
         Serial.println(F("[STORAGE] Attempting to mount LittleFS on External 16 MB Flash (\"ext_flash\")..."));
-        
-        esp_vfs_littlefs_conf_t conf = {
-            .base_path = "/littlefs",
-            .partition_label = "ext_flash",
-            .partition = extFlash->getPartition(),
-            .format_if_mount_failed = formatOnFail ? (uint8_t)1 : (uint8_t)0,
-            .read_only = 0,
-            .dont_mount = 0,
-            .grow_on_mount = 1
-        };
-
-        esp_err_t err = esp_vfs_littlefs_register(&conf);
-        if (err == ESP_OK) {
-            mounted = LittleFS.begin(false, "/littlefs", 10, extFlash->getPartitionLabel());
-        } else {
-            Serial.printf("[STORAGE] esp_vfs_littlefs_register failed: 0x%X\n", err);
-            // Retry via standard LittleFS.begin with formatOnFail
-            mounted = LittleFS.begin(formatOnFail, "/littlefs", 10, extFlash->getPartitionLabel());
-        }
-
+        mounted = LittleFS.begin(formatOnFail, "/littlefs", 10, extFlash->getPartitionLabel());
         if (mounted) {
             _isExternal = true;
             Serial.printf("[STORAGE] SUCCESS: LittleFS mounted on External 16 MB SPI Flash! Capacity: %u KB\n",
@@ -43,6 +27,7 @@ bool StorageManager::begin(SpiFlashDriver* extFlash, bool formatOnFail) {
 
     if (!mounted) {
         Serial.println(F("[STORAGE] Mounting LittleFS on internal flash partition..."));
+        LittleFS.end();
         mounted = LittleFS.begin(formatOnFail);
         _isExternal = false;
         if (!mounted) {

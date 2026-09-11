@@ -104,8 +104,8 @@ enum DeviceState : uint8_t
     STATE_SLEEPING = 5
 };
 
-// Minimum free LittleFS Flash storage margin to prevent overflow (64 KB safe headroom)
-#define MIN_FREE_STORAGE_BYTES 65536UL
+// Minimum free LittleFS Flash storage margin to prevent overflow (128 KB safe headroom for COW blocks & header updates)
+#define MIN_FREE_STORAGE_BYTES 131072UL
 
 // Audio Recording Quality Modes
 enum AudioQuality : uint8_t

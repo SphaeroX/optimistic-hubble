@@ -217,6 +217,17 @@ bool AudioRecorder::processRecording(I2sMicDriver& mic) {
         return false;
     }
 
+    // Check free flash headroom and 10-minute timeout before processing incoming frames
+    size_t total = LittleFS.totalBytes();
+    size_t used = LittleFS.usedBytes();
+    size_t freeFlash = (total > used) ? (total - used) : 0;
+    if (freeFlash < MIN_FREE_STORAGE_BYTES || (millis() - _recordStartTime >= 600000UL)) {
+        Serial.printf("[RECORDER] Storage limit reached (Free: %u B < %u B). Stopping safely.\n",
+                      (unsigned int)freeFlash, (unsigned int)MIN_FREE_STORAGE_BYTES);
+        stopRecording();
+        return false;
+    }
+
     static int32_t rawChunk[256 * 2];
     bool writeFailed = false;
 
@@ -318,17 +329,6 @@ bool AudioRecorder::processRecording(I2sMicDriver& mic) {
         return false;
     }
 
-    // Safety checks: Flash headroom limit or 10-minute timeout
-    size_t total = LittleFS.totalBytes();
-    size_t used = LittleFS.usedBytes();
-    size_t freeFlash = (total > used) ? (total - used) : 0;
-    if (freeFlash < MIN_FREE_STORAGE_BYTES || (millis() - _recordStartTime >= 600000UL)) {
-        Serial.printf("[RECORDER] Storage limit reached (Free: %u B < %u B). Stopping safely.\n",
-                      (unsigned int)freeFlash, (unsigned int)MIN_FREE_STORAGE_BYTES);
-        stopRecording();
-        return false;
-    }
-
     return true;
 }
 
@@ -343,11 +343,22 @@ void AudioRecorder::stopRecording() {
             _hasPendingNibble = false;
         }
 
-        flushFlashBuffer();
+        // Only flush remaining audio if there is ample headroom for COW header blocks
+        size_t total = LittleFS.totalBytes();
+        size_t used = LittleFS.usedBytes();
+        size_t freeFlash = (total > used) ? (total - used) : 0;
+        if (freeFlash >= 32768UL) {
+            flushFlashBuffer();
+        } else {
+            _flashBufferIndex = 0; // Preserve remaining flash blocks for WAV header COW write
+        }
 
         // Finalize WAV header with actual recorded data length and sample count
-        _activeFile.seek(0, SeekSet);
-        writeWavHeader(_activeFile, _totalCompressedBytesWritten, _totalSamplesRecorded, getSampleRate(), _quality);
+        if (_activeFile.seek(0, SeekSet)) {
+            writeWavHeader(_activeFile, _totalCompressedBytesWritten, _totalSamplesRecorded, getSampleRate(), _quality);
+        } else {
+            Serial.println(F("[RECORDER] Warning: seek(0) failed during header update."));
+        }
         _activeFile.flush();
         _activeFile.close();
 

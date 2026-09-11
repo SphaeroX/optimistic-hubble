@@ -69,34 +69,32 @@ bool SpiFlashDriver::begin() {
     // 4. Read JEDEC ID and probed size
     err = esp_flash_read_id(_extChip, &_jedecId);
     if (err != ESP_OK || _jedecId == 0x000000 || _jedecId == 0xFFFFFF) {
-        Serial.printf("[FLASH] esp_flash_read_id returned invalid JEDEC ID: 0x%06X (err: 0x%X)\n", (unsigned int)_jedecId, err);
+        Serial.printf("[FLASH] esp_flash_read_id invalid or chip not responding: 0x%06X (err: 0x%X)\n", (unsigned int)_jedecId, err);
+        spi_bus_remove_flash_device(_extChip);
+        _extChip = nullptr;
+        return false;
     }
     _chipSize = _extChip->size;
     if (_chipSize == 0) {
         _chipSize = W25Q128_CAPACITY_BYTES;
     }
 
-    // 5. Register partition with ESP-IDF partition table for LittleFS (subtype 0x83)
+    // 5. Register partition with ESP-IDF partition table for LittleFS (subtype 0x82 / SPIFFS is required by esp_littlefs)
     err = esp_partition_register_external(_extChip, 0, _chipSize, "ext_flash",
                                          ESP_PARTITION_TYPE_DATA,
-                                         (esp_partition_subtype_t)0x83, // ESP_PARTITION_SUBTYPE_DATA_LITTLEFS
+                                         ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
                                          &_partition);
-    if (err != ESP_OK) {
-        // Fallback to subtype SPIFFS (0x82) if 0x83 registration fails
-        err = esp_partition_register_external(_extChip, 0, _chipSize, "ext_flash",
-                                             ESP_PARTITION_TYPE_DATA,
-                                             ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
-                                             &_partition);
-    }
     if (err != ESP_OK) {
         Serial.printf("[FLASH] esp_partition_register_external failed: 0x%X\n", err);
         _partition = nullptr;
+        spi_bus_remove_flash_device(_extChip);
+        _extChip = nullptr;
+        return false;
     }
 
     _initialized = true;
-    Serial.printf("[FLASH] External SPI2 Flash registered: %s (JEDEC: 0x%06X, %u MB, Partition: %s)\n",
-                  getChipName(), (unsigned int)_jedecId, (unsigned int)(getCapacityBytes() / (1024 * 1024)),
-                  _partition ? "OK" : "FAILED");
+    Serial.printf("[FLASH] External SPI2 Flash registered: %s (JEDEC: 0x%06X, %u MB, Partition: OK)\n",
+                  getChipName(), (unsigned int)_jedecId, (unsigned int)(getCapacityBytes() / (1024 * 1024)));
     return true;
 }
 

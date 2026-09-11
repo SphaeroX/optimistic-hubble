@@ -400,6 +400,33 @@ bool BleManager::streamAudioFileFromStorage(uint16_t clipId, uint32_t startOffse
         size_t bytesRead = file.read(&packet[8], CHUNK_PAYLOAD_SIZE);
         if (bytesRead == 0) break;
 
+        // On-the-fly header auto-repair: ensure RIFF and data chunk sizes are accurate even if recording halted unexpectedly
+        if (chunkIdx == 0 && bytesRead >= 44) {
+            uint8_t* wavHdr = &packet[8];
+            if (wavHdr[0] == 'R' && wavHdr[1] == 'I' && wavHdr[2] == 'F' && wavHdr[3] == 'F') {
+                uint32_t riffLen = (totalBytes > 8) ? (uint32_t)(totalBytes - 8) : 0;
+                wavHdr[4] = (uint8_t)(riffLen & 0xFF);
+                wavHdr[5] = (uint8_t)((riffLen >> 8) & 0xFF);
+                wavHdr[6] = (uint8_t)((riffLen >> 16) & 0xFF);
+                wavHdr[7] = (uint8_t)((riffLen >> 24) & 0xFF);
+
+                // Check for 60-byte ADPCM header or 44-byte PCM header
+                if (bytesRead >= 60 && wavHdr[52] == 'd' && wavHdr[53] == 'a' && wavHdr[54] == 't' && wavHdr[55] == 'a') {
+                    uint32_t dataLen = (totalBytes > 60) ? (uint32_t)(totalBytes - 60) : 0;
+                    wavHdr[56] = (uint8_t)(dataLen & 0xFF);
+                    wavHdr[57] = (uint8_t)((dataLen >> 8) & 0xFF);
+                    wavHdr[58] = (uint8_t)((dataLen >> 16) & 0xFF);
+                    wavHdr[59] = (uint8_t)((dataLen >> 24) & 0xFF);
+                } else if (wavHdr[36] == 'd' && wavHdr[37] == 'a' && wavHdr[38] == 't' && wavHdr[39] == 'a') {
+                    uint32_t dataLen = (totalBytes > 44) ? (uint32_t)(totalBytes - 44) : 0;
+                    wavHdr[40] = (uint8_t)(dataLen & 0xFF);
+                    wavHdr[41] = (uint8_t)((dataLen >> 8) & 0xFF);
+                    wavHdr[42] = (uint8_t)((dataLen >> 16) & 0xFF);
+                    wavHdr[43] = (uint8_t)((dataLen >> 24) & 0xFF);
+                }
+            }
+        }
+
         packet[0] = (uint8_t)(chunkIdx & 0xFF);
         packet[1] = (uint8_t)((chunkIdx >> 8) & 0xFF);
         packet[2] = (uint8_t)(totalChunks & 0xFF);
