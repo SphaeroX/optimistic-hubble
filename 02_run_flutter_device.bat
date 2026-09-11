@@ -1,9 +1,9 @@
 @echo off
 setlocal
-title Xiao Audio Companion - Flutter Device Run
+title Audio Vault Companion - Flutter Device Run
 
 echo ========================================================
-echo   Xiao Audio Companion - Run on Connected Device
+echo   Audio Vault Companion - Run on Connected Device
 echo ========================================================
 echo.
 

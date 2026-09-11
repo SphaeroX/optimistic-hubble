@@ -1,9 +1,9 @@
 @echo off
 setlocal
-title Xiao ESP32-C3 - Flutter Companion App (Windows)
+title Audio Vault Companion - Flutter Windows App
 
 echo ========================================================
-echo   Xiao ESP32-C3 Audio Companion - Flutter Windows App
+echo   Audio Vault Audio Companion - Flutter Windows App
 echo ========================================================
 echo.
 

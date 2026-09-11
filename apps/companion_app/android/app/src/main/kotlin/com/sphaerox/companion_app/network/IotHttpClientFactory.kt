@@ -27,7 +27,7 @@ object IotHttpClientFactory {
             // 2. DNS resolver bypass for local SoftAP IP
             builder.dns(object : Dns {
                 override fun lookup(hostname: String): List<InetAddress> {
-                    return if (hostname == "xiao.local" || hostname == "192.168.4.1") {
+                    return if (hostname == "audiovault.local" || hostname == "192.168.4.1") {
                         listOf(InetAddress.getByName(ESP32_SOFTAP_IP))
                     } else {
                         try {
@@ -41,7 +41,7 @@ object IotHttpClientFactory {
         } else {
             builder.dns(object : Dns {
                 override fun lookup(hostname: String): List<InetAddress> {
-                    return if (hostname == "xiao.local" || hostname == "192.168.4.1") {
+                    return if (hostname == "audiovault.local" || hostname == "192.168.4.1") {
                         listOf(InetAddress.getByName(ESP32_SOFTAP_IP))
                     } else {
                         Dns.SYSTEM.lookup(hostname)

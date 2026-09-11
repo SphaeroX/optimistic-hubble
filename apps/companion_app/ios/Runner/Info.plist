@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Xiao Audio Companion</string>
+	<string>Audio Vault Companion</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -17,7 +17,7 @@
 	<key>CFBundleName</key>
 	<string>companion_app</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>This app requires Bluetooth Low Energy to connect to your Xiao ESP32-C3 Audio Companion device.</string>
+	<string>This app requires Bluetooth Low Energy to connect to your Audio Vault device.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>This app connects via Bluetooth to exchange control commands and receive telemetry.</string>
 	<key>NSLocalNetworkUsageDescription</key>

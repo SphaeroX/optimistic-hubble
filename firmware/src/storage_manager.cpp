@@ -15,7 +15,17 @@ bool StorageManager::begin(SpiFlashDriver* extFlash, bool formatOnFail) {
 
     if (extFlash != nullptr && extFlash->isPartitionRegistered()) {
         Serial.println(F("[STORAGE] Attempting to mount LittleFS on External 16 MB Flash (\"ext_flash\")..."));
-        mounted = LittleFS.begin(formatOnFail, "/littlefs", 10, extFlash->getPartitionLabel());
+        mounted = LittleFS.begin(false, "/littlefs", 10, extFlash->getPartitionLabel());
+        if (!mounted && formatOnFail) {
+            Serial.println(F("[STORAGE] External 16 MB partition blank or unformatted. Formatting LittleFS (this may take ~15s)..."));
+            LittleFS.end();
+            if (LittleFS.format()) {
+                Serial.println(F("[STORAGE] Formatting complete! Mounting External LittleFS..."));
+                mounted = LittleFS.begin(false, "/littlefs", 10, extFlash->getPartitionLabel());
+            } else {
+                Serial.println(F("[STORAGE] LittleFS.format() failed on external flash!"));
+            }
+        }
         if (mounted) {
             _isExternal = true;
             Serial.printf("[STORAGE] SUCCESS: LittleFS mounted on External 16 MB SPI Flash! Capacity: %u KB\n",

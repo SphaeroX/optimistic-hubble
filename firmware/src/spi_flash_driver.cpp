@@ -19,14 +19,87 @@ SpiFlashDriver::~SpiFlashDriver() {
 bool SpiFlashDriver::begin() {
     if (_initialized) return true;
 
-    // Reset SPI pins to clear default bootloader UART0/ROM mappings (especially GPIO 20/21)
+    // 1. Bit-bang hardware stabilization, wake-up from Deep Power-Down (0xAB) and reset (0x66, 0x99)
+    // CS is on GPIO 21 (UART0 TX at boot), SCK on GPIO 20 (UART0 RX at boot).
+    // Drive CS HIGH immediately to deselect flash before configuring the bus.
+    pinMode(_cs, OUTPUT);
+    digitalWrite(_cs, HIGH);
+    pinMode(_sck, OUTPUT);
+    digitalWrite(_sck, LOW);
+    pinMode(_mosi, OUTPUT);
+    digitalWrite(_mosi, LOW);
+    pinMode(_miso, INPUT_PULLUP);
+    delay(5);
+
+    // Send Release Power-Down (0xAB)
+    digitalWrite(_cs, LOW);
+    delayMicroseconds(2);
+    for (int i = 7; i >= 0; i--) {
+        digitalWrite(_mosi, (0xAB >> i) & 1);
+        digitalWrite(_sck, HIGH);
+        delayMicroseconds(1);
+        digitalWrite(_sck, LOW);
+        delayMicroseconds(1);
+    }
+    digitalWrite(_cs, HIGH);
+    delayMicroseconds(100); // tRES1 is max 30 us on W25Q128
+
+    // Send Software Reset Enable (0x66)
+    digitalWrite(_cs, LOW);
+    delayMicroseconds(2);
+    for (int i = 7; i >= 0; i--) {
+        digitalWrite(_mosi, (0x66 >> i) & 1);
+        digitalWrite(_sck, HIGH);
+        delayMicroseconds(1);
+        digitalWrite(_sck, LOW);
+        delayMicroseconds(1);
+    }
+    digitalWrite(_cs, HIGH);
+    delayMicroseconds(10);
+
+    // Send Software Reset (0x99)
+    digitalWrite(_cs, LOW);
+    delayMicroseconds(2);
+    for (int i = 7; i >= 0; i--) {
+        digitalWrite(_mosi, (0x99 >> i) & 1);
+        digitalWrite(_sck, HIGH);
+        delayMicroseconds(1);
+        digitalWrite(_sck, LOW);
+        delayMicroseconds(1);
+    }
+    digitalWrite(_cs, HIGH);
+    delayMicroseconds(100); // tRST is max 30 us
+
+    // Probe JEDEC ID (0x9F) via bit-bang to verify hardware presence and response
+    digitalWrite(_cs, LOW);
+    delayMicroseconds(2);
+    for (int i = 7; i >= 0; i--) {
+        digitalWrite(_mosi, (0x9F >> i) & 1);
+        digitalWrite(_sck, HIGH);
+        delayMicroseconds(1);
+        digitalWrite(_sck, LOW);
+        delayMicroseconds(1);
+    }
+    uint32_t bitbangId = 0;
+    for (int i = 23; i >= 0; i--) {
+        digitalWrite(_sck, HIGH);
+        delayMicroseconds(1);
+        int b = digitalRead(_miso);
+        bitbangId = (bitbangId << 1) | (b ? 1 : 0);
+        digitalWrite(_sck, LOW);
+        delayMicroseconds(1);
+    }
+    digitalWrite(_cs, HIGH);
+    Serial.printf("[FLASH] Pre-init bit-bang probed JEDEC ID: 0x%06X\n", (unsigned int)bitbangId);
+
+    // Reset SPI pins before attaching to ESP-IDF SPI driver
     gpio_reset_pin((gpio_num_t)_cs);
     gpio_reset_pin((gpio_num_t)_sck);
     gpio_reset_pin((gpio_num_t)_mosi);
     gpio_reset_pin((gpio_num_t)_miso);
     gpio_set_pull_mode((gpio_num_t)_cs, GPIO_PULLUP_ONLY);
 
-    // 1. Configure and initialize SPI2 bus
+    // 2. Configure and initialize SPI2 bus
     spi_bus_config_t bus_cfg = {};
     bus_cfg.mosi_io_num = _mosi;
     bus_cfg.miso_io_num = _miso;
@@ -43,12 +116,12 @@ bool SpiFlashDriver::begin() {
         return false;
     }
 
-    // 2. Configure SPI flash device on bus
+    // 3. Configure SPI flash device on bus (10 MHz matches working hardware diagnostic suite)
     esp_flash_spi_device_config_t dev_cfg = {};
     dev_cfg.host_id = SPI2_HOST;
     dev_cfg.cs_io_num = _cs;
     dev_cfg.io_mode = SPI_FLASH_SLOWRD; // Robust standard read
-    dev_cfg.speed = ESP_FLASH_20MHZ;
+    dev_cfg.speed = ESP_FLASH_10MHZ;
     dev_cfg.cs_id = 0;
 
     err = spi_bus_add_flash_device(&_extChip, &dev_cfg);
@@ -57,7 +130,7 @@ bool SpiFlashDriver::begin() {
         return false;
     }
 
-    // 3. Initialize flash chip
+    // 4. Initialize flash chip
     err = esp_flash_init(_extChip);
     if (err != ESP_OK) {
         Serial.printf("[FLASH] esp_flash_init failed: 0x%X\n", err);
@@ -66,20 +139,26 @@ bool SpiFlashDriver::begin() {
         return false;
     }
 
-    // 4. Read JEDEC ID and probed size
+    // 5. Read JEDEC ID and probed size
     err = esp_flash_read_id(_extChip, &_jedecId);
     if (err != ESP_OK || _jedecId == 0x000000 || _jedecId == 0xFFFFFF) {
-        Serial.printf("[FLASH] esp_flash_read_id invalid or chip not responding: 0x%06X (err: 0x%X)\n", (unsigned int)_jedecId, err);
-        spi_bus_remove_flash_device(_extChip);
-        _extChip = nullptr;
-        return false;
+        if (bitbangId != 0 && bitbangId != 0xFFFFFF) {
+            Serial.printf("[FLASH] Using bit-bang probed JEDEC ID: 0x%06X\n", (unsigned int)bitbangId);
+            _jedecId = bitbangId;
+        } else {
+            Serial.printf("[FLASH] esp_flash_read_id invalid: 0x%06X (err: 0x%X)\n", (unsigned int)_jedecId, err);
+            spi_bus_remove_flash_device(_extChip);
+            _extChip = nullptr;
+            return false;
+        }
     }
     _chipSize = _extChip->size;
     if (_chipSize == 0) {
-        _chipSize = W25Q128_CAPACITY_BYTES;
+        _chipSize = getCapacityBytes();
     }
+    _extChip->size = _chipSize; // Synchronize struct so esp_partition_register_external passes size validation
 
-    // 5. Register partition with ESP-IDF partition table for LittleFS (subtype 0x82 / SPIFFS is required by esp_littlefs)
+    // 6. Register partition with ESP-IDF partition table for LittleFS (subtype 0x82 / SPIFFS)
     err = esp_partition_register_external(_extChip, 0, _chipSize, "ext_flash",
                                          ESP_PARTITION_TYPE_DATA,
                                          ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
@@ -162,9 +241,20 @@ bool SpiFlashDriver::eraseChip() {
 }
 
 void SpiFlashDriver::sleep() {
-    // esp_flash driver manages power states cleanly
+    if (_extChip) {
+        // Send Deep Power-Down command 0xB9
+        spi_flash_trans_t t = {};
+        t.command = 0xB9;
+        _extChip->host->driver->common_command(_extChip->host, &t);
+    }
 }
 
 void SpiFlashDriver::wakeup() {
-    // esp_flash driver manages power states cleanly
+    if (_extChip) {
+        // Send Release Deep Power-Down command 0xAB
+        spi_flash_trans_t t = {};
+        t.command = 0xAB;
+        _extChip->host->driver->common_command(_extChip->host, &t);
+        delayMicroseconds(50);
+    }
 }

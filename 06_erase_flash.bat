@@ -1,13 +1,13 @@
 @echo off
 setlocal enabledelayedexpansion
-title Xiao ESP32-C3 - Full Flash Erase and Reset Tool
+title Audio Vault ESP32-C3 - Full Flash Erase and Reset Tool
 
 echo ======================================================================
-echo   Seeed Studio XIAO ESP32C3 - Full Flash Erase and Storage Reset Tool
+echo   Audio Vault ESP32-C3 - Full Flash Erase and Storage Reset Tool
 echo ======================================================================
 echo.
 echo [WARNING] This tool will completely wipe the entire Flash memory
-echo           of the XIAO ESP32C3, including:
+echo           of the ESP32-C3, including:
 echo             - All recorded audio files in LittleFS Flash storage
 echo             - Wi-Fi and NVS non-volatile configuration
 echo             - Current firmware
@@ -16,7 +16,7 @@ echo After erasing, it will automatically flash fresh firmware to
 echo initialize a clean LittleFS filesystem partition.
 echo.
 echo Make sure:
-echo   1. The XIAO ESP32C3 is plugged into USB.
+echo   1. The Audio Vault ESP32-C3 is plugged into USB.
 echo   2. All Serial Monitor windows (COM ports) are closed.
 echo.
 pause
@@ -38,7 +38,7 @@ if %ERASE_ERR% NEQ 0 (
     echo   [ERROR] Flash erase failed!
     echo ======================================================================
     echo   Tips:
-    echo   1. Check if the XIAO ESP32C3 is firmly plugged into USB.
+    echo   1. Check if the Audio Vault ESP32-C3 is firmly plugged into USB.
     echo   2. Make sure no other Serial Monitor / COM tool is open.
     echo   3. If needed, enter Bootloader Mode:
     echo      Hold the B [Boot] button, press and release R [Reset],

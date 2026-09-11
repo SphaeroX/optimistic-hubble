@@ -8,11 +8,8 @@ class BleDeviceItem {
     required this.id,
     required this.name,
     required this.rssi,
-    bool? isHardwareDevice,
-    bool? isXiaoDevice,
-  }) : isHardwareDevice = isHardwareDevice ?? isXiaoDevice ?? false;
-
-  bool get isXiaoDevice => isHardwareDevice;
+    this.isHardwareDevice = false,
+  });
 
   @override
   bool operator ==(Object other) =>

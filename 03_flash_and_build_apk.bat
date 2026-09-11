@@ -1,9 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
-title Xiao ESP32-C3 - Flash Firmware and Build Android APK
+title Audio Vault ESP32-C3 - Flash Firmware and Build Android APK
 
 echo ======================================================================
-echo   Seeed Studio XIAO ESP32C3 - All-in-One Flash and Android APK Builder
+echo   Audio Vault ESP32-C3 - All-in-One Flash and Android APK Builder
 echo ======================================================================
 echo.
 
@@ -39,7 +39,7 @@ REM -------------------------------------------------------------------------
 REM [Phase 2/3] Build and Flash ESP32-C3 Firmware
 REM -------------------------------------------------------------------------
 echo ======================================================================
-echo [2/3] Building and Flashing Firmware to XIAO ESP32C3...
+echo [2/3] Building and Flashing Firmware to Audio Vault ESP32-C3...
 echo ======================================================================
 echo.
 
@@ -54,7 +54,7 @@ if %FLASH_ERR% NEQ 0 (
     echo   [ERROR] Firmware Flashing Failed!
     echo ======================================================================
     echo   Troubleshooting Tips:
-    echo   1. Ensure the XIAO ESP32C3 is firmly plugged into USB.
+    echo   1. Ensure the Audio Vault ESP32-C3 is firmly plugged into USB.
     echo   2. Close any open Serial Monitor or COM port connections.
     echo   3. Put device into Bootloader Mode:
     echo      Hold the B [Boot] button, press and release R [Reset],
@@ -66,7 +66,7 @@ if %FLASH_ERR% NEQ 0 (
 )
 
 echo.
-echo   [OK] Firmware successfully compiled and flashed to XIAO ESP32C3!
+echo   [OK] Firmware successfully compiled and flashed to Audio Vault ESP32-C3!
 echo.
 
 REM -------------------------------------------------------------------------
@@ -98,7 +98,7 @@ if not exist "%OUTPUT_DIR%" (
 )
 
 set "SOURCE_APK=%APP_DIR%\build\app\outputs\flutter-apk\app-release.apk"
-set "DEST_APK=%OUTPUT_DIR%\xiao-companion-app.apk"
+set "DEST_APK=%OUTPUT_DIR%\audio-vault-companion.apk"
 set "DEST_APK_NAMED=%OUTPUT_DIR%\app-release.apk"
 
 if exist "%SOURCE_APK%" (
@@ -117,7 +117,7 @@ echo   [SUCCESS] All tasks completed successfully!
 echo ======================================================================
 echo.
 echo 1. Firmware:
-echo    - Flashed to XIAO ESP32C3 board.
+echo    - Flashed to Audio Vault ESP32-C3 board.
 echo.
 echo 2. Android Companion APK:
 echo    - %DEST_APK%
@@ -126,7 +126,7 @@ echo.
 echo Installation Options:
 echo   - Direct ADB install:
 echo       adb install -r "%DEST_APK%"
-echo   - Or copy xiao-companion-app.apk to your phone via USB or Cloud.
+echo   - Or copy audio-vault-companion.apk to your phone via USB or Cloud.
 echo.
 
 REM Check ADB device availability

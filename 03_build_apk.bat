@@ -1,9 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
-title Xiao Audio Companion - Build Android APK
+title Audio Vault Companion - Build Android APK
 
 echo ======================================================================
-echo   Seeed Studio XIAO Audio Recorder - Build Android APK
+echo   Audio Vault Companion - Build Android APK
 echo ======================================================================
 echo.
 
@@ -30,6 +30,7 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
+:: Build Android APK
 echo [2/3] Building Android APK (Release mode)...
 echo This may take a couple of minutes on the first build.
 echo.
@@ -56,7 +57,7 @@ if not exist "%OUTPUT_DIR%" (
 )
 
 set "SOURCE_APK=%APP_DIR%\build\app\outputs\flutter-apk\app-release.apk"
-set "DEST_APK=%OUTPUT_DIR%\xiao-companion-app.apk"
+set "DEST_APK=%OUTPUT_DIR%\audio-vault-companion.apk"
 set "DEST_APK_NAMED=%OUTPUT_DIR%\app-release.apk"
 
 if exist "%SOURCE_APK%" (
@@ -73,7 +74,7 @@ if exist "%SOURCE_APK%" (
     echo   - %DEST_APK_NAMED%
     echo.
     echo Installation Options:
-    echo   1. Transfer 'xiao-companion-app.apk' to your Android smartphone
+    echo   1. Transfer 'audio-vault-companion.apk' to your Android smartphone
     echo      via USB cable, Google Drive, WhatsApp, or local network.
     echo   2. Or install directly via ADB if your phone is connected:
     echo      adb install -r "%DEST_APK%"

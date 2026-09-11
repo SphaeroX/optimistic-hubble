@@ -55,8 +55,8 @@ class IotWifiManager(private val context: Context) {
 
     @RequiresApi(Build.VERSION_CODES.Q)
     suspend fun connect(
-        ssidPattern: String = "XIAO-Audio-Hotspot",
-        passphrase: String = "xiaoesp32c3",
+        ssidPattern: String = "Audio-Vault-Hotspot",
+        passphrase: String = "audiovault2026",
         timeoutMs: Int = 30000
     ): Network {
         val deferred: CompletableDeferred<Network>
@@ -188,8 +188,8 @@ class IotWifiManager(private val context: Context) {
 
     @RequiresApi(Build.VERSION_CODES.Q)
     fun connectToEsp32SoftAp(
-        ssidPattern: String = "XIAO-Audio-Hotspot",
-        passphrase: String = "xiaoesp32c3",
+        ssidPattern: String = "Audio-Vault-Hotspot",
+        passphrase: String = "audiovault2026",
         timeoutMs: Int = 30000
     ): Flow<WifiConnectionState> = callbackFlow {
         val existing = activeNetwork

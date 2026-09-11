@@ -145,8 +145,8 @@ class MainActivity : FlutterActivity() {
                         }
 
                         "connectWifiSoftAp" -> {
-                            val ssidPattern = call.argument<String>("ssidPattern") ?: "XIAO-Audio-Hotspot"
-                            val passphrase = call.argument<String>("passphrase") ?: "xiaoesp32c3"
+                            val ssidPattern = call.argument<String>("ssidPattern") ?: "Audio-Vault-Hotspot"
+                            val passphrase = call.argument<String>("passphrase") ?: "audiovault2026"
 
                             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                                 result.error("UNSUPPORTED", "WifiNetworkSpecifier requires Android 10+", null)
@@ -182,8 +182,8 @@ class MainActivity : FlutterActivity() {
                         }
 
                         "startWifiSoftApSync" -> {
-                            val ssidPattern = call.argument<String>("ssidPattern") ?: "XIAO-Audio-Hotspot"
-                            val passphrase = call.argument<String>("passphrase") ?: "xiaoesp32c3"
+                            val ssidPattern = call.argument<String>("ssidPattern") ?: "Audio-Vault-Hotspot"
+                            val passphrase = call.argument<String>("passphrase") ?: "audiovault2026"
                             val fileId = call.argument<Number>("fileId")?.toLong() ?: 0L
                             val startOffset = call.argument<Number>("startOffset")?.toLong() ?: 0L
                             val destinationPath = call.argument<String>("destinationPath")
@@ -370,7 +370,7 @@ class MainActivity : FlutterActivity() {
                     sendEvent("connected_wifi", 0.35, 0, 0, "Reusing active Wi-Fi connection")
                     activeNet
                 } else {
-                    sendEvent("connecting_wifi", 0.15, 0, 0, "Connecting to XIAO-Audio-Hotspot...")
+                    sendEvent("connecting_wifi", 0.15, 0, 0, "Connecting to Audio Vault Hotspot...")
                     val net = wifiManager.connect(ssidPattern, passphrase)
                     sendEvent("connected_wifi", 0.35, 0, 0, "Wi-Fi link established!")
                     net

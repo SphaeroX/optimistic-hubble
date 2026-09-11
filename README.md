@@ -1,6 +1,6 @@
-# XIAO ESP32C3 - Ultra-Low-Power Voice Assistant & Companion Monorepo
+# Audio Vault ESP32-C3 - Ultra-Low-Power Voice Assistant & Companion Monorepo
 
-An embedded voice recording, signal processing, and companion application monorepo built for the **Seeed Studio XIAO ESP32C3**, featuring **two I2S MEMS microphones**, an **IMU sensor** with **Ultra-Low-Power Deep Sleep (< 10 µA)** & **Hardware Shock Wakeup**, **persistent Flash storage (`LittleFS`)**, and a **Flutter Multiplatform Companion App** supporting **Android, iOS, and Windows Desktop**.
+An embedded voice recording, signal processing, and companion application monorepo built for the **ESP32-C3**, featuring **two I2S MEMS microphones**, an **IMU sensor** with **Ultra-Low-Power Deep Sleep (< 10 µA)** & **Hardware Shock Wakeup**, **persistent Flash storage (`LittleFS`)**, and a **Flutter Multiplatform Companion App** supporting **Android, iOS, and Windows Desktop**.
 
 ---
 
@@ -17,9 +17,9 @@ optimistic-hubble/
 ├── firmware/                    # PlatformIO ESP32-C3 Firmware
 │   ├── src/                     # Audio recorder, BLE service, Wi-Fi SoftAP server, IMU drivers
 │   ├── platformio.ini           # Board definitions, partition tables & compiler flags
-│   └── xiao_esp32c3_hw_test.ino # Hardware test & validation sketch
+│   └── esp32c3_hw_test.ino      # Hardware test & validation sketch
 ├── research/                    # IoT transfer studies, BLE/Wi-Fi benchmarks & protocol docs
-├── 01_flash_mcu.bat             # Builds, flashes and monitors XIAO ESP32-C3
+├── 01_flash_mcu.bat             # Builds, flashes and monitors ESP32-C3
 ├── 02_run_flutter_device.bat    # Launches Flutter companion app on connected device
 ├── 03_build_apk.bat             # Builds Flutter Android Release APK
 ├── 03_flash_and_build_apk.bat   # Flashes ESP32-C3 firmware and builds Android APK
@@ -86,7 +86,7 @@ optimistic-hubble/
 
 The project supports two target hardware setups:
 1. **Custom Production Board V2:** Built around the **ESP32-C3-MINI-1-N4** module (integrated 4MB Flash, 40MHz crystal & PCB antenna), an **AP2112K-3.3TRG1 LDO (600mA)**, an external **Winbond W25Q128JVSIQ (16MB)** SPI Flash on **SPI2**, dual status LEDs, and direct THT through-hole soldering for LiPo battery and tactile switch.
-2. **Breadboard Prototype:** Built using the **Seeed Studio XIAO ESP32C3** breakout board.
+2. **Breadboard Prototype:** Built using an ESP32-C3 breakout board.
 
 ### Production Board V2 (ESP32-C3-MINI-1-N4) Pin Assignment
 
@@ -112,9 +112,9 @@ The project supports two target hardware setups:
 
 ---
 
-### Breadboard Prototype Wiring (Seeed Studio XIAO ESP32C3)
+### Prototype Wiring (ESP32-C3)
 
-| Component | Component Pin | XIAO ESP32C3 Pin | ESP32-C3 GPIO | Description |
+| Component | Component Pin | ESP32-C3 Pin | ESP32-C3 GPIO | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | **Power** | 3V3 / VCC | **3V3** | - | 3.3V Power Bus |
 | **Ground** | GND | **GND** | - | Common Ground Bus |
@@ -152,8 +152,8 @@ The project supports two target hardware setups:
 
 ### 1. Wi-Fi REST Sync API (HTTP Port 80)
 
-* **Hotspot SSID:** `XIAO-Audio-Hotspot`
-* **Hotspot Password:** `xiaoesp32c3`
+* **Hotspot SSID:** `Audio-Vault-Hotspot`
+* **Hotspot Password:** `audiovault2026`
 * **Default Gateway / Web Dashboard:** `http://192.168.4.1`
 
 #### Endpoints
@@ -166,7 +166,7 @@ The project supports two target hardware setups:
 
 ### 2. BLE GATT Signaling Specifications
 
-* **Device Advertising Name:** `XIAO-Audio-Recorder`
+* **Device Advertising Name:** `Audio-Vault`
 * **Custom Service UUID:** `19b10000-e8f2-537e-4f6c-d104768a1214`
 * **State Characteristic (`19b10001-...`):** `[state, latestClipId, totalClips]`
 * **Tap Characteristic (`19b10003-...`):** `[tapFlag, shockMilliG]`

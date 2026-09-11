@@ -40,7 +40,7 @@ class AudioSyncForegroundService : Service() {
         val syncTier = intent?.getIntExtra(EXTRA_SYNC_TIER, TIER_BLE_L2CAP) ?: TIER_BLE_L2CAP
         val fileId = intent?.getLongExtra(EXTRA_FILE_ID, System.currentTimeMillis()) ?: System.currentTimeMillis()
 
-        val initialNotification = buildProgressNotification("Connecting to XIAO ESP32-C3...", 0, 100)
+        val initialNotification = buildProgressNotification("Connecting to Audio Vault...", 0, 100)
 
         // Android 14 (API 34) & Android 15 (API 35+) Foreground Service Type Compliance
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -157,7 +157,7 @@ class AudioSyncForegroundService : Service() {
                 "Audio Sync Service",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Shows ongoing transfer progress with XIAO recorder"
+                description = "Shows ongoing transfer progress with Audio Vault recorder"
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -165,7 +165,7 @@ class AudioSyncForegroundService : Service() {
 
     private fun buildProgressNotification(content: String, progress: Int, max: Int): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("XIAO Voice Sync")
+            .setContentTitle("Audio Vault Sync")
             .setContentText(content)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setProgress(max, progress, progress == 0)

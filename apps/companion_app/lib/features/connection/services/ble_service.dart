@@ -55,6 +55,7 @@ class BleService extends ChangeNotifier {
   int _activeDownloadClipId = 0;
   DateTime? _downloadStartTime;
   Completer<Uint8List?>? _activeDownloadCompleter;
+  VoidCallback? _onAudioChunkReceived;
 
   // Getters
   ConnectionStatus get status => _status;
@@ -267,11 +268,6 @@ class BleService extends ChangeNotifier {
     }
   }
 
-  /// Backward-compatibility alias
-  Future<bool> autoConnectNearestXiao({
-    Duration scanWindow = const Duration(milliseconds: 1500),
-    Duration totalTimeout = const Duration(seconds: 6),
-  }) => autoConnectNearestDevice(scanWindow: scanWindow, totalTimeout: totalTimeout);
 
   Future<void> connect(BleDeviceItem device) async {
     _mockTelemetryTimer?.cancel();
@@ -758,6 +754,7 @@ class BleService extends ChangeNotifier {
     }
 
     _audioChunks[chunkIdx] = payload;
+    _onAudioChunkReceived?.call();
 
     final progress = totalChunks > 0 ? (_audioChunks.length / totalChunks).clamp(0.0, 1.0) : 0.0;
 
@@ -808,22 +805,32 @@ class BleService extends ChangeNotifier {
     _downloadStartTime = DateTime.now();
     _activeDownloadCompleter = Completer<Uint8List?>();
 
+    Timer? inactivityTimer;
+    void resetInactivityWatchdog() {
+      inactivityTimer?.cancel();
+      inactivityTimer = Timer(const Duration(seconds: 15), () {
+        if (_activeDownloadCompleter != null && !_activeDownloadCompleter!.isCompleted) {
+          _log('AUDIO', 'Stream timeout: No data received for 15 seconds for clip #$clipId', isError: true);
+          _activeDownloadCompleter!.complete(null);
+        }
+      });
+    }
+
+    _onAudioChunkReceived = resetInactivityWatchdog;
+    resetInactivityWatchdog();
+
     _log('AUDIO', 'Requesting BLE stream for clip #$clipId...');
     await sendCommand(BleCommand.startL2capStream, clipId: clipId);
 
     try {
-      final result = await _activeDownloadCompleter!.future.timeout(
-        const Duration(seconds: 40),
-        onTimeout: () {
-          _log('AUDIO', 'Stream timeout for clip #$clipId', isError: true);
-          return null;
-        },
-      );
+      final result = await _activeDownloadCompleter!.future;
       return result;
     } catch (e) {
       _log('AUDIO', 'Stream exception for clip #$clipId: $e', isError: true);
       return null;
     } finally {
+      inactivityTimer?.cancel();
+      _onAudioChunkReceived = null;
       _activeDownloadCompleter = null;
       _downloadStartTime = null;
     }

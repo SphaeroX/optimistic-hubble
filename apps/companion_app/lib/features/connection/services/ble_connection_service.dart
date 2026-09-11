@@ -159,11 +159,6 @@ class BleConnectionService extends ChangeNotifier {
     }
   }
 
-  /// Backwards-compatible alias for autoConnectNearestDevice
-  Future<bool> autoConnectNearestXiao({
-    Duration scanWindow = const Duration(milliseconds: 1500),
-    Duration totalTimeout = const Duration(seconds: 6),
-  }) => autoConnectNearestDevice(scanWindow: scanWindow, totalTimeout: totalTimeout);
 
   Future<void> connect(BleDeviceItem device) async {
     await stopScan();

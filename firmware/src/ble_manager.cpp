@@ -439,7 +439,7 @@ bool BleManager::streamAudioFileFromStorage(uint16_t clipId, uint32_t startOffse
         _pCharAudio->setValue(packet, 8 + bytesRead);
         _pCharAudio->notify();
 
-        delay(5);
+        delay(2);
     }
 
     file.close();

@@ -137,7 +137,7 @@ void setup() {
 
     Serial.begin(SERIAL_BAUD_RATE);
     unsigned long start = millis();
-    while (!Serial && (millis() - start < 600)) delay(5);
+    while (!Serial && (millis() - start < 2000)) delay(10);
 
     printBanner();
     Serial.printf("[SYSTEM] Wake-up Cause: %s\n", power.getWakeupReasonString());
@@ -496,17 +496,28 @@ void loop() {
         static unsigned long lastSerialPrintTime = 0;
         if (now - lastSerialPrintTime >= 500) {
             lastSerialPrintTime = now;
-            Serial.printf("[STATUS] BLE: %s | State: %s | IMU: X=%+.2f Y=%+.2f Z=%+.2f (Mag=%.2fg) | Clips: %u | Taps: %u\n",
+            size_t freeKb = (storage.getTotalBytes() > storage.getUsedBytes()) 
+                ? ((storage.getTotalBytes() - storage.getUsedBytes()) / 1024) : 0;
+            Serial.printf("[STATUS] BLE: %s | State: %s | Flash: %s (%u KB free) | IMU: X=%+.2f Y=%+.2f Z=%+.2f | Clips: %u\n",
                           ble.isConnected() ? "ONLINE " : "STANDBY",
                           recorder.isRecording() ? "RECORDING" : (wifiServer.isActive() ? "WIFI_AP  " : "IDLE     "),
-                          imuMetrics.accelX_g, imuMetrics.accelY_g, imuMetrics.accelZ_g, mag,
-                          storage.getClipCount(), totalTapEvents);
+                          storage.isExternalFlash() ? "EXT 16MB" : "INT 1.9MB",
+                          (unsigned int)freeKb,
+                          imuMetrics.accelX_g, imuMetrics.accelY_g, imuMetrics.accelZ_g,
+                          storage.getClipCount());
         }
 
         static bool lastBleConnected = false;
         bool isBle = ble.isConnected();
         if (isBle != lastBleConnected) {
             lastBleConnected = isBle;
+            if (isBle) {
+                Serial.printf("[BLE] Client connected! Active Storage: %s (Total: %u KB, Used: %u KB, Clips: %u)\n",
+                              storage.isExternalFlash() ? "External 16 MB SPI Flash" : "Internal Flash",
+                              (unsigned int)(storage.getTotalBytes() / 1024),
+                              (unsigned int)(storage.getUsedBytes() / 1024),
+                              (unsigned int)storage.getClipCount());
+            }
             if (recorder.isRecording()) {
                 leds.setMode(isBle ? LedMode::RECORDING_CONNECTED : LedMode::RECORDING);
             } else if (!wifiServer.isActive() && leds.getMode() != LedMode::SYNCING) {
