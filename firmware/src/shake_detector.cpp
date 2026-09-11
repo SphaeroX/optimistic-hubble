@@ -1,4 +1,4 @@
-﻿#include "shake_detector.h"
+#include "shake_detector.h"
 #include <math.h>
 
 ShakeDetector::ShakeDetector(float thresholdG, unsigned long windowMs,
@@ -16,6 +16,7 @@ ShakeDetector::ShakeDetector(float thresholdG, unsigned long windowMs,
       _gravX(0.0f),
       _gravY(0.0f),
       _gravZ(1.0f),
+      _shakeStartGravY(0.0f),
       _initialized(false) {}
 
 void ShakeDetector::reset() {
@@ -24,11 +25,27 @@ void ShakeDetector::reset() {
     _firstPeakTime = 0;
     _maxIntensity = 0.0f;
     _dominantAxis = 0;
+    _shakeStartGravY = 0.0f;
     _initialized = false;
+}
+
+void ShakeDetector::initializeBaseline(const ImuMetricData& data) {
+    _gravX = data.accelX_g;
+    _gravY = data.accelY_g;
+    _gravZ = data.accelZ_g;
+    _shakeStartGravY = _gravY;
+    _initialized = true;
 }
 
 bool ShakeDetector::isInCooldown() const {
     return (millis() - _lastShakeTime < _cooldownMs);
+}
+
+bool ShakeDetector::isArmUp(float thresholdG) const {
+    // When arm is raised to mouth (hand UP), Y-axis gravity points down (-1g Earth gravity).
+    // When arm hangs at side (hand DOWN), Y-axis gravity points up (+1g Earth gravity).
+    // Only return true when the frozen pre-shake orientation was strictly arm UP.
+    return (_shakeStartGravY <= thresholdG);
 }
 
 ShakeEventType ShakeDetector::update(const ImuMetricData& data, float* shakeIntensityOut) {
@@ -39,16 +56,22 @@ ShakeEventType ShakeDetector::update(const ImuMetricData& data, float* shakeInte
         _gravX = data.accelX_g;
         _gravY = data.accelY_g;
         _gravZ = data.accelZ_g;
+        _shakeStartGravY = _gravY;
         _initialized = true;
         if (shakeIntensityOut) *shakeIntensityOut = 0.0f;
         return ShakeEventType::NONE;
     }
 
-    // Exponential moving average filter for static gravity tracking (alpha = 0.10)
-    const float alpha = 0.10f;
-    _gravX = (1.0f - alpha) * _gravX + alpha * data.accelX_g;
-    _gravY = (1.0f - alpha) * _gravY + alpha * data.accelY_g;
-    _gravZ = (1.0f - alpha) * _gravZ + alpha * data.accelZ_g;
+    // Only update gravity baseline when near 1g steady state (prevents shake contamination)
+    float totalMag = sqrtf(data.accelX_g * data.accelX_g +
+                           data.accelY_g * data.accelY_g +
+                           data.accelZ_g * data.accelZ_g);
+    if (totalMag >= 0.70f && totalMag <= 1.30f) {
+        const float alpha = 0.05f;
+        _gravX = (1.0f - alpha) * _gravX + alpha * data.accelX_g;
+        _gravY = (1.0f - alpha) * _gravY + alpha * data.accelY_g;
+        _gravZ = (1.0f - alpha) * _gravZ + alpha * data.accelZ_g;
+    }
 
     // 2. Dynamic linear acceleration (removing DC gravity)
     float dynX = data.accelX_g - _gravX;
@@ -93,7 +116,8 @@ ShakeEventType ShakeDetector::update(const ImuMetricData& data, float* shakeInte
         int8_t currentSign = (maxVal >= 0.0f) ? 1 : -1;
 
         if (_reversalCount == 0) {
-            // First peak of shake gesture
+            // First peak of shake gesture: freeze orientation before shake!
+            _shakeStartGravY = _gravY;
             _firstPeakTime = now;
             _reversalCount = 1;
             _lastSign = currentSign;

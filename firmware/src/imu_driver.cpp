@@ -22,10 +22,12 @@
 #define LSM6DS_REG_CTRL1_XL     0x10 // Accel control
 #define LSM6DS_REG_CTRL2_G      0x11 // Gyro control
 #define LSM6DS_REG_CTRL6_C      0x15 // Accel low power mode
+#define LSM6DS_REG_CTRL10_C     0x19 // Embedded functions (TILT_EN, PEDO_EN, etc.)
 #define LSM6DS_REG_WAKE_UP_SRC  0x1B // Wake-up source (reading clears latched WU interrupt)
 #define LSM6DS_REG_TAP_SRC      0x1C // Tap source (reading clears latched TAP interrupt)
 #define LSM6DS_REG_STATUS_REG   0x1E // Status register
 #define LSM6DS_REG_DATA_START   0x22 // Gyro X, Y, Z (0x22-0x27), Accel X, Y, Z (0x28-0x2D)
+#define LSM6DS_REG_FUNC_SRC1    0x53 // Embedded function status (TILT_IA)
 #define LSM6DS_REG_TAP_CFG      0x58 // Interrupt enable
 #define LSM6DS_REG_TAP_CFG0     0x56 // Tap config 0 (LSM6DSO: TAP_X/Y/Z enable, LIR)
 #define LSM6DS_REG_TAP_CFG1     0x57 // Tap config 1 (LSM6DSO: TAP_THS_X)
@@ -276,14 +278,16 @@ bool ImuDriver::configureLowPowerWakeup(float thresholdG) {
         writeRegister(LSM6DS_REG_WAKE_UP_THS, ths);
         writeRegister(LSM6DS_REG_WAKE_UP_DUR, 0x00); // Instant pulse
 
-        // 4. Enable interrupt logic (latched mode) and route wake-up to INT1
-        writeRegister(LSM6DS_REG_TAP_CFG, 0x81); // INTERRUPTS_ENABLE = 1, LIR = 1 (latched interrupt)
-        writeRegister(LSM6DS_REG_MD1_CFG, 0x20); // INT1_WU = 1 (Wake-Up routed to INT1)
+        // 4. Enable hardware tilt detection (TILT_EN) & latched interrupt logic
+        writeRegister(LSM6DS_REG_CTRL10_C, 0x04); // TILT_EN = 1
+        writeRegister(LSM6DS_REG_TAP_CFG, 0x81);  // INTERRUPTS_ENABLE = 1, LIR = 1 (latched interrupt)
+        // Route both Wake-up (bit 5 = 0x20) and Tilt (bit 1 = 0x02) to INT1 -> 0x22
+        writeRegister(LSM6DS_REG_MD1_CFG, 0x22);
 
         // Clear any residual triggers so INT1 starts LOW
         clearInterrupts();
 
-        Serial.printf("[IMU] LSM6DS configured for Motion/Shake Wake-up on INT1 (~6 uA). Threshold: %.2f g\n", thresholdG);
+        Serial.printf("[IMU] LSM6DS configured for Motion & Tilt Wake-up on INT1 (~6 uA). Threshold: %.2f g\n", thresholdG);
         return true;
     }
     else if (_type == IMU_TYPE_BMI160) {
@@ -343,6 +347,7 @@ void ImuDriver::clearInterrupts() {
         readRegisters(LSM6DS_REG_WAKE_UP_SRC, &dummy, 1);
         readRegisters(LSM6DS_REG_TAP_SRC, &dummy, 1);
         readRegisters(LSM6DS_REG_STATUS_REG, &dummy, 1);
+        readRegisters(LSM6DS_REG_FUNC_SRC1, &dummy, 1); // Clears TILT_IA interrupt
         readRegisters(0x1A, &dummy, 1); // ALL_INT_SRC
     } else if (_type == IMU_TYPE_BMI160) {
         readRegisters(0x1C, &dummy, 1); // INT_STATUS_0
@@ -364,6 +369,7 @@ bool ImuDriver::setPowerMode(bool active) {
             writeRegister(LSM6DS_REG_INT_DUR2, 0x00);
             writeRegister(LSM6DS_REG_WAKE_UP_THS, 0x00);
             writeRegister(LSM6DS_REG_MD1_CFG, 0x00);
+            writeRegister(LSM6DS_REG_CTRL10_C, 0x00); // Reset embedded functions
             writeRegister(LSM6DS_REG_CTRL6_C, 0x00); // High-performance mode
             writeRegister(LSM6DS_REG_CTRL1_XL, 0x40); // 104 Hz, +/- 2g
             delay(10);

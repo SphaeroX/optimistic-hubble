@@ -7,7 +7,11 @@ LedIndicator::LedIndicator(uint8_t redPin, uint8_t greenPin)
       _greenState(false),
       _currentMode(LedMode::IDLE),
       _lastBlinkTime(0),
-      _blinkPhase(false) {}
+      _blinkPhase(false),
+      _redLastBlinkTime(0),
+      _redBlinkPhase(false),
+      _greenLastBlinkTime(0),
+      _greenBlinkPhase(false) {}
 
 void LedIndicator::begin() {
     pinMode(_redPin, OUTPUT);
@@ -34,19 +38,18 @@ void LedIndicator::setGreen(bool on) {
 void LedIndicator::setMode(LedMode mode) {
     _currentMode = mode;
     _blinkPhase = false;
-    _lastBlinkTime = millis();
+    unsigned long now = millis();
+    _lastBlinkTime = now;
+    _redLastBlinkTime = now;
+    _greenLastBlinkTime = now;
 
     switch (_currentMode) {
         case LedMode::RECORDING:
-            // Solid Red, Green OFF
+        case LedMode::RECORDING_CONNECTED:
+            // Recording: Starts with Red ON, Green OFF (200ms ON / 800ms OFF handled in update)
+            _redBlinkPhase = true;
             writePin(_redPin, true);
             writePin(_greenPin, false);
-            break;
-        case LedMode::RECORDING_CONNECTED:
-            // Blinking Red (starts ON), Solid Green
-            _blinkPhase = true;
-            writePin(_greenPin, true);
-            writePin(_redPin, true);
             break;
         case LedMode::BLE_CONNECTED:
             // Red OFF, Solid Green
@@ -60,9 +63,10 @@ void LedIndicator::setMode(LedMode mode) {
             writePin(_redPin, false);
             break;
         case LedMode::IDLE:
-            // Both OFF
+            // Awake / Standby: Starts with Green ON (100ms ON / 900ms OFF handled in update), Red OFF
+            _greenBlinkPhase = true;
+            writePin(_greenPin, true);
             writePin(_redPin, false);
-            writePin(_greenPin, false);
             break;
         case LedMode::SERVICE_MODE:
             // Permanent Solid Green for Flash / Service Mode, Red OFF
@@ -83,6 +87,35 @@ void LedIndicator::blink(uint8_t pin, uint8_t times, uint16_t delayMs) {
         writePin(pin, false);
         delay(delayMs);
     }
+}
+
+void LedIndicator::blinkBoth(uint8_t times, uint16_t delayMs) {
+    for (uint8_t i = 0; i < times; ++i) {
+        writePin(_redPin, true);
+        writePin(_greenPin, true);
+        delay(delayMs);
+        writePin(_redPin, false);
+        writePin(_greenPin, false);
+        delay(delayMs);
+    }
+}
+
+void LedIndicator::showSingleTapFeedback() {
+    // 3x rapid green blink (60ms ON / 60ms OFF)
+    blink(_greenPin, 3, 60);
+    setMode(_currentMode);
+}
+
+void LedIndicator::showDoubleTapFeedback() {
+    // 3x rapid red blink (60ms ON / 60ms OFF)
+    blink(_redPin, 3, 60);
+    setMode(_currentMode);
+}
+
+void LedIndicator::showTiltFeedback() {
+    // 3x rapid both LEDs blink (80ms ON / 80ms OFF)
+    blinkBoth(3, 80);
+    setMode(_currentMode);
 }
 
 void LedIndicator::bootSequence() {
@@ -117,13 +150,23 @@ void LedIndicator::turnOffAll() {
 void LedIndicator::update() {
     unsigned long now = millis();
 
-    if (_currentMode == LedMode::RECORDING_CONNECTED) {
-        // Red blinks at ~1.7 Hz (300ms ON / 300ms OFF), Green stays solid ON
-        writePin(_greenPin, true);
-        if (now - _lastBlinkTime >= 300) {
-            _lastBlinkTime = now;
-            _blinkPhase = !_blinkPhase;
-            writePin(_redPin, _blinkPhase);
+    if (_currentMode == LedMode::RECORDING || _currentMode == LedMode::RECORDING_CONNECTED) {
+        // Red blinks asymmetrically: 200ms ON / 800ms OFF (1 Hz beacon), Green is OFF
+        writePin(_greenPin, false);
+        unsigned long interval = _redBlinkPhase ? 200 : 800;
+        if (now - _redLastBlinkTime >= interval) {
+            _redLastBlinkTime = now;
+            _redBlinkPhase = !_redBlinkPhase;
+            writePin(_redPin, _redBlinkPhase);
+        }
+    } else if (_currentMode == LedMode::IDLE) {
+        // Green blinks asymmetrically: 100ms ON / 900ms OFF (1 Hz alive heartbeat), Red is OFF
+        writePin(_redPin, false);
+        unsigned long interval = _greenBlinkPhase ? 100 : 900;
+        if (now - _greenLastBlinkTime >= interval) {
+            _greenLastBlinkTime = now;
+            _greenBlinkPhase = !_greenBlinkPhase;
+            writePin(_greenPin, _greenBlinkPhase);
         }
     } else if (_currentMode == LedMode::SYNCING) {
         // Alternating blink: Green ON / Red OFF <-> Green OFF / Red ON (150ms phase)

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <Arduino.h>
 #include "imu_driver.h"
 
@@ -21,7 +21,13 @@ public:
 
     ShakeEventType update(const ImuMetricData& data, float* shakeIntensityOut = nullptr);
     void reset();
+    void initializeBaseline(const ImuMetricData& data);
     bool isInCooldown() const;
+
+    // Orientation checks (arm raised / mouth pose: Y gravity is negative)
+    bool isArmUp(float thresholdG = -0.45f) const;
+    float getGravityY() const { return _gravY; }
+    float getShakeStartGravityY() const { return _shakeStartGravY; }
 
 private:
     float _thresholdG;
@@ -38,5 +44,6 @@ private:
 
     // Running gravity / baseline estimate (low-pass filter)
     float _gravX, _gravY, _gravZ;
+    float _shakeStartGravY;
     bool _initialized;
 };

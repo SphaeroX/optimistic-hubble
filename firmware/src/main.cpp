@@ -162,9 +162,11 @@ void setup() {
     battery.begin();
 
     Serial.begin(SERIAL_BAUD_RATE);
-    unsigned long start = millis();
-    while (!Serial && (millis() - start < 1500)) delay(10);
-    delay(50); // Small buffer flush delay for CDC enumeration
+    if (power.isUsbConnected()) {
+        unsigned long start = millis();
+        while (!Serial && (millis() - start < 300)) delay(10);
+    }
+    delay(20); // Small buffer flush delay for CDC enumeration
 
     printBanner();
     Serial.printf("[SYSTEM] Wake-up Cause: %s\n", power.getWakeupReasonString());
@@ -223,21 +225,22 @@ void setup() {
     if (power.wasWokenByMotion()) {
         ImuMetricData bootImu{};
         bool hasBootImu = imu.readSensorData(bootImu);
+        if (hasBootImu) {
+            shakeDetector.initializeBaseline(bootImu);
+        }
         bool isArmUp = hasBootImu && (bootImu.accelY_g <= IMU_ARM_UP_Y_THRESHOLD_G);
 
         if (isArmUp) {
-            Serial.printf("\n  >>> Woken from Deep Sleep with ARM UP (Y=%+.2f g)! <<<\n", bootImu.accelY_g);
-            Serial.println(F("  >>> Starting recording immediately!\n"));
-            startActiveRecording();
+            Serial.printf("\n  >>> Woken from Deep Sleep with ARM UP / TILT (Y=%+.2f g)! <<<\n", bootImu.accelY_g);
+            Serial.println(F("  >>> Arm-Up / Tilt Wakeup detected -> 3x Dual-LED placeholder!\n"));
+            leds.showTiltFeedback();
         } else {
             Serial.printf("\n  >>> Woken from Deep Sleep with ARM DOWN (Y=%+.2f g). <<<\n", 
                           hasBootImu ? bootImu.accelY_g : 0.0f);
             Serial.println(F("  >>> MCU is now AWAKE (IDLE). Shake with arm UP to START recording."));
             Serial.println(F("  >>> (Device will return to Deep Sleep if idle for 15s)\n"));
-            // Acknowledge wake-up with quick double-blink green
-            leds.blink(PIN_LED_GREEN, 2, 70);
-            leds.setMode(LedMode::IDLE);
         }
+        leds.setMode(LedMode::IDLE);
     } else {
         leds.bootSequence();
         leds.setMode(LedMode::IDLE);
@@ -497,22 +500,41 @@ void loop() {
                 totalTapEvents++;
                 power.notifyActivity();
 
-                if (imuData.accelY_g <= IMU_ARM_UP_Y_THRESHOLD_G) {
-                    Serial.printf("\n[SHAKE DETECTED] Arm is UP (Y=%+.2f g, Intensity: %.2f g) -> STARTING RECORDING...\n",
-                                  imuData.accelY_g, intensity);
+                if (shakeDetector.isArmUp(IMU_ARM_UP_Y_THRESHOLD_G)) {
+                    Serial.printf("\n[SHAKE DETECTED] Hand is UP (Pre-Shake GravY=%+.2f g, Intensity: %.2f g) -> STARTING RECORDING...\n",
+                                  shakeDetector.getShakeStartGravityY(), intensity);
                     ble.notifyTap(intensity);
                     startActiveRecording();
                 } else {
-                    Serial.printf("\n[SHAKE DETECTED] Arm is DOWN (Y=%+.2f g) -> Recording not started (raise arm to record).\n",
-                                  imuData.accelY_g);
+                    Serial.printf("\n[SHAKE DETECTED] Hand is DOWN (Pre-Shake GravY=%+.2f g, Intensity: %.2f g) -> Recording NOT started (Hand must be UP).\n",
+                                  shakeDetector.getShakeStartGravityY(), intensity);
                 }
             } else {
-                // Keep device awake if any tap/motion is detected
+                // Monitor for Single Tap and Double Tap placeholders
                 float shock = 0.0f;
                 TapEventType tapEvt = tapDetector.update(imuData, &shock);
-                if (tapEvt != TapEventType::NONE) {
+                if (tapEvt == TapEventType::SINGLE_TAP) {
                     power.notifyActivity();
-                    Serial.println(F("[IMU] Tap detected while awake. Inactivity timer extended."));
+                    Serial.printf("\n[IMU] Single-Tap detected! (Shock: %.2f g) -> Showing 3x Green placeholder\n", shock);
+                    leds.showSingleTapFeedback();
+                } else if (tapEvt == TapEventType::DOUBLE_TAP) {
+                    power.notifyActivity();
+                    Serial.printf("\n[IMU] Double-Tap detected! (Shock: %.2f g) -> Showing 3x Red placeholder\n", shock);
+                    leds.showDoubleTapFeedback();
+                }
+
+                // Detect arm-up tilt gesture while awake (e.g. raising wrist to mouth)
+                static bool prevArmWasDown = true;
+                bool currentArmUp = (shakeDetector.getGravityY() <= IMU_ARM_UP_Y_THRESHOLD_G);
+                bool currentArmDown = (shakeDetector.getGravityY() >= 0.20f);
+                if (prevArmWasDown && currentArmUp && !shakeDetector.isInCooldown()) {
+                    prevArmWasDown = false;
+                    power.notifyActivity();
+                    Serial.printf("\n[IMU] Arm raised to mouth / Tilt detected! (GravY=%+.2f g) -> Showing 3x Dual-LED placeholder\n",
+                                  shakeDetector.getGravityY());
+                    leds.showTiltFeedback();
+                } else if (currentArmDown) {
+                    prevArmWasDown = true;
                 }
             }
         }

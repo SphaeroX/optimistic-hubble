@@ -23,9 +23,15 @@ public:
     void setMode(LedMode mode);
 
     void blink(uint8_t pin, uint8_t times, uint16_t delayMs);
+    void blinkBoth(uint8_t times, uint16_t delayMs);
     void bootSequence();
     void errorSequence();
     void turnOffAll();
+
+    // Feedback gestures (3x rapid blinks)
+    void showSingleTapFeedback();
+    void showDoubleTapFeedback();
+    void showTiltFeedback();
 
     // Non-blocking tick for periodic LED patterns (call in loop)
     void update();
@@ -42,6 +48,12 @@ private:
     LedMode _currentMode;
     unsigned long _lastBlinkTime;
     bool _blinkPhase;
+
+    // Separate timing & phases for asymmetric red/green blinking
+    unsigned long _redLastBlinkTime;
+    bool _redBlinkPhase;
+    unsigned long _greenLastBlinkTime;
+    bool _greenBlinkPhase;
 
     void writePin(uint8_t pin, bool on);
 };
