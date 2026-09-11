@@ -5,7 +5,13 @@ title Dictula ESP32-C3 - Serial Monitor
 echo ========================================================
 echo   Dictula ESP32-C3 - Serial Monitor (115200)
 echo ========================================================
-echo   (Press Ctrl+C or Ctrl+T to exit)
+echo   Keys inside monitor:
+echo     r = Software Restart MCU
+echo     b = Print System Summary / Banner
+echo     w = Toggle Wi-Fi SoftAP
+echo     s = Toggle Audio Recording
+echo     Ctrl+C = Exit Monitor
+echo ========================================================
 echo.
 
 pushd "%~dp0firmware"

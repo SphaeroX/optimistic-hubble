@@ -43,9 +43,35 @@ static bool lastButtonState = HIGH;
 void printBanner() {
     Serial.println(F("\n========================================================"));
     Serial.println(F("  Audio Vault (Custom Production PCB V2)"));
-    Serial.println(F("  ESP32-C3-MINI-1-N4 • Dual ICS-43434 • LSM6DSL IMU"));
-    Serial.println(F("  Winbond W25Q128 16MB SPI Flash • TP4054 / AP2112K"));
+    Serial.println(F("  ESP32-C3-MINI-1-N4 * Dual ICS-43434 * LSM6DSL IMU"));
+    Serial.println(F("  Winbond W25Q128 16MB SPI Flash * TP4054 / AP2112K"));
     Serial.println(F("========================================================"));
+}
+
+void printSystemSummary() {
+    printBanner();
+    Serial.printf("[SYSTEM] Wake-up Cause: %s\n", power.getWakeupReasonString());
+    Serial.printf("  IMU: %s @ 0x%02X\n", imu.getChipName(), imu.getAddress());
+    Serial.printf("  Storage: %s (%u MB total) | Clips: %u | Free: %u KB\n",
+                  storage.isExternalFlash() ? "External 16MB SPI Flash" : "Internal Flash",
+                  (unsigned int)(storage.getTotalBytes() / (1024 * 1024)),
+                  (unsigned int)storage.getClipCount(),
+                  (unsigned int)((storage.getTotalBytes() - storage.getUsedBytes()) / 1024));
+    Serial.printf("  Battery: %u mV (%u%%, %s) | Heap Free: %u bytes\n",
+                  battery.getVoltageMilliVolts(), battery.getPercent(),
+                  battery.isCharging() ? "Charging" : "Discharging",
+                  ESP.getFreeHeap());
+    Serial.printf("  BLE: %s | Wi-Fi SoftAP: %s | Service Mode: %s\n",
+                  ble.isConnected() ? "Connected" : "Advertising",
+                  wifiServer.isActive() ? "ON" : "OFF",
+                  power.isSleepPrevented() ? "ENABLED" : "DISABLED");
+    Serial.println(F("========================================================"));
+    Serial.println(F("  Commands via Serial Monitor:"));
+    Serial.println(F("    [r] -> Restart MCU (Software Reset)"));
+    Serial.println(F("    [b] -> Reprint this System Summary / Banner"));
+    Serial.println(F("    [w] -> Toggle Wi-Fi SoftAP"));
+    Serial.println(F("    [s] -> Toggle Recording Start/Stop"));
+    Serial.println(F("========================================================\n"));
 }
 
 void pushTelemetryUpdate(DeviceState state, uint32_t audioBytes = 0) {
@@ -137,7 +163,8 @@ void setup() {
 
     Serial.begin(SERIAL_BAUD_RATE);
     unsigned long start = millis();
-    while (!Serial && (millis() - start < 2000)) delay(10);
+    while (!Serial && (millis() - start < 1500)) delay(10);
+    delay(50); // Small buffer flush delay for CDC enumeration
 
     printBanner();
     Serial.printf("[SYSTEM] Wake-up Cause: %s\n", power.getWakeupReasonString());
@@ -230,6 +257,42 @@ void loop() {
 
     // 0. Tick LED Indicator Animation/Blinking
     leds.update();
+
+    // 0.1 Handle Serial Input Commands (r = restart, b = summary banner, w = toggle wifi, s = toggle record)
+    while (Serial.available() > 0) {
+        char ch = (char)Serial.read();
+        if (ch == 'r' || ch == 'R') {
+            Serial.println(F("\n[SERIAL] Restart command received -> Rebooting ESP32-C3 now..."));
+            Serial.flush();
+            delay(200);
+            ESP.restart();
+        } else if (ch == 'b' || ch == 'B' || ch == '?') {
+            power.notifyActivity();
+            printSystemSummary();
+        } else if (ch == 'w' || ch == 'W') {
+            power.notifyActivity();
+            if (wifiServer.isActive()) {
+                Serial.println(F("\n[SERIAL] Stopping Wi-Fi SoftAP..."));
+                wifiServer.stop();
+                leds.setMode(ble.isConnected() ? LedMode::BLE_CONNECTED : LedMode::IDLE);
+                ble.updateState(STATE_IDLE);
+            } else {
+                Serial.println(F("\n[SERIAL] Starting Wi-Fi SoftAP..."));
+                wifiServer.begin(WIFI_AP_SSID, WIFI_AP_PASS, HTTP_SERVER_PORT);
+                leds.setMode(LedMode::WIFI_AP);
+                ble.updateState(STATE_WIFI_ACTIVE);
+            }
+        } else if (ch == 's' || ch == 'S') {
+            power.notifyActivity();
+            if (recorder.isRecording()) {
+                Serial.println(F("\n[SERIAL] Stopping recording..."));
+                handleStopAndSave();
+            } else {
+                Serial.println(F("\n[SERIAL] Starting recording..."));
+                startActiveRecording();
+            }
+        }
+    }
 
     // 1. Process Active Real-Time Recording Stream
     if (recorder.isRecording()) {
