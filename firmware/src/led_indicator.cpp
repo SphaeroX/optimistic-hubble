@@ -100,21 +100,19 @@ void LedIndicator::blinkBoth(uint8_t times, uint16_t delayMs) {
     }
 }
 
-void LedIndicator::showSingleTapFeedback() {
-    // 3x rapid green blink (60ms ON / 60ms OFF)
-    blink(_greenPin, 3, 60);
-    setMode(_currentMode);
-}
-
 void LedIndicator::showDoubleTapFeedback() {
-    // 3x rapid red blink (60ms ON / 60ms OFF)
-    blink(_redPin, 3, 60);
+    // Double-Tap: Green LED lights up solid for 2 seconds (2000 ms), Red stays OFF
+    writePin(_redPin, false);
+    writePin(_greenPin, true);
+    delay(2000);
+    writePin(_greenPin, false);
     setMode(_currentMode);
 }
 
 void LedIndicator::showTiltFeedback() {
-    // 3x rapid both LEDs blink (80ms ON / 80ms OFF)
-    blinkBoth(3, 80);
+    // Tilt / Arm-Up: Only Red LED blinks for 2 seconds (10x 100ms ON / 100ms OFF = 2000 ms), Green stays OFF
+    writePin(_greenPin, false);
+    blink(_redPin, 10, 100);
     setMode(_currentMode);
 }
 

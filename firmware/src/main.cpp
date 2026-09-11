@@ -232,7 +232,7 @@ void setup() {
 
         if (isArmUp) {
             Serial.printf("\n  >>> Woken from Deep Sleep with ARM UP / TILT (Y=%+.2f g)! <<<\n", bootImu.accelY_g);
-            Serial.println(F("  >>> Arm-Up / Tilt Wakeup detected -> 3x Dual-LED placeholder!\n"));
+            Serial.println(F("  >>> Arm-Up / Tilt Wakeup detected -> Red LED blinking for 2 seconds!\n"));
             leds.showTiltFeedback();
         } else {
             Serial.printf("\n  >>> Woken from Deep Sleep with ARM DOWN (Y=%+.2f g). <<<\n", 
@@ -510,16 +510,12 @@ void loop() {
                                   shakeDetector.getShakeStartGravityY(), intensity);
                 }
             } else {
-                // Monitor for Single Tap and Double Tap placeholders
+                // Monitor for Double Tap (Single Tap removed per user request)
                 float shock = 0.0f;
                 TapEventType tapEvt = tapDetector.update(imuData, &shock);
-                if (tapEvt == TapEventType::SINGLE_TAP) {
+                if (tapEvt == TapEventType::DOUBLE_TAP) {
                     power.notifyActivity();
-                    Serial.printf("\n[IMU] Single-Tap detected! (Shock: %.2f g) -> Showing 3x Green placeholder\n", shock);
-                    leds.showSingleTapFeedback();
-                } else if (tapEvt == TapEventType::DOUBLE_TAP) {
-                    power.notifyActivity();
-                    Serial.printf("\n[IMU] Double-Tap detected! (Shock: %.2f g) -> Showing 3x Red placeholder\n", shock);
+                    Serial.printf("\n[IMU] Double-Tap detected! (Shock: %.2f g) -> Green LED solid ON for 2 seconds\n", shock);
                     leds.showDoubleTapFeedback();
                 }
 
@@ -530,7 +526,7 @@ void loop() {
                 if (prevArmWasDown && currentArmUp && !shakeDetector.isInCooldown()) {
                     prevArmWasDown = false;
                     power.notifyActivity();
-                    Serial.printf("\n[IMU] Arm raised to mouth / Tilt detected! (GravY=%+.2f g) -> Showing 3x Dual-LED placeholder\n",
+                    Serial.printf("\n[IMU] Arm raised to mouth / Tilt detected! (GravY=%+.2f g) -> Red LED blinking for 2 seconds\n",
                                   shakeDetector.getGravityY());
                     leds.showTiltFeedback();
                 } else if (currentArmDown) {

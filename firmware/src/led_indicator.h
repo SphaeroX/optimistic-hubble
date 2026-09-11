@@ -28,8 +28,7 @@ public:
     void errorSequence();
     void turnOffAll();
 
-    // Feedback gestures (3x rapid blinks)
-    void showSingleTapFeedback();
+    // Gesture feedback indicators
     void showDoubleTapFeedback();
     void showTiltFeedback();
 
