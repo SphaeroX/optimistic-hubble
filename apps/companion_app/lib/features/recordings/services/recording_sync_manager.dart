@@ -125,15 +125,20 @@ class RecordingSyncManager extends ChangeNotifier {
       required String filePath,
       required int sizeBytes,
       required double durationSeconds,
+      int ageSeconds = 0,
     }) {
       final existing = _clipsMap[clipId];
+      final originalRecordedAt = ageSeconds > 0
+          ? DateTime.now().subtract(Duration(seconds: ageSeconds))
+          : (existing?.recordedAt ?? DateTime.now());
+
       _clipsMap[clipId] = RecordingItem(
         id: clipId,
         remoteFilename: 'clip_${clipId.toString().padLeft(3, '0')}.wav',
         sizeBytes: sizeBytes,
         duration: Duration(milliseconds: (durationSeconds * 1000).round()),
         sampleRate: 16000,
-        recordedAt: DateTime.now(),
+        recordedAt: originalRecordedAt,
         syncState: SyncState.synced,
         downloadProgress: 1.0,
         localWavPath: filePath,
@@ -147,7 +152,7 @@ class RecordingSyncManager extends ChangeNotifier {
         localWavPath: filePath,
         duration: Duration(milliseconds: (durationSeconds * 1000).round()),
         sizeBytes: sizeBytes,
-        recordedAt: DateTime.now(),
+        recordedAt: originalRecordedAt,
       );
 
       notifyListeners();

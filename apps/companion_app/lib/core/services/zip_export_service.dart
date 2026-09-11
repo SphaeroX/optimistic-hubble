@@ -104,4 +104,90 @@ class ZipExportService {
       return false;
     }
   }
+
+  /// Bundles multiple recordings and their associated metadata/attachments into a single ZIP archive.
+  static Future<bool> exportAndShareMultipleZip({
+    required List<({
+      String title,
+      DateTime recordedAt,
+      Duration duration,
+      String audioPath,
+      String? transcription,
+      String? groupName,
+      List<String> photoPaths,
+      List<String> attachmentPaths,
+    })> recordings,
+  }) async {
+    try {
+      if (recordings.isEmpty) return false;
+
+      final Archive archive = Archive();
+      final List<Map<String, dynamic>> manifest = [];
+
+      for (int i = 0; i < recordings.length; i++) {
+        final rec = recordings[i];
+        final safeTitle = rec.title.replaceAll(RegExp(r'[^\w\s\.-]'), '_').trim();
+        final folderName = '${(i + 1).toString().padLeft(2, '0')}_${safeTitle.isEmpty ? "Aufnahme" : safeTitle}';
+
+        // 1. Audio WAV file
+        final File audioFile = File(rec.audioPath);
+        if (await audioFile.exists()) {
+          final Uint8List audioBytes = await audioFile.readAsBytes();
+          final String audioExt = p.extension(rec.audioPath).isNotEmpty ? p.extension(rec.audioPath) : '.wav';
+          archive.addFile(ArchiveFile('$folderName/audio$audioExt', audioBytes.length, audioBytes));
+        }
+
+        // 2. Transcription
+        if (rec.transcription != null && rec.transcription!.trim().isNotEmpty) {
+          final Uint8List transBytes = utf8.encode(rec.transcription!);
+          archive.addFile(ArchiveFile('$folderName/transcription.md', transBytes.length, transBytes));
+        }
+
+        // 3. Manifest entry
+        manifest.add({
+          'index': i + 1,
+          'title': rec.title,
+          'recordedAt': rec.recordedAt.toIso8601String(),
+          'durationSeconds': rec.duration.inSeconds,
+          'group': rec.groupName,
+          'hasTranscription': rec.transcription != null && rec.transcription!.isNotEmpty,
+          'photos': rec.photoPaths.length,
+          'attachments': rec.attachmentPaths.length,
+        });
+      }
+
+      // Add overall manifest.json
+      final Uint8List manifestBytes = utf8.encode(const JsonEncoder.withIndent('  ').convert({
+        'totalRecordings': recordings.length,
+        'exportedAt': DateTime.now().toIso8601String(),
+        'generator': 'Dictula Voice Platform',
+        'recordings': manifest,
+      }));
+      archive.addFile(ArchiveFile('manifest.json', manifestBytes.length, manifestBytes));
+
+      // Encode ZIP
+      final ZipEncoder encoder = ZipEncoder();
+      final List<int> zipData = encoder.encode(archive);
+      if (zipData.isEmpty) return false;
+
+      final Directory tempDir = await getTemporaryDirectory();
+      final String zipFilename = 'Dictula_Export_${recordings.length}_Aufnahmen.zip';
+      final File zipFile = File('${tempDir.path}/$zipFilename');
+      await zipFile.writeAsBytes(zipData, flush: true);
+
+      final result = await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(zipFile.path, mimeType: 'application/zip', name: zipFilename)],
+          text: '${recordings.length} Dictula Sprachaufnahmen im ZIP-Archiv',
+          subject: 'Dictula Multi-Export (${recordings.length} Aufnahmen)',
+        ),
+      );
+
+      return result.status == ShareResultStatus.success || result.status == ShareResultStatus.dismissed;
+    } catch (e) {
+      debugPrint('[ZipExportService] Error exporting multi-ZIP: $e');
+      return false;
+    }
+  }
 }
+

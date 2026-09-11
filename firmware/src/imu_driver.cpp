@@ -278,15 +278,16 @@ bool ImuDriver::configureLowPowerWakeup(float thresholdG) {
         writeRegister(LSM6DS_REG_WAKE_UP_THS, ths);
         writeRegister(LSM6DS_REG_WAKE_UP_DUR, 0x00); // Instant pulse
 
-        // 4. Route exclusively Wake-up (shock/shake, bit 5 = 0x20) to INT1 (tilt disabled in deep sleep)
-        writeRegister(LSM6DS_REG_CTRL10_C, 0x00); // Tilt disabled during deep sleep
+        // 4. Enable hardware tilt detection (TILT_EN) & latched interrupt logic
+        writeRegister(LSM6DS_REG_CTRL10_C, 0x04); // TILT_EN = 1
         writeRegister(LSM6DS_REG_TAP_CFG, 0x81);  // INTERRUPTS_ENABLE = 1, LIR = 1 (latched interrupt)
-        writeRegister(LSM6DS_REG_MD1_CFG, 0x20);  // INT1_WU = 1 only
+        // Route both Wake-up (bit 5 = 0x20) and Tilt (bit 1 = 0x02) to INT1 -> 0x22
+        writeRegister(LSM6DS_REG_MD1_CFG, 0x22);
 
         // Clear any residual triggers so INT1 starts LOW
         clearInterrupts();
 
-        Serial.printf("[IMU] LSM6DS configured for Shake-only Wake-up on INT1 (~6 uA). Threshold: %.2f g\n", thresholdG);
+        Serial.printf("[IMU] LSM6DS configured for Motion & Tilt Wake-up on INT1 (~6 uA). Threshold: %.2f g\n", thresholdG);
         return true;
     }
     else if (_type == IMU_TYPE_BMI160) {

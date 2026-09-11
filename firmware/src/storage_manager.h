@@ -13,6 +13,7 @@ struct ClipInfo {
     size_t fileSize;
     float duration;
     uint32_t sampleRate;
+    uint32_t ageSeconds;
 };
 
 class StorageManager {
@@ -26,6 +27,9 @@ public:
     File getClipFile(uint16_t id);
     bool deleteClip(uint16_t id);
     bool clearAll();
+
+    void recordClipTimestamp(uint16_t id);
+    uint32_t getClipAgeSeconds(uint16_t id);
 
     size_t getClipCount() const { return _clipCount; }
     uint16_t getNextClipId();

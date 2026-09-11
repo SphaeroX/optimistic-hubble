@@ -398,6 +398,18 @@ class FakeNativeAudioPlayer extends ChangeNotifier implements NativeAudioPlayer 
 
   @override
   void stop() {}
+
+  @override
+  Future<void> seek(Duration position) async {}
+
+  @override
+  Future<void> seekRelative(Duration offset) async {}
+
+  @override
+  Future<void> seekForward([Duration offset = const Duration(seconds: 10)]) async {}
+
+  @override
+  Future<void> seekBackward([Duration offset = const Duration(seconds: 10)]) async {}
 }
 
 

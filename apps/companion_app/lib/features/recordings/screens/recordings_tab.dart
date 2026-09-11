@@ -264,6 +264,143 @@ class _RecordingsTabState extends State<RecordingsTab> {
     }
   }
 
+  Future<void> _handleBatchShare() async {
+    if (_selectedIds.isEmpty) return;
+    final selectedRecs = widget.repository.recordings
+        .where((r) => _selectedIds.contains(r.id) && r.localWavPath.isNotEmpty)
+        .toList();
+
+    if (selectedRecs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Keine lokalen Audiodateien zum Teilen verfügbar.')),
+      );
+      return;
+    }
+
+    final items = selectedRecs
+        .map((r) => (filePath: r.localWavPath, title: r.title))
+        .toList();
+
+    final result = await AudioShareService.shareMultipleAudios(items: items);
+    if (!result.success && mounted && result.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.errorMessage!),
+          backgroundColor: AppTheme.accentRed,
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleBatchShareZip() async {
+    if (_selectedIds.isEmpty) return;
+    final selectedRecs = widget.repository.recordings
+        .where((r) => _selectedIds.contains(r.id) && r.localWavPath.isNotEmpty)
+        .toList();
+
+    if (selectedRecs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Keine lokalen Audiodateien für den ZIP-Export verfügbar.')),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Sammel-ZIP für ${selectedRecs.length} Aufnahmen wird erstellt...'),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+
+    final items = selectedRecs.map((r) {
+      final group = widget.groupsRepository.getGroupById(r.groupId);
+      return (
+        title: r.title,
+        recordedAt: r.recordedAt,
+        duration: r.duration,
+        audioPath: r.localWavPath,
+        transcription: r.transcription,
+        groupName: group?.name,
+        photoPaths: r.photoPaths,
+        attachmentPaths: r.attachmentPaths,
+      );
+    }).toList();
+
+    final ok = await ZipExportService.exportAndShareMultipleZip(recordings: items);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Fehler beim Exportieren des Sammel-ZIP-Archivs.')),
+      );
+    }
+  }
+
+  void _handleBatchAssignGroup() {
+    if (_selectedIds.isEmpty) return;
+    final count = _selectedIds.length;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.cardDark,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Gruppe für $count Aufnahme${count == 1 ? '' : 'n'} zuweisen',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.clear, color: AppTheme.textMuted),
+              title: const Text('Keine Gruppe'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await widget.repository.setMultipleGroups(_selectedIds, null);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Gruppe von $count Aufnahme${count == 1 ? '' : 'n'} entfernt.')),
+                  );
+                }
+              },
+            ),
+            ...widget.groupsRepository.groups.map(
+              (g) => ListTile(
+                leading: CircleAvatar(radius: 8, backgroundColor: g.color),
+                title: Text(g.name),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await widget.repository.setMultipleGroups(_selectedIds, g.id);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('$count Aufnahme${count == 1 ? '' : 'n'} der Gruppe "${g.name}" zugewiesen.')),
+                    );
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleBatchTogglePin() async {
+    if (_selectedIds.isEmpty) return;
+    final count = _selectedIds.length;
+    await widget.repository.toggleMultiplePins(_selectedIds);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$count Aufnahme${count == 1 ? '' : 'n'} angepinnt / gelöst.'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final listenables = <Listenable>[widget.repository, widget.groupsRepository];
@@ -277,7 +414,7 @@ class _RecordingsTabState extends State<RecordingsTab> {
         final groups = widget.groupsRepository.groups;
         final activeGroupId = widget.repository.filterGroupId;
         final isSyncing = widget.syncManager?.isSyncing == true;
-        final pendingHwCount = list.where((r) => r.source == RecordingSource.hardware && r.syncState != SyncState.synced).length;
+        final pendingHwCount = widget.syncManager?.clips.where((c) => c.syncState != SyncState.synced).length ?? 0;
 
         final allRepoIds = widget.repository.recordings.map((r) => r.id).toSet();
         _selectedIds.retainWhere(allRepoIds.contains);
@@ -370,7 +507,7 @@ class _RecordingsTabState extends State<RecordingsTab> {
                 // Header Toolbar: Contextual Selection Bar OR Standard Count & Refresh
                 if (_isSelectionMode)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                     margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                     decoration: BoxDecoration(
                       color: const Color(0xFF152238),
@@ -384,40 +521,66 @@ class _RecordingsTabState extends State<RecordingsTab> {
                           tooltip: 'Auswahl beenden',
                           visualDensity: VisualDensity.compact,
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          constraints: const BoxConstraints(minWidth: 30, minHeight: 32),
                           onPressed: _clearSelection,
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 2),
                         Text(
-                          '${_selectedIds.length} ausgewählt',
+                          '${_selectedIds.length}',
                           style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                           ),
                         ),
-                        const Spacer(),
-                        TextButton.icon(
-                          style: TextButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          ),
+                        const SizedBox(width: 6),
+                        IconButton(
                           icon: Icon(
                             _selectedIds.length == list.length && list.isNotEmpty
                                 ? Icons.deselect
                                 : Icons.select_all,
-                            size: 16,
+                            size: 18,
                             color: AppTheme.primaryCyan,
                           ),
-                          label: Text(
-                            _selectedIds.length == list.length && list.isNotEmpty
-                                ? 'Keine'
-                                : 'Alle',
-                            style: const TextStyle(fontSize: 12, color: AppTheme.primaryCyan),
-                          ),
+                          tooltip: _selectedIds.length == list.length && list.isNotEmpty ? 'Keine' : 'Alle',
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 30, minHeight: 32),
                           onPressed: () => _toggleSelectAll(list),
                         ),
-                        const SizedBox(width: 4),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.share, size: 18, color: AppTheme.primaryCyan),
+                          tooltip: 'Audiodateien teilen',
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          onPressed: _handleBatchShare,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.archive_outlined, size: 18, color: AppTheme.primaryCyan),
+                          tooltip: 'Sammel-ZIP exportieren',
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          onPressed: _handleBatchShareZip,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.folder_outlined, size: 18, color: AppTheme.primaryCyan),
+                          tooltip: 'Gruppe zuweisen',
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          onPressed: _handleBatchAssignGroup,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.push_pin_outlined, size: 18, color: AppTheme.primaryCyan),
+                          tooltip: 'Anpinnen / Lösen',
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          onPressed: _handleBatchTogglePin,
+                        ),
                         IconButton(
                           icon: const Icon(Icons.delete_outline, size: 20, color: AppTheme.accentRed),
                           tooltip: 'Ausgewählte löschen',
@@ -549,10 +712,6 @@ class _RecordingsTabState extends State<RecordingsTab> {
                                     _toggleSelection(rec.id);
                                     return;
                                   }
-                                  if (rec.syncState == SyncState.onDevice) {
-                                    _handleSyncClip(rec);
-                                    return;
-                                  }
                                   if (isThisPlaying) {
                                     widget.audioPlayer.stop();
                                     _currentlyPlayingPath = null;
@@ -567,11 +726,7 @@ class _RecordingsTabState extends State<RecordingsTab> {
                                     _toggleSelection(rec.id);
                                     return;
                                   }
-                                  if (rec.syncState == SyncState.onDevice) {
-                                    _handleSyncClip(rec);
-                                  } else {
-                                    _openDetailSheet(rec);
-                                  }
+                                  _openDetailSheet(rec);
                                 },
                                 onPinToggle: () => widget.repository.togglePin(rec.id),
                                 onShareAudio: () => _handleShareAudio(rec),

@@ -143,6 +143,36 @@ class NativeAudioPlayer extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Seeks to a specific timestamp in the audio file.
+  Future<void> seek(Duration position) async {
+    try {
+      final safeTarget = Duration(
+        milliseconds: position.inMilliseconds.clamp(
+          0,
+          _totalDuration.inMilliseconds > 0 ? _totalDuration.inMilliseconds : position.inMilliseconds,
+        ),
+      );
+      _currentPosition = safeTarget;
+      notifyListeners();
+      await _audioPlayer.seek(safeTarget);
+    } catch (e) {
+      debugPrint('[NativeAudioPlayer] Error seeking: $e');
+    }
+  }
+
+  /// Relative seek offset (positive for forward, negative for rewind).
+  Future<void> seekRelative(Duration offset) async {
+    final targetMs = _currentPosition.inMilliseconds + offset.inMilliseconds;
+    await seek(Duration(milliseconds: targetMs));
+  }
+
+  /// Fast-forward playback by [offset] (default: 10 seconds).
+  Future<void> seekForward([Duration offset = const Duration(seconds: 10)]) => seekRelative(offset);
+
+  /// Rewind playback by [offset] (default: 10 seconds).
+  Future<void> seekBackward([Duration offset = const Duration(seconds: 10)]) => seekRelative(-offset);
+
+
   @override
   void dispose() {
     _playerStateSubscription?.cancel();

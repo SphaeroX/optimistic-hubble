@@ -45,5 +45,20 @@ void main() {
       expect(AdpcmDecoder.isLinearPcmWav(wavBytes), isTrue);
       expect(wavBytes.length, greaterThan(44));
     });
+
+    test('shareMultipleAudios returns failure on empty list', () async {
+      final result = await AudioShareService.shareMultipleAudios(items: []);
+      expect(result.success, isFalse);
+      expect(result.errorMessage, contains('Keine Aufnahmen'));
+    });
+
+    test('shareMultipleAudios returns failure when all files do not exist', () async {
+      final result = await AudioShareService.shareMultipleAudios(items: [
+        (filePath: '/non/existent/a.wav', title: 'A'),
+        (filePath: '/non/existent/b.wav', title: 'B'),
+      ]);
+      expect(result.success, isFalse);
+      expect(result.errorMessage, contains('Keine gültigen'));
+    });
   });
 }

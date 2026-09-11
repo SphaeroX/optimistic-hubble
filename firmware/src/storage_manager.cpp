@@ -131,6 +131,24 @@ uint16_t StorageManager::getNextClipId() {
     return id;
 }
 
+void StorageManager::recordClipTimestamp(uint16_t id) {
+    if (!_initialized || id == 0) return;
+    char k[16];
+    snprintf(k, sizeof(k), "t_%u", id);
+    uint32_t nowSec = (uint32_t)(esp_timer_get_time() / 1000000ULL);
+    _prefs.putUInt(k, nowSec);
+}
+
+uint32_t StorageManager::getClipAgeSeconds(uint16_t id) {
+    if (!_initialized || id == 0) return 0;
+    char k[16];
+    snprintf(k, sizeof(k), "t_%u", id);
+    uint32_t nowSec = (uint32_t)(esp_timer_get_time() / 1000000ULL);
+    uint32_t recSec = _prefs.getUInt(k, 0);
+    if (recSec == 0) return 0;
+    return (nowSec >= recSec) ? (nowSec - recSec) : 0;
+}
+
 std::vector<ClipInfo> StorageManager::listClips() {
     std::vector<ClipInfo> clips;
     if (!_initialized) return clips;
@@ -166,6 +184,7 @@ std::vector<ClipInfo> StorageManager::listClips() {
                 size_t dataBytes = (info.fileSize > headerSize) ? (info.fileSize - headerSize) : 0;
                 info.sampleRate = sampleRate;
                 info.duration = (float)dataBytes / (float)byteRate;
+                info.ageSeconds = getClipAgeSeconds((uint16_t)id);
 
                 clips.push_back(info);
             }
@@ -240,7 +259,16 @@ bool StorageManager::deleteClip(uint16_t id) {
         }
     }
 
+    if (removed || LittleFS.exists(filename)) {
+        char k[16];
+        snprintf(k, sizeof(k), "t_%u", id);
+        _prefs.remove(k);
+    }
+
     if (removed) {
+        char k[16];
+        snprintf(k, sizeof(k), "t_%u", id);
+        _prefs.remove(k);
         scanExistingClips();
     }
     return removed;

@@ -7,7 +7,6 @@ import '../../connection/widgets/device_scanner_sheet.dart';
 import '../../debug_console/debug_log_sheet.dart';
 import '../../recordings/models/recording_item.dart';
 import '../../recordings/services/recording_sync_manager.dart';
-import '../../recordings/widgets/clip_card.dart';
 import '../../recordings/widgets/fast_transfer_sheet.dart';
 import '../../recordings/widgets/sync_progress_banner.dart';
 import '../../recordings/widgets/waveform_visualizer.dart';
@@ -344,52 +343,111 @@ class _DeviceTabState extends State<DeviceTab> {
               MemoryStorageCard(telemetry: uiTelemetry),
               const SizedBox(height: 14),
 
-              // Hardware Recordings List on ESP32 Flash
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Hardware Aufnahmen (${widget.syncManager.clips.length})',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  if (widget.syncManager.clips.any((c) => c.syncState != SyncState.synced))
-                    TextButton.icon(
-                      onPressed: widget.syncManager.isSyncing ? null : () => widget.syncManager.syncAllClips(),
-                      icon: const Icon(Icons.download, size: 16, color: AppTheme.primaryCyan),
-                      label: const Text('Alle laden', style: TextStyle(fontSize: 12, color: AppTheme.primaryCyan)),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (widget.syncManager.clips.isEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-                  decoration: BoxDecoration(
+              // Hardware Synchronization Section (Pure Direct Sync)
+              Builder(
+                builder: (context) {
+                  final unsyncedCount = widget.syncManager.clips.where((c) => c.syncState != SyncState.synced).length;
+                  final totalOnDevice = telem.totalClips;
+                  final isSyncingNow = widget.syncManager.isSyncing;
+
+                  return Card(
                     color: AppTheme.cardDark,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF223046)),
-                  ),
-                  child: Center(
-                    child: Text(
-                      isConnected
-                          ? 'Keine Aufnahmen im Flash-Speicher gefunden.\nNimm etwas auf oder tippe auf Aktualisieren.'
-                          : 'Hardware nicht verbunden. Verbinde dein Audio Vault, um Clips anzuzeigen.',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppTheme.textMuted, fontSize: 12.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(
+                        color: unsyncedCount > 0 ? AppTheme.accentOrange.withAlpha(90) : const Color(0xFF223046),
+                      ),
                     ),
-                  ),
-                )
-              else
-                ...widget.syncManager.clips.map((clip) => ClipCard(
-                  clip: clip,
-                  isConnectedToMcu: isConnected,
-                  onPlayToggle: () => widget.syncManager.togglePlayback(clip),
-                  onDownload: () => _openFastTransferSheet(targetClipId: clip.id),
-                  onShare: () => widget.syncManager.shareClip(clip),
-                  onDeleteLocal: () => widget.syncManager.deleteClipLocally(clip.id),
-                  onDeleteRemote: () => widget.syncManager.deleteClipOnDevice(clip.id),
-                  onDeleteEverywhere: () => widget.syncManager.deleteClipEverywhere(clip.id),
-                )),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: (unsyncedCount > 0 ? AppTheme.accentOrange : AppTheme.primaryCyan).withAlpha(30),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  unsyncedCount > 0 ? Icons.sync : Icons.cloud_done,
+                                  color: unsyncedCount > 0 ? AppTheme.accentOrange : AppTheme.primaryCyan,
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Hardware Synchronisation',
+                                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      unsyncedCount > 0
+                                          ? '$unsyncedCount neue Aufnahme${unsyncedCount == 1 ? '' : 'n'} bereit'
+                                          : (isConnected
+                                              ? (totalOnDevice > 0
+                                                  ? 'Alle $totalOnDevice Aufnahmen synchronisiert'
+                                                  : 'Keine Aufnahmen auf dem Gerät')
+                                              : 'Gerät nicht verbunden'),
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        color: unsyncedCount > 0 ? AppTheme.accentOrange : AppTheme.textMuted,
+                                        fontWeight: unsyncedCount > 0 ? FontWeight.w600 : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (unsyncedCount > 0 || isSyncingNow) ...[
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: isSyncingNow
+                                    ? null
+                                    : () {
+                                        if (widget.syncManager.preferWifiFastTransfer) {
+                                          _openFastTransferSheet();
+                                        } else {
+                                          widget.syncManager.syncAllClips();
+                                        }
+                                      },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.accentOrange,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                icon: isSyncingNow
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                      )
+                                    : const Icon(Icons.download, size: 18),
+                                label: Text(
+                                  isSyncingNow
+                                      ? 'Synchronisiere...'
+                                      : 'Jetzt synchronisieren ($unsyncedCount neu)',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
               const SizedBox(height: 14),
 
               // Format Storage Button

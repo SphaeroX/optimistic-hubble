@@ -15,6 +15,7 @@ import '../../groups/services/groups_repository.dart';
 import '../../recorder/controllers/recorder_controller.dart';
 import '../models/dictula_recording.dart';
 import '../services/recordings_repository.dart';
+import '../widgets/dictaphone_audio_player.dart';
 
 /// Full-featured bottom sheet modal for inspecting, editing, attaching photos/files, transcribing with Gemini, chatting, and exporting ZIP archives.
 class RecordingDetailSheet extends StatefulWidget {
@@ -365,67 +366,11 @@ class _RecordingDetailSheetState extends State<RecordingDetailSheet> with Single
                     ),
                     const SizedBox(height: 16),
 
-                    // Audio Player Card
-                    Card(
-                      color: AppTheme.cardDark,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: const BorderSide(color: Color(0xFF243248)),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                ElevatedButton(
-                                  onPressed: () {
-                                    if (isPlaying) {
-                                      widget.audioPlayer.stop();
-                                    } else {
-                                      widget.audioPlayer.play(rec.localWavPath);
-                                    }
-                                    setState(() {});
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    shape: const CircleBorder(),
-                                    padding: const EdgeInsets.all(14),
-                                    backgroundColor: AppTheme.primaryCyan,
-                                    foregroundColor: Colors.black,
-                                  ),
-                                  child: Icon(isPlaying ? Icons.pause : Icons.play_arrow, size: 24),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        isPlaying ? 'Wiedergabe läuft...' : 'Bereit zum Abspielen',
-                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        rec.formattedDuration,
-                                        style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed: _handleContinueRecording,
-                                  icon: const Icon(Icons.replay, size: 16),
-                                  label: const Text('Weiterführen', style: TextStyle(fontSize: 12)),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppTheme.accentGreen,
-                                    side: const BorderSide(color: AppTheme.accentGreen),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
+                    // Dictaphone Audio Player Card with Waveform Scrubber, +/-10s, and Readout
+                    DictaphoneAudioPlayer(
+                      recording: rec,
+                      audioPlayer: widget.audioPlayer,
+                      onContinueRecording: widget.recorderController != null ? _handleContinueRecording : null,
                     ),
                     const SizedBox(height: 16),
 

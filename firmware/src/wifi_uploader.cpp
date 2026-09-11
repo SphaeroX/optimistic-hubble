@@ -71,10 +71,11 @@ bool WifiUploader::uploadSingleClip(const char* host, uint16_t port, const ClipI
         return false;
     }
 
-    // Send HTTP POST Request Headers
-    char path[128];
-    snprintf(path, sizeof(path), "/api/upload?id=%u&size=%u&duration=%.2f&sampleRate=%u",
-             clip.id, (unsigned int)fileSize, clip.duration, clip.sampleRate);
+    // Send HTTP POST Request Headers with relative ageSec for timestamp reconstruction
+    uint32_t ageSec = _storage.getClipAgeSeconds(clip.id);
+    char path[160];
+    snprintf(path, sizeof(path), "/api/upload?id=%u&size=%u&duration=%.2f&sampleRate=%u&ageSec=%u",
+             clip.id, (unsigned int)fileSize, clip.duration, clip.sampleRate, (unsigned int)ageSec);
 
     client.printf("POST %s HTTP/1.1\r\n", path);
     client.printf("Host: %s:%u\r\n", host, port);

@@ -24,6 +24,10 @@ class RecordingsRepository with ChangeNotifier {
   /// Returns recordings filtered by search query and group, ordered by Pinned first, then newest.
   List<DictulaRecording> get filteredRecordings {
     return _recordings.where((rec) {
+      // Hardware recordings must be fully downloaded and synced to appear in the app recordings list
+      if (rec.source == RecordingSource.hardware && rec.syncState != SyncState.synced) {
+        return false;
+      }
       if (_filterGroupId != null && rec.groupId != _filterGroupId) {
         return false;
       }
@@ -440,6 +444,40 @@ class RecordingsRepository with ChangeNotifier {
     _recordings.removeWhere((r) => idSet.contains(r.id));
     await _save();
     notifyListeners();
+  }
+
+  /// Sets or clears the group for multiple recordings simultaneously.
+  Future<void> setMultipleGroups(Set<String> idSet, String? groupId) async {
+    bool changed = false;
+    for (int i = 0; i < _recordings.length; i++) {
+      if (idSet.contains(_recordings[i].id)) {
+        _recordings[i] = _recordings[i].copyWith(groupId: groupId);
+        changed = true;
+      }
+    }
+    if (changed) {
+      await _save();
+      notifyListeners();
+    }
+  }
+
+  /// Toggles pin state for multiple recordings: if all selected are pinned, unpins all; otherwise pins all.
+  Future<void> toggleMultiplePins(Set<String> idSet) async {
+    bool changed = false;
+    final selectedRecs = _recordings.where((r) => idSet.contains(r.id)).toList();
+    final allPinned = selectedRecs.isNotEmpty && selectedRecs.every((r) => r.isPinned);
+    final targetState = !allPinned;
+
+    for (int i = 0; i < _recordings.length; i++) {
+      if (idSet.contains(_recordings[i].id)) {
+        _recordings[i] = _recordings[i].copyWith(isPinned: targetState);
+        changed = true;
+      }
+    }
+    if (changed) {
+      await _save();
+      notifyListeners();
+    }
   }
 
   DictulaRecording? getRecordingById(String id) {

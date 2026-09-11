@@ -11,6 +11,7 @@ typedef OnClipReceivedCallback = void Function({
   required String filePath,
   required int sizeBytes,
   required double durationSeconds,
+  int ageSeconds,
 });
 
 typedef OnSyncCompletedCallback = void Function();
@@ -123,11 +124,14 @@ class EmbeddedAudioUploadServer {
     final int headerLength = request.contentLength;
     final int expectedLength = int.tryParse(queryParams['size'] ?? '$headerLength') ?? headerLength;
     final double durationSec = double.tryParse(queryParams['duration'] ?? '0.0') ?? 0.0;
+    final int ageSec = int.tryParse(queryParams['ageSec'] ?? queryParams['age'] ?? '0') ?? 0;
 
-    debugPrint('[EmbeddedAudioServer] Receiving upload for Clip #$clipId (Expected: $expectedLength bytes)');
+    debugPrint('[EmbeddedAudioServer] Receiving upload for Clip #$clipId (Expected: $expectedLength bytes, Age: ${ageSec}s)');
 
-    final startTime = DateTime.now();
-    final targetFile = await LocalStorageManager.getTargetHardwareFile(clipId, startTime);
+    final now = DateTime.now();
+    final startTime = now;
+    final originalRecordedAt = ageSec > 0 ? now.subtract(Duration(seconds: ageSec)) : now;
+    final targetFile = await LocalStorageManager.getTargetHardwareFile(clipId, originalRecordedAt);
     final tempFile = File('${targetFile.path}.part');
 
     IOSink? sink;
@@ -193,6 +197,7 @@ class EmbeddedAudioUploadServer {
         filePath: targetFile.path,
         sizeBytes: targetFile.lengthSync(),
         durationSeconds: calculatedDuration,
+        ageSeconds: ageSec,
       );
 
       _progressController.add(SyncProgressEvent(
