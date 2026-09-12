@@ -1,0 +1,49 @@
+========================================================================================================
+
+### Variante A_slim   (Wand 1.2 / Deckel 1.5 / Kassette 1.0)
+OK  | Tray STL / Aussenmaße        | dicht, 1 Koerper, Volumen 6.25 cm3, X×Y = 28.05×40.57 (soll 28.05×40.57)
+OK  | Deckel STL                    | dicht, 1 Koerper, Volumen 1.61 cm3
+OK  | Platine <-> Tray              |      0 Punkte im Material
+OK  | Akku 20x33x9.87 <-> Tray      |      0 Punkte im Material
+OK  | USB-C-Stecker <-> Tray        |      0 Punkte im Material (Aussparung 9.0 x 3.18 mm @ Wand -Y)
+OK  | Schallweg Mic U4 (+Y)          |      0 Punkte im Material (Schlitz 6 x 0.70 mm)
+OK  | Schallweg Mic U5 (-Y)          |      0 Punkte im Material (Schlitz 6 x 0.70 mm)
+OK  | LED-Sichtkanal d=1,7 mm        |      0 Punkte im Material (Deckel)
+OK  | Band 2.0 mm durchgefaedelt      |     66 Beruehrpunkte, tiefste 0.000 mm  (Faltraum 1.40 mm Luft ueber dem Steg)
+OK  | Band 3.0 mm durchgefaedelt      |     66 Beruehrpunkte, tiefste 0.000 mm  (Faltraum 0.40 mm Luft ueber dem Steg)
+OK  | Kassette: nur 2 Schlitze offen | 4674 Punkte offen, davon 0 ausserhalb der Schlitze
+OK  | Deckel: nur LED-Fenster offen  | LED-Fenster offen (204 Punkte)
+
+### Variante B_standard   (Wand 1.6 / Deckel 2.0 / Kassette 1.2)
+OK  | Tray STL / Aussenmaße        | dicht, 1 Koerper, Volumen 8.82 cm3, X×Y = 28.95×41.77 (soll 28.95×41.77)
+OK  | Deckel STL                    | dicht, 1 Koerper, Volumen 2.30 cm3
+OK  | Platine <-> Tray              |      0 Punkte im Material
+OK  | Akku 20x33x9.87 <-> Tray      |      0 Punkte im Material
+OK  | USB-C-Stecker <-> Tray        |      0 Punkte im Material (Aussparung 9.0 x 3.18 mm @ Wand -Y)
+OK  | Schallweg Mic U4 (+Y)          |      0 Punkte im Material (Schlitz 6 x 1.10 mm)
+OK  | Schallweg Mic U5 (-Y)          |      0 Punkte im Material (Schlitz 6 x 1.10 mm)
+OK  | LED-Sichtkanal d=1,7 mm        |      0 Punkte im Material (Deckel)
+OK  | Band 2.0 mm durchgefaedelt      |    102 Beruehrpunkte, tiefste 0.000 mm  (Faltraum 1.40 mm Luft ueber dem Steg)
+OK  | Band 3.0 mm durchgefaedelt      |    102 Beruehrpunkte, tiefste 0.000 mm  (Faltraum 0.40 mm Luft ueber dem Steg)
+OK  | Kassette: nur 2 Schlitze offen | 4032 Punkte offen, davon 0 ausserhalb der Schlitze
+OK  | Deckel: nur LED-Fenster offen  | LED-Fenster offen (153 Punkte)
+
+### Variante C_robust   (Wand 2.0 / Deckel 2.4 / Kassette 1.6)
+OK  | Tray STL / Aussenmaße        | dicht, 1 Koerper, Volumen 11.65 cm3, X×Y = 29.95×42.97 (soll 29.95×42.97)
+OK  | Deckel STL                    | dicht, 1 Koerper, Volumen 2.96 cm3
+OK  | Platine <-> Tray              |      0 Punkte im Material
+OK  | Akku 20x33x9.87 <-> Tray      |      0 Punkte im Material
+OK  | USB-C-Stecker <-> Tray        |      0 Punkte im Material (Aussparung 9.0 x 3.18 mm @ Wand -Y)
+OK  | Schallweg Mic U4 (+Y)          |      0 Punkte im Material (Schlitz 6 x 1.50 mm)
+OK  | Schallweg Mic U5 (-Y)          |      0 Punkte im Material (Schlitz 6 x 1.50 mm)
+OK  | LED-Sichtkanal d=1,7 mm        |      0 Punkte im Material (Deckel)
+OK  | Band 2.0 mm durchgefaedelt      |    114 Beruehrpunkte, tiefste 0.000 mm  (Faltraum 1.40 mm Luft ueber dem Steg)
+OK  | Band 3.0 mm durchgefaedelt      |    114 Beruehrpunkte, tiefste 0.000 mm  (Faltraum 0.40 mm Luft ueber dem Steg)
+OK  | Kassette: nur 2 Schlitze offen | 3910 Punkte offen, davon 0 ausserhalb der Schlitze
+OK  | Deckel: nur LED-Fenster offen  | LED-Fenster offen (140 Punkte)
+
+========================================================================================================
+BESTANDEN | A_slim       | 12/12 Checks
+BESTANDEN | B_standard   | 12/12 Checks
+BESTANDEN | C_robust     | 12/12 Checks
+========================================================================================================
